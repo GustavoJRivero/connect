@@ -1,0 +1,59 @@
+/* AdminLTE base: este archivo solo aplica pequeños ajustes */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Tipografía general un poco más chica (Bootstrap/AdminLTE) */
+body {
+  font-size: 0.9rem;
+}
+
+/* Titulos de cards un poco más chicos */
+.card-title {
+  font-size: 1rem;
+}
+
+/* Progress bar superior (global) */
+.sc-progress-top {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  overflow: hidden;
+  z-index: 1055; /* arriba del navbar */
+}
+
+.sc-progress-top-bar {
+  height: 100%;
+  width: 35%;
+  background: var(--bs-primary, #0d6efd);
+  animation: sc-progress-indeterminate 1s ease-in-out infinite;
+}
+
+@keyframes sc-progress-indeterminate {
+  0% {
+    transform: translateX(-40%);
+  }
+  50% {
+    transform: translateX(140%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+
+/* Evitar que botones de nuestra UI queden pegados */
+.btn + .btn {
+  margin-left: 0.5rem;
+}
+
+/* Errores API legibles */
+.sc-error {
+  white-space: pre-wrap;
+}
+
+

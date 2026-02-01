@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+
+# Virtual env
+.venv/
+venv/
+ENV/
+
+# Flask
+instance/
+
+# DB / local data
+*.db
+*.sqlite
+*.sqlite3
+
+# Migrations temp
+*_alembic_tmp_*
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
