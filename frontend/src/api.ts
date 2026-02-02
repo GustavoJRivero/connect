@@ -109,6 +109,12 @@ export const api = {
   getClient(id: number) {
     return request(`/api/clients/${id}`);
   },
+  suspendClientServices(id: number, cut_profile?: string) {
+    return request(`/api/clients/${id}/suspend_services`, {
+      method: "POST",
+      body: JSON.stringify({ cut_profile }),
+    });
+  },
   createClient(payload: any) {
     return request("/api/clients", { method: "POST", body: JSON.stringify(payload) });
   },

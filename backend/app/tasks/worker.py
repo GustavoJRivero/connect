@@ -14,6 +14,7 @@ from .queue import (
     JOB_MT_CREATE_PPP_SECRET,
     JOB_MT_DELETE_PPP_SECRET,
     JOB_MT_SET_PPP_PROFILE,
+    JOB_MT_SET_PPP_CREDENTIALS,
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
 )
 
@@ -71,6 +72,14 @@ def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
         if j.job_type == JOB_MT_SET_PPP_REMOTE_ADDRESS:
             mt.set_pppoe_secret_remote_address(name=str(payload["name"]), remote_address=str(payload.get("remote_address") or ""))
             return {"status": "updated", "remote_address": str(payload.get("remote_address") or "")}
+
+        if j.job_type == JOB_MT_SET_PPP_CREDENTIALS:
+            mt.set_pppoe_secret_credentials(
+                old_name=str(payload.get("old_name") or payload.get("name") or ""),
+                new_name=str(payload.get("name") or ""),
+                new_password=str(payload.get("password") or ""),
+            )
+            return {"status": "updated", "name": str(payload.get("name") or "")}
 
         raise RuntimeError(f"unknown_job_type:{j.job_type}")
     finally:

@@ -8,8 +8,9 @@ from ..extensions import db
 from ..mikrotik.ros_client import MikrotikRosClient
 from ..models.client import Client
 from ..models.connection import Connection
+from ..models.mikrotik_server import MikrotikServer
 from ..models.invoice import Invoice
-from ..tasks.queue import JOB_MT_CREATE_PPP_SECRET, JOB_MT_DELETE_PPP_SECRET, enqueue_job
+from ..tasks.queue import JOB_MT_CREATE_PPP_SECRET, JOB_MT_DELETE_PPP_SECRET, JOB_MT_SET_PPP_PROFILE, enqueue_job
 
 bp = Blueprint("clients", __name__, url_prefix="/api/clients")
 
@@ -30,9 +31,50 @@ def _get_mt_from_app():
 
 def _client_to_dict(c: Client) -> dict:
     first_conn = c.connections[0] if c.connections else None
+    # Estado de servicios (conexiones)
+    if getattr(c, "status", "ACTIVE") == "RETIRED":
+        services_status = "RETIRED"
+    else:
+        # Regla: si al menos una conexión está CUT => cliente SUSPENDED
+        any_cut = any(x.status == "CUT" for x in (c.connections or []))
+        services_status = "SUSPENDED" if any_cut else "ACTIVE"
+    server_ids = sorted({int(x.server_id) for x in (c.connections or []) if getattr(x, "server_id", None)})
+    server_map = {}
+    if server_ids:
+        rows = MikrotikServer.query.filter(MikrotikServer.id.in_(server_ids)).all()
+        server_map = {int(s.id): s.name for s in rows}
+
+    connections_out = []
+    for x in c.connections:
+        sid = int(x.server_id) if getattr(x, "server_id", None) else None
+        connections_out.append(
+            {
+                "id": x.id,
+                "server_id": getattr(x, "server_id", None),
+                "server_name": (server_map.get(sid) if sid else None),
+                "service_address": x.service_address,
+                "location": x.location,
+                "plan_profile": x.plan_profile,
+                "status": x.status,
+                "status_ui": ("Suspend" if x.status == "CUT" else "Active"),
+                "mikrotik_profile": x.mikrotik_profile,
+                "pppoe_name": x.pppoe_name(),
+                "pppoe_username": x.pppoe_name(),
+                "pppoe_password": x.pppoe_password(),
+                "ip": getattr(x, "ip", None),
+                "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
+                "last_uptime": getattr(x, "last_uptime", None),
+                "last_connected_at": x.last_connected_at.isoformat() if getattr(x, "last_connected_at", None) else None,
+                "last_disconnected_at": x.last_disconnected_at.isoformat() if getattr(x, "last_disconnected_at", None) else None,
+                "last_seen_at": x.last_seen_at.isoformat() if getattr(x, "last_seen_at", None) else None,
+            }
+        )
+
     return {
         "id": c.id,
         "kind": c.kind,
+        "status": getattr(c, "status", "ACTIVE"),
+        "services_status": services_status,
         "full_name": c.full_name,
         "dni": c.dni,
         "cuit": c.cuit,
@@ -42,44 +84,35 @@ def _client_to_dict(c: Client) -> dict:
         "is_active": c.is_active,
         "first_service_address": first_conn.service_address if first_conn else None,
         "debt_total": None,  # se completa en list_clients/get_client
-        "connections": [
-            {
-                "id": x.id,
-                "server_id": getattr(x, "server_id", None),
-                "service_address": x.service_address,
-                "location": x.location,
-                "plan_profile": x.plan_profile,
-                "status": x.status,
-                "mikrotik_profile": x.mikrotik_profile,
-                "pppoe_name": x.pppoe_name(),
-                "ip": getattr(x, "ip", None),
-                "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
-                "last_uptime": getattr(x, "last_uptime", None),
-                "last_connected_at": x.last_connected_at.isoformat() if getattr(x, "last_connected_at", None) else None,
-                "last_disconnected_at": x.last_disconnected_at.isoformat() if getattr(x, "last_disconnected_at", None) else None,
-                "last_seen_at": x.last_seen_at.isoformat() if getattr(x, "last_seen_at", None) else None,
-            }
-            for x in c.connections
-        ],
+        "connections": connections_out,
     }
 
 
 def _client_to_list_dict(
     c: Client,
     *,
-    first_service_address,
+    address,
     connections_count: int,
     debt_total: str,
+    active_connections: int,
+    cut_connections: int,
 ) -> dict:
+    if getattr(c, "status", "ACTIVE") == "RETIRED":
+        services_status = "RETIRED"
+    else:
+        # Regla: si al menos una conexión está CUT => cliente SUSPENDED
+        services_status = "SUSPENDED" if int(cut_connections or 0) > 0 else "ACTIVE"
     return {
         "id": c.id,
         "kind": c.kind,
+        "status": getattr(c, "status", "ACTIVE"),
         "full_name": c.full_name,
         "phone": c.phone,
         "email": c.email,
-        "first_service_address": first_service_address,
+        "address": address,
         "debt_total": debt_total,
         "connections_count": int(connections_count or 0),
+        "services_status": services_status,
     }
 
 
@@ -138,20 +171,33 @@ def list_clients():
         else_=0,
     )
 
-    first_addr_sq = (
-        db.session.query(Connection.service_address)
-        .filter(Connection.client_id == Client.id)
-        .order_by(Connection.id.asc())
-        .limit(1)
-        .correlate(Client)
-        .scalar_subquery()
-    )
-
     connections_count_sq = (
         db.session.query(func.count(Connection.id))
         .filter(Connection.client_id == Client.id)
         .correlate(Client)
         .scalar_subquery()
+    )
+
+    active_count_sq = (
+        db.session.query(func.count(Connection.id))
+        .filter(Connection.client_id == Client.id)
+        .filter(Connection.status == "ACTIVE")
+        .correlate(Client)
+        .scalar_subquery()
+    )
+    cut_count_sq = (
+        db.session.query(func.count(Connection.id))
+        .filter(Connection.client_id == Client.id)
+        .filter(Connection.status == "CUT")
+        .correlate(Client)
+        .scalar_subquery()
+    )
+
+    services_rank_sq = case(
+        (Client.status == "RETIRED", -1),
+        # Regla: si hay alguna CUT => SUSPENDED
+        (cut_count_sq > 0, 1),
+        else_=2,  # ACTIVE
     )
 
     debt_total_sq = (
@@ -172,6 +218,7 @@ def list_clients():
             Client.email.ilike(like),
             Client.dni.ilike(like),
             Client.cuit.ilike(like),
+            Client.address.ilike(like),
             Client.connections.any(Connection.service_address.ilike(like)),
         ]
         if q.isdigit():
@@ -183,8 +230,9 @@ def list_clients():
     query = (
         db.session.query(
             Client,
-            first_addr_sq.label("first_service_address"),
             connections_count_sq.label("connections_count"),
+            active_count_sq.label("active_connections"),
+            cut_count_sq.label("cut_connections"),
             debt_total_sq.label("debt_total"),
         )
         .filter(*base_filters)
@@ -193,13 +241,14 @@ def list_clients():
     sort_map = {
         "id": Client.id,
         "full_name": Client.full_name,
-        "first_service_address": first_addr_sq,
+        "address": Client.address,
         "phone": Client.phone,
         "email": Client.email,
         "debt_total": debt_total_sq,
         "connections_count": connections_count_sq,
+        "services_status": services_rank_sq,
     }
-    sort_expr = sort_map.get(sort_by) or Client.id
+    sort_expr = sort_map.get(sort_by) if sort_by in sort_map else Client.id
     if sort_dir not in ("asc", "desc"):
         sort_dir = "desc"
 
@@ -209,13 +258,15 @@ def list_clients():
     rows = query.offset(offset).limit(limit).all()
 
     items = []
-    for c, first_service_address, connections_count, debt_total in rows:
+    for c, connections_count, active_connections, cut_connections, debt_total in rows:
         items.append(
             _client_to_list_dict(
                 c,
-                first_service_address=first_service_address,
+                address=c.address,
                 connections_count=int(connections_count or 0),
                 debt_total=str(debt_total or 0),
+                active_connections=int(active_connections or 0),
+                cut_connections=int(cut_connections or 0),
             )
         )
 
@@ -275,6 +326,7 @@ def create_client():
 
     c = Client(
         kind=kind,
+        status="ACTIVE",
         full_name=(data.get("full_name") or "").strip(),
         dni=(str(dni) if dni else None),
         cuit=(str(cuit) if cuit else None),
@@ -300,6 +352,9 @@ def create_client():
                 ipaddress.ip_address(ip)
             except Exception:
                 return jsonify({"error": "ip_invalid"}), 400
+        pppoe_username = (conn.get("pppoe_username") or "").strip() or None
+        pppoe_password = (conn.get("pppoe_password") or "").strip() or None
+
         c.connections.append(
             Connection(
                 service_address=(conn.get("service_address") or None),
@@ -307,6 +362,8 @@ def create_client():
                 server_id=(int(conn.get("server_id")) if conn.get("server_id") else None),
                 ip=ip,
                 ip_is_fixed=bool(ip),
+                pppoe_username=pppoe_username,
+                pppoe_password_value=pppoe_password,
                 plan_profile=plan_profile,
                 status="ACTIVE",
                 mikrotik_profile=plan_profile,
@@ -314,7 +371,15 @@ def create_client():
         )
 
     db.session.add(c)
-    db.session.commit()  # para asignar IDs a connections (pppoe_name = id)
+    db.session.commit()  # para asignar IDs a connections
+
+    # Default credentials si no vinieron (por defecto = id)
+    for x in c.connections:
+        if not x.pppoe_username:
+            x.pppoe_username = str(x.id)
+        if not x.pppoe_password_value:
+            x.pppoe_password_value = str(x.id)
+    db.session.commit()
 
     jobs = []
     if provision_mikrotik:
@@ -397,4 +462,39 @@ def delete_client(client_id: int):
             jobs.append({"job_id": int(j.id), "type": j.job_type, "name": item["name"], "server_id": item["server_id"]})
 
     return jsonify({"status": "deleted", "jobs": jobs})
+
+
+@bp.post("/<int:client_id>/suspend_services")
+@jwt_required(optional=True)
+def suspend_services(client_id: int):
+    """
+    Suspende manualmente TODOS los servicios (conexiones) del cliente:
+    - marca status CUT
+    - aplica mikrotik_profile = CORTADO (o el que se pase)
+    - encola jobs para setear el profile en Mikrotik (por server_id)
+    """
+    data = request.get_json(silent=True) or {}
+    cut_profile = (data.get("cut_profile") or "CORTADO").strip()
+
+    c = Client.query.get_or_404(client_id)
+    conns = list(c.connections or [])
+    if not conns:
+        return jsonify({"status": "ok", "client_id": int(c.id), "jobs": []})
+
+    for x in conns:
+        x.status = "CUT"
+        x.mikrotik_profile = cut_profile
+
+    db.session.commit()
+
+    jobs = []
+    for x in conns:
+        j = enqueue_job(
+            job_type=JOB_MT_SET_PPP_PROFILE,
+            payload={"name": x.pppoe_name(), "profile": cut_profile},
+            server_id=(int(x.server_id) if getattr(x, "server_id", None) else None),
+        )
+        jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id), "server_id": getattr(x, "server_id", None)})
+
+    return jsonify({"status": "suspended", "client_id": int(c.id), "cut_profile": cut_profile, "jobs": jobs})
 

@@ -37,10 +37,13 @@ class Connection(db.Model):
     last_disconnected_at = db.Column(db.DateTime, nullable=True)
     last_seen_at = db.Column(db.DateTime, nullable=True)
 
+    # PPPoE credentials (por defecto = id, pero editable)
+    pppoe_username = db.Column(db.String(128), nullable=True, index=True)
+    pppoe_password_value = db.Column("pppoe_password", db.String(128), nullable=True)
+
     def pppoe_name(self) -> str:
-        # Requisito: name/pass coincide con el ID de la conexión
-        return str(self.id)
+        return str(self.pppoe_username or self.id)
 
     def pppoe_password(self) -> str:
-        return str(self.id)
+        return str(self.pppoe_password_value or self.id)
 

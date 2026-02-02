@@ -6,6 +6,9 @@ import { InvoiceModal } from "../components/InvoiceModal";
 import { ComplaintModal } from "../components/ComplaintModal";
 import { PaymentModal } from "../components/PaymentModal";
 import { ConnectionDetailsModal } from "../components/ConnectionDetailsModal";
+import { ClientEditModal } from "../components/ClientEditModal";
+import { ConnectionCreateModal } from "../components/ConnectionCreateModal";
+import { ConnectionEditModal } from "../components/ConnectionEditModal";
 
 type Client = any;
 
@@ -25,9 +28,10 @@ export default function ClientsPage() {
   const [page, setPage] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
   const [sortBy, setSortBy] = useState<
-    "id" | "full_name" | "first_service_address" | "phone" | "email" | "debt_total" | "connections_count"
+    "id" | "full_name" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count"
   >("id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [editingClientId, setEditingClientId] = useState<number | null>(null);
 
   const [kind, setKind] = useState<"PERSON" | "COMPANY">("PERSON");
   const [fullName, setFullName] = useState("");
@@ -35,6 +39,7 @@ export default function ClientsPage() {
   const [cuit, setCuit] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
+  const [address, setAddress] = useState("");
 
   const [planProfile, setPlanProfile] = useState("50M");
   const [serviceAddress, setServiceAddress] = useState("");
@@ -127,6 +132,7 @@ export default function ClientsPage() {
         cuit: kind === "COMPANY" ? cuit || null : null,
         phone: phone || null,
         email: email || null,
+        address: address || null,
         connections: [
           {
             server_id: serverId ? Number(serverId) : null,
@@ -151,6 +157,7 @@ export default function ClientsPage() {
       setCuit("");
       setPhone("");
       setEmail("");
+      setAddress("");
       setServiceAddress("");
       setLocation("");
       setServerId("");
@@ -207,12 +214,30 @@ export default function ClientsPage() {
     );
   }
 
+  function servicesBadge(c: any) {
+    const clientStatus = String(c?.status ?? "ACTIVE");
+    const s = String(c?.services_status ?? "");
+    if (clientStatus === "RETIRED") return <span className="badge text-bg-dark">Retirado</span>;
+    if (s === "SUSPENDED") return <span className="badge text-bg-danger">Suspendido</span>;
+    if (s === "ACTIVE") return <span className="badge text-bg-success">Activo</span>;
+    return <span className="badge text-bg-secondary">{s || "-"}</span>;
+  }
+
   const totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
   const start = total ? (page - 1) * pageSize + 1 : 0;
   const end = Math.min(total, (page - 1) * pageSize + items.length);
 
   return (
     <div>
+      <ClientEditModal
+        open={editingClientId != null}
+        clientId={editingClientId}
+        onClose={() => setEditingClientId(null)}
+        onSaved={async () => {
+          setEditingClientId(null);
+          await reloadList();
+        }}
+      />
       {mode === "detail" && clientId ? (
         <>
           {success ? (
@@ -231,6 +256,9 @@ export default function ClientsPage() {
             setSuccess(null);
             navigate("/clients");
           }}
+          onEdit={() => setEditingClientId(clientId)}
+          servers={servers}
+          planOptions={planOptions}
         />
       ) : null}
 
@@ -280,6 +308,7 @@ export default function ClientsPage() {
                     <Field label="Email" value={email} onChange={setEmail} />
                   </div>
                 </div>
+                <Field label="Dirección (facturación / principal)" value={address} onChange={setAddress} />
               </Card>
             </div>
 
@@ -427,11 +456,11 @@ export default function ClientsPage() {
                       <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("full_name")}>
                         Nombre {sortIcon("full_name")}
                       </th>
-                      <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("first_service_address")}>
-                        Servicio {sortIcon("first_service_address")}
+                      <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("address")}>
+                        Dirección {sortIcon("address")}
                       </th>
                       <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("phone")}>
-                        Tel/Cel {sortIcon("phone")}
+                        Telefono {sortIcon("phone")}
                       </th>
                       <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("email")}>
                         Email {sortIcon("email")}
@@ -439,15 +468,23 @@ export default function ClientsPage() {
                       <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("debt_total")}>
                         Deuda {sortIcon("debt_total")}
                       </th>
+                      <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("services_status")}>
+                        Estado {sortIcon("services_status")}
+                      </th>
                       <th style={{ cursor: "pointer", userSelect: "none" }} onClick={() => toggleSort("connections_count")}>
                         Conexiones {sortIcon("connections_count")}
                       </th>
-                      <th style={{ width: 160 }}>Acciones</th>
+                      <th style={{ width: 130 }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.map((c) => (
-                      <tr key={c.id}>
+                      <tr
+                        key={c.id}
+                        style={{ cursor: "pointer" }}
+                        title="Abrir cliente"
+                        onClick={() => openClient(c.id)}
+                      >
                         <td>#{c.id}</td>
                         <td>
                           <span
@@ -458,7 +495,7 @@ export default function ClientsPage() {
                           </span>
                           {c.full_name}
                         </td>
-                        <td>{c.first_service_address ?? "-"}</td>
+                        <td>{c.address ?? "-"}</td>
                         <td>{c.phone ?? "-"}</td>
                         <td>{c.email ?? "-"}</td>
                         <td>
@@ -466,14 +503,26 @@ export default function ClientsPage() {
                             AR$ {c.debt_total ?? "0"}
                           </span>
                         </td>
+                        <td>{servicesBadge(c)}</td>
                         <td>{c.connections_count ?? 0}</td>
                         <td>
-                          <Button variant="default" onClick={() => openClient(c.id)}>
-                            Ver
-                          </Button>
-                          <Button
-                            variant="danger"
-                            onClick={async () => {
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-primary me-2"
+                            title="Editar"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingClientId(Number(c.id));
+                            }}
+                          >
+                            <i className="fa-solid fa-pen-to-square" />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-danger"
+                            title="Eliminar"
+                            onClick={async (e) => {
+                              e.stopPropagation();
                               if (!window.confirm("¿Eliminar cliente y conexiones?")) return;
                               await api.deleteClient(c.id);
                               // si borrás el último item de una página, retrocede una página
@@ -481,8 +530,8 @@ export default function ClientsPage() {
                               else await reloadList();
                             }}
                           >
-                            Eliminar
-                          </Button>
+                            <i className="fa-solid fa-trash" />
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -505,7 +554,13 @@ function statusBadge(paymentStatus: string) {
   return <span className="badge bg-secondary">{paymentStatus}</span>;
 }
 
-function ClientDetail(props: { clientId: number; onBack: () => void }) {
+function ClientDetail(props: {
+  clientId: number;
+  onBack: () => void;
+  onEdit: () => void;
+  servers: any[];
+  planOptions: string[];
+}) {
   const [client, setClient] = useState<any>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [complaints, setComplaints] = useState<any[]>([]);
@@ -513,9 +568,11 @@ function ClientDetail(props: { clientId: number; onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [showNewComplaint, setShowNewComplaint] = useState(false);
+  const [showNewConnection, setShowNewConnection] = useState(false);
 
   const [paying, setPaying] = useState<any | null>(null);
   const [connDetails, setConnDetails] = useState<any | null>(null);
+  const [editingConn, setEditingConn] = useState<any | null>(null);
 
   async function reloadDetail() {
     setError(null);
@@ -574,6 +631,17 @@ function ClientDetail(props: { clientId: number; onBack: () => void }) {
     }
   }
 
+  async function suspendAllServices() {
+    setError(null);
+    try {
+      if (!window.confirm("¿Suspender TODOS los servicios del cliente? (Se aplicará CORTADO)")) return;
+      await api.suspendClientServices(props.clientId, "CORTADO");
+      await reloadDetail();
+    } catch (e: any) {
+      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+    }
+  }
+
   return (
     <div>
       <InvoiceModal
@@ -618,19 +686,52 @@ function ClientDetail(props: { clientId: number; onBack: () => void }) {
         }}
       />
 
+      <ConnectionCreateModal
+        open={showNewConnection}
+        clientId={props.clientId}
+        servers={props.servers || []}
+        planOptions={props.planOptions || []}
+        onClose={() => setShowNewConnection(false)}
+        onSaved={async () => {
+          setShowNewConnection(false);
+          await reloadDetail();
+        }}
+      />
+
+      <ConnectionEditModal
+        open={!!editingConn}
+        connection={editingConn}
+        servers={props.servers || []}
+        planOptions={props.planOptions || []}
+        onClose={() => setEditingConn(null)}
+        onSaved={async () => {
+          setEditingConn(null);
+          await reloadDetail();
+        }}
+      />
+
       <Card
         className="card card-outline card-primary"
         title={`Cliente #${props.clientId}`}
         headerRight={
           <>
-            <Button variant="default" onClick={props.onBack}>
-              <i className="fa-solid fa-arrow-left me-2" />
-              Volver
-            </Button>
-            <Button variant="default" onClick={reloadDetail}>
-              <i className="fa-solid fa-rotate me-2" />
-              Recargar
-            </Button>
+            <button type="button" className="btn btn-sm btn-outline-secondary me-2" title="Volver" onClick={props.onBack}>
+              <i className="fa-solid fa-arrow-left" />
+            </button>
+            <button type="button" className="btn btn-sm btn-outline-primary me-2" title="Editar" onClick={props.onEdit}>
+              <i className="fa-solid fa-pen-to-square" />
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm btn-outline-warning me-2"
+              title="Suspender servicios (CORTADO)"
+              onClick={suspendAllServices}
+            >
+              <i className="fa-solid fa-ban" />
+            </button>
+            <button type="button" className="btn btn-sm btn-outline-secondary" title="Recargar" onClick={reloadDetail}>
+              <i className="fa-solid fa-rotate" />
+            </button>
           </>
         }
       >
@@ -702,18 +803,34 @@ function ClientDetail(props: { clientId: number; onBack: () => void }) {
         </div>
         <div className="card-body">
           {tab === "connections" ? (
-            <div className="table-responsive">
-              <table className="table table-bordered table-hover">
+            <div>
+              <div className="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+                <div className="text-muted">Conexiones del cliente</div>
+                <div className="d-flex gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-outline-primary"
+                    title="Nueva conexión"
+                    onClick={() => setShowNewConnection(true)}
+                  >
+                    <i className="fa-solid fa-plus me-2" />
+                    Nueva conexión
+                  </button>
+                </div>
+              </div>
+
+              <div className="table-responsive">
+                <table className="table table-bordered table-hover table-sm">
                 <thead>
                   <tr>
                     <th>ID</th>
                     <th>PPPoE</th>
+                    <th>Server</th>
                     <th>IP</th>
                     <th>Plan</th>
                     <th>Domicilio</th>
-                    <th>Ubicación</th>
                     <th>Estado</th>
-                    <th style={{ width: 160 }}>Acciones</th>
+                    <th style={{ width: 140 }}>Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -721,23 +838,46 @@ function ClientDetail(props: { clientId: number; onBack: () => void }) {
                     <tr key={conn.id}>
                       <td>#{conn.id}</td>
                       <td>{conn.pppoe_name}</td>
+                      <td>{conn.server_name ?? "-"}</td>
                       <td>{conn.ip ?? "-"}</td>
                       <td>{conn.plan_profile}</td>
                       <td>{conn.service_address ?? "-"}</td>
-                      <td>{conn.location ?? "-"}</td>
-                      <td>{conn.status}</td>
                       <td>
-                        <Button variant="default" onClick={() => setConnDetails(conn)}>
-                          Detalles
-                        </Button>
-                        <Button variant={conn.status === "CUT" ? "primary" : "danger"} onClick={() => cutRestore(conn)}>
-                          {conn.status === "CUT" ? "Restaurar" : "Cortar"}
-                        </Button>
+                        <span className={`badge ${conn.status === "CUT" ? "text-bg-danger" : "text-bg-success"}`}>
+                          {conn.status === "CUT" ? "Suspend" : "Active"}
+                        </span>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary me-2"
+                          title="Editar conexión"
+                          onClick={() => setEditingConn(conn)}
+                        >
+                          <i className="fa-solid fa-pen-to-square" />
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-secondary me-2"
+                          title="Detalles"
+                          onClick={() => setConnDetails(conn)}
+                        >
+                          <i className="fa-solid fa-circle-info" />
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${conn.status === "CUT" ? "btn-outline-success" : "btn-outline-danger"}`}
+                          title={conn.status === "CUT" ? "Restaurar" : "Cortar"}
+                          onClick={() => cutRestore(conn)}
+                        >
+                          <i className={`fa-solid ${conn.status === "CUT" ? "fa-rotate-left" : "fa-ban"}`} />
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           ) : (
             tab === "billing" ? (

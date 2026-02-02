@@ -82,6 +82,21 @@ class MikrotikRosClient:
         for item in items:
             res.set(id=item[".id"], **{"remote-address": remote_address})
 
+    def set_pppoe_secret_credentials(self, *, old_name: str, new_name: str, new_password: str) -> None:
+        """
+        Actualiza name/password del secret. Si el secret no se encuentra por old_name, intenta por new_name.
+        """
+        if not self._api:
+            raise RuntimeError("Not connected")
+        res = self._api.get_resource("/ppp/secret")
+        items = res.get(name=old_name)
+        if not items and new_name and new_name != old_name:
+            items = res.get(name=new_name)
+        if not items:
+            raise RuntimeError("pppoe_secret_not_found")
+        for item in items:
+            res.set(id=item[".id"], name=new_name, password=new_password)
+
     def get_pppoe_active(self, *, name: str):
         if not self._api:
             raise RuntimeError("Not connected")

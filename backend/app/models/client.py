@@ -20,6 +20,8 @@ class Client(db.Model):
     email = db.Column(db.String(200), nullable=True)
     address = db.Column(db.String(255), nullable=True)
 
+    # Estado del cliente
+    status = db.Column(db.String(32), nullable=False, default="ACTIVE", index=True)  # ACTIVE / RETIRED
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
     connections = db.relationship(

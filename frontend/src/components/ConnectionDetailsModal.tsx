@@ -78,8 +78,8 @@ export function ConnectionDetailsModal(props: {
                 <div className="col-md-6">
                   <div className="text-muted">PPPoE: {conn?.pppoe_name ?? "-"}</div>
                   <div className="text-muted">Plan: {conn?.plan_profile ?? "-"}</div>
-                  <div className="text-muted">Estado: {conn?.status ?? "-"}</div>
-                  <div className="text-muted">Server: {conn?.server_id ?? "-"}</div>
+                  <div className="text-muted">Estado: {conn?.status === "CUT" ? "Suspend" : "Active"}</div>
+                  <div className="text-muted">Server: {conn?.server_name ?? conn?.server_id ?? "-"}</div>
                 </div>
                 <div className="col-md-6">
                   <div className="text-muted">IP: {conn?.ip ?? "-"}</div>

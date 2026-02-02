@@ -13,6 +13,7 @@ from ..tasks.queue import (
     JOB_MT_CREATE_PPP_SECRET,
     JOB_MT_DELETE_PPP_SECRET,
     JOB_MT_SET_PPP_PROFILE,
+    JOB_MT_SET_PPP_CREDENTIALS,
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
     enqueue_job,
 )
@@ -52,16 +53,25 @@ def _parse_mt_datetime(v: Optional[str]) -> Optional[datetime]:
 
 
 def _conn_to_dict(x: Connection) -> dict:
+    status_ui = "Suspend" if x.status == "CUT" else "Active"
+    server_name = None
+    if getattr(x, "server_id", None):
+        s = MikrotikServer.query.get(int(x.server_id))
+        server_name = s.name if s else None
     return {
         "id": x.id,
         "client_id": x.client_id,
         "server_id": getattr(x, "server_id", None),
+        "server_name": server_name,
         "service_address": x.service_address,
         "location": x.location,
         "plan_profile": x.plan_profile,
         "status": x.status,
+        "status_ui": status_ui,
         "mikrotik_profile": x.mikrotik_profile,
         "pppoe_name": x.pppoe_name(),
+        "pppoe_username": x.pppoe_name(),
+        "pppoe_password": x.pppoe_password(),
         "ip": getattr(x, "ip", None),
         "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
         "last_uptime": getattr(x, "last_uptime", None),
@@ -91,6 +101,8 @@ def create_connection():
     server_id = data.get("server_id")
     plan_profile = (data.get("plan_profile") or "").strip()
     ip = (data.get("ip") or "").strip() or None
+    pppoe_username = (data.get("pppoe_username") or "").strip() or None
+    pppoe_password = (data.get("pppoe_password") or "").strip() or None
 
     if ip:
         try:
@@ -104,6 +116,10 @@ def create_connection():
         return jsonify({"error": "plan_profile_required"}), 400
 
     client = Client.query.get_or_404(int(client_id))
+    # Si estaba retirado, al crear una nueva conexión vuelve a ACTIVE
+    if getattr(client, "status", "ACTIVE") == "RETIRED":
+        client.status = "ACTIVE"
+        client.is_active = True
     x = Connection(
         client_id=client.id,
         server_id=(int(server_id) if server_id else None),
@@ -114,9 +130,18 @@ def create_connection():
         mikrotik_profile=plan_profile,
         ip=ip,
         ip_is_fixed=bool(ip),
+        pppoe_username=pppoe_username,
+        pppoe_password_value=pppoe_password,
     )
     db.session.add(x)
     db.session.commit()  # asigna x.id (pppoe)
+
+    # Default credentials si no vinieron
+    if not x.pppoe_username:
+        x.pppoe_username = str(x.id)
+    if not x.pppoe_password_value:
+        x.pppoe_password_value = str(x.id)
+    db.session.commit()
 
     jobs = []
     if provision_mikrotik:
@@ -144,6 +169,8 @@ def update_connection(connection_id: int):
     data = request.get_json(force=True) or {}
     sync_mikrotik = bool(data.get("sync_mikrotik", True))
     x = Connection.query.get_or_404(connection_id)
+    old_name = x.pppoe_name()
+    old_server_id = int(x.server_id) if x.server_id else None
 
     if "service_address" in data:
         x.service_address = data.get("service_address") or None
@@ -167,6 +194,16 @@ def update_connection(connection_id: int):
             x.ip_is_fixed = False
         ip_changed = True
 
+    creds_changed = False
+    if "pppoe_username" in data:
+        raw = (data.get("pppoe_username") or "").strip()
+        x.pppoe_username = raw or str(x.id)
+        creds_changed = True
+    if "pppoe_password" in data:
+        raw = (data.get("pppoe_password") or "").strip()
+        x.pppoe_password_value = raw or str(x.id)
+        creds_changed = True
+
     if "plan_profile" in data:
         plan_profile = (data.get("plan_profile") or "").strip()
         if not plan_profile:
@@ -179,6 +216,32 @@ def update_connection(connection_id: int):
     db.session.commit()
 
     jobs = []
+
+    # Si cambió el server, movemos el secret: delete en el viejo + create en el nuevo
+    new_server_id = int(x.server_id) if x.server_id else None
+    server_changed = ("server_id" in data) and (new_server_id != old_server_id)
+    if sync_mikrotik and server_changed:
+        if old_server_id:
+            j = enqueue_job(
+                job_type=JOB_MT_DELETE_PPP_SECRET,
+                payload={"name": old_name},
+                server_id=old_server_id,
+            )
+            jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id), "server_id": old_server_id})
+        if new_server_id:
+            j = enqueue_job(
+                job_type=JOB_MT_CREATE_PPP_SECRET,
+                payload={
+                    "name": x.pppoe_name(),
+                    "password": x.pppoe_password(),
+                    "profile": x.plan_profile,
+                    "remote_address": (x.ip if x.ip_is_fixed else None),
+                },
+                server_id=new_server_id,
+            )
+            jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id), "server_id": new_server_id})
+        return jsonify({"connection": _conn_to_dict(x), "jobs": jobs})
+
     if sync_mikrotik and x.status == "ACTIVE" and "plan_profile" in data:
         j = enqueue_job(
             job_type=JOB_MT_SET_PPP_PROFILE,
@@ -191,6 +254,14 @@ def update_connection(connection_id: int):
         j = enqueue_job(
             job_type=JOB_MT_SET_PPP_REMOTE_ADDRESS,
             payload={"name": x.pppoe_name(), "remote_address": x.ip or ""},
+            server_id=(int(x.server_id) if x.server_id else None),
+        )
+        jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
+
+    if sync_mikrotik and creds_changed:
+        j = enqueue_job(
+            job_type=JOB_MT_SET_PPP_CREDENTIALS,
+            payload={"old_name": old_name, "name": x.pppoe_name(), "password": x.pppoe_password()},
             server_id=(int(x.server_id) if x.server_id else None),
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
@@ -322,6 +393,8 @@ def delete_connection(connection_id: int):
     provision_mikrotik = request.args.get("provision_mikrotik", "true").lower() != "false"
     x = Connection.query.get_or_404(connection_id)
 
+    client_id = int(x.client_id)
+    server_id = int(x.server_id) if x.server_id else None
     name = x.pppoe_name()
 
     db.session.delete(x)
@@ -329,7 +402,16 @@ def delete_connection(connection_id: int):
 
     jobs = []
     if provision_mikrotik:
-        j = enqueue_job(job_type=JOB_MT_DELETE_PPP_SECRET, payload={"name": name}, server_id=(int(x.server_id) if x.server_id else None))
+        j = enqueue_job(job_type=JOB_MT_DELETE_PPP_SECRET, payload={"name": name}, server_id=server_id)
         jobs.append({"job_id": int(j.id), "type": j.job_type, "name": name})
+
+    # Si el cliente quedó sin conexiones => RETIRED
+    remaining = Connection.query.filter_by(client_id=client_id).count()
+    if remaining == 0:
+        c = Client.query.get(client_id)
+        if c:
+            c.status = "RETIRED"
+            c.is_active = False
+            db.session.commit()
     return jsonify({"status": "deleted", "connection_id": connection_id, "jobs": jobs})
 
