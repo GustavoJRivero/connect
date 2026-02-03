@@ -17,37 +17,21 @@ depends_on = None
 
 
 def upgrade():
-    bind = op.get_bind()
-    dialect = bind.dialect.name
-
     with op.batch_alter_table("clients", schema=None) as batch_op:
         batch_op.add_column(sa.Column("status", sa.String(length=32), nullable=False, server_default="ACTIVE"))
         batch_op.create_index(batch_op.f("ix_clients_status"), ["status"], unique=False)
 
-    # Retira clientes sin conexiones o marcados inactivos
-    if dialect == "sqlite":
-        op.execute("UPDATE clients SET status='RETIRED', is_active=0 WHERE is_active=0")
-        op.execute(
-            """
-            UPDATE clients
-            SET status='RETIRED', is_active=0
-            WHERE id NOT IN (SELECT DISTINCT client_id FROM connections)
-            """
-        )
-    else:
-        op.execute("UPDATE clients SET status='RETIRED', is_active=0 WHERE is_active=0")
-        op.execute(
-            """
-            UPDATE clients
-            SET status='RETIRED', is_active=0
-            WHERE id NOT IN (SELECT DISTINCT client_id FROM connections)
-            """
-        )
+    op.execute("UPDATE clients SET status='RETIRED', is_active=0 WHERE is_active=0")
+    op.execute(
+        """
+        UPDATE clients
+        SET status='RETIRED', is_active=0
+        WHERE id NOT IN (SELECT DISTINCT client_id FROM connections)
+        """
+    )
 
-    # Limpia server_default (dejamos default en el modelo)
-    if dialect != "sqlite":
-        with op.batch_alter_table("clients", schema=None) as batch_op:
-            batch_op.alter_column("status", server_default=None)
+    with op.batch_alter_table("clients", schema=None) as batch_op:
+        batch_op.alter_column("status", server_default=None)
 
 
 def downgrade():

@@ -18,25 +18,25 @@ pip install -r requirements.txt
 2. Configurar variables:
 
 - Copiar `backend/.env.example` a `backend/.env`
-- Ajustar `DATABASE_URL` y claves
+- En `.env` usar MySQL, por ejemplo:  
+  `DATABASE_URL=mysql+pymysql://root:root@127.0.0.1:3306/sistemaconnect`
 
-3. Migraciones (crear tablas):
-
-En PowerShell:
+3. MySQL: crear la base `sistemaconnect` y aplicar migraciones:
 
 ```bash
+cd backend
+# Crear la base (en MySQL: CREATE DATABASE IF NOT EXISTS sistemaconnect;)
 set FLASK_APP=wsgi.py
-set DATABASE_URL=mysql+pymysql://user:pass@127.0.0.1:3306/sistemaconnect
-.\.venv\Scripts\flask db init
-.\.venv\Scripts\flask db migrate -m "init"
 .\.venv\Scripts\flask db upgrade
 ```
 
-3. Ejecutar:
+4. Ejecutar:
 
 ```bash
 python run.py
 ```
+
+La primera vez que entres al login, usá **"Bootstrap admin"** para crear el primer usuario (si la base está vacía).
 
 Healthcheck:
 

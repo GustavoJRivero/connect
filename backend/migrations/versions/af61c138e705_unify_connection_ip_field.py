@@ -18,7 +18,6 @@ depends_on = None
 
 def upgrade():
     bind = op.get_bind()
-    is_sqlite = bind.dialect.name == "sqlite"
 
     with op.batch_alter_table("connections", schema=None) as batch_op:
         batch_op.add_column(sa.Column("ip", sa.String(length=64), nullable=True))
@@ -49,10 +48,8 @@ def upgrade():
         if _has_column(bind, "connections", "last_ip"):
             batch_op.drop_column("last_ip")
 
-    # server_default solo para migración; dejamos default en el modelo
-    if not is_sqlite:
-        with op.batch_alter_table("connections", schema=None) as batch_op:
-            batch_op.alter_column("ip_is_fixed", server_default=None)
+    with op.batch_alter_table("connections", schema=None) as batch_op:
+        batch_op.alter_column("ip_is_fixed", server_default=None)
 
 
 def downgrade():

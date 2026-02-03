@@ -12,10 +12,8 @@ ENV/
 # Flask
 instance/
 
-# DB / local data
+# DB / local data (proyecto usa MySQL)
 *.db
-*.sqlite
-*.sqlite3
 
 # Migrations temp
 *_alembic_tmp_*

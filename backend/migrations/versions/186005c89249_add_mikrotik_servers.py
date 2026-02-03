@@ -17,16 +17,9 @@ depends_on = None
 
 
 def upgrade():
-    bind = op.get_bind()
-    is_sqlite = bind.dialect.name == "sqlite"
-
-    def _id():
-        # SQLite autoincrement funciona correctamente con INTEGER PRIMARY KEY
-        return sa.Integer() if is_sqlite else sa.BigInteger()
-
     op.create_table(
         "mikrotik_servers",
-        sa.Column("id", _id(), nullable=False),
+        sa.Column("id", sa.BigInteger(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("host", sa.String(length=255), nullable=False),
@@ -40,7 +33,7 @@ def upgrade():
     op.create_index(op.f("ix_mikrotik_servers_name"), "mikrotik_servers", ["name"], unique=False)
 
     with op.batch_alter_table("connections", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("server_id", _id(), nullable=True))
+        batch_op.add_column(sa.Column("server_id", sa.BigInteger(), nullable=True))
         batch_op.create_index(batch_op.f("ix_connections_server_id"), ["server_id"], unique=False)
         batch_op.create_foreign_key(
             batch_op.f("fk_connections_server_id_mikrotik_servers"),
@@ -50,7 +43,7 @@ def upgrade():
         )
 
     with op.batch_alter_table("jobs", schema=None) as batch_op:
-        batch_op.add_column(sa.Column("server_id", _id(), nullable=True))
+        batch_op.add_column(sa.Column("server_id", sa.BigInteger(), nullable=True))
         batch_op.create_index(batch_op.f("ix_jobs_server_id"), ["server_id"], unique=False)
         batch_op.create_foreign_key(
             batch_op.f("fk_jobs_server_id_mikrotik_servers"),

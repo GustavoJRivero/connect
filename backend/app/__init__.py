@@ -28,11 +28,6 @@ def create_app() -> Flask:
     # Dev-friendly: permitir al frontend consumir la API
     CORS(app, resources={r"/api/*": {"origins": "*"}})
 
-    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
-        raise RuntimeError(
-            "DATABASE_URL no está configurado. Copiá backend/.env.example a backend/.env y ajustá valores."
-        )
-
     db.init_app(app)
     migrate.init_app(app, db)
     jwt.init_app(app)

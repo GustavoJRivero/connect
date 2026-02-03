@@ -17,13 +17,6 @@ depends_on = None
 
 
 def upgrade():
-    bind = op.get_bind()
-    is_sqlite = bind.dialect.name == "sqlite"
-
-    def _id():
-        # SQLite autoincrement funciona correctamente con INTEGER PRIMARY KEY
-        return sa.Integer() if is_sqlite else sa.BigInteger()
-
     with op.batch_alter_table("connections", schema=None) as batch_op:
         batch_op.add_column(sa.Column("fixed_ip", sa.String(length=64), nullable=True))
         batch_op.add_column(sa.Column("last_ip", sa.String(length=64), nullable=True))

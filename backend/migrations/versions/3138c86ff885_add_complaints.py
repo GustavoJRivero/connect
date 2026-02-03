@@ -17,23 +17,12 @@ depends_on = None
 
 
 def upgrade():
-    bind = op.get_bind()
-    is_sqlite = bind.dialect.name == "sqlite"
-
-    def _id():
-        # SQLite autoincrement funciona correctamente con INTEGER PRIMARY KEY
-        return sa.Integer() if is_sqlite else sa.BigInteger()
-
-    with op.batch_alter_table("complaints", schema=None) as batch_op:
-        # no-op: ensures batch context works if table exists (shouldn't)
-        pass
-
     op.create_table(
         "complaints",
-        sa.Column("id", _id(), nullable=False),
+        sa.Column("id", sa.BigInteger(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("client_id", _id(), nullable=False),
-        sa.Column("connection_id", _id(), nullable=False),
+        sa.Column("client_id", sa.BigInteger(), nullable=False),
+        sa.Column("connection_id", sa.BigInteger(), nullable=False),
         sa.Column("kind", sa.String(length=16), nullable=False),
         sa.Column("detail", sa.String(length=2000), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),

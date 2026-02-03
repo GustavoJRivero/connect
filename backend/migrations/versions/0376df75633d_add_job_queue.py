@@ -17,16 +17,9 @@ depends_on = None
 
 
 def upgrade():
-    bind = op.get_bind()
-    is_sqlite = bind.dialect.name == "sqlite"
-
-    def _id():
-        # SQLite autoincrement funciona correctamente con INTEGER PRIMARY KEY
-        return sa.Integer() if is_sqlite else sa.BigInteger()
-
     op.create_table(
         "jobs",
-        sa.Column("id", _id(), nullable=False),
+        sa.Column("id", sa.BigInteger(), nullable=False),
         sa.Column("created_at", sa.DateTime(), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("job_type", sa.String(length=64), nullable=False),

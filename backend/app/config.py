@@ -7,10 +7,19 @@ def get_config() -> dict:
 
     Importante: esto se llama DESPUÉS de `load_dotenv()` para que tome `.env`.
     """
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise ValueError(
+            "DATABASE_URL es obligatorio. Ejemplo: mysql+pymysql://root:root@127.0.0.1:3306/sistemaconnect"
+        )
+    if not database_url.startswith("mysql"):
+        raise ValueError(
+            "Este proyecto usa solo MySQL. Configurá DATABASE_URL con mysql+pymysql://..."
+        )
     return {
         "SECRET_KEY": os.getenv("SECRET_KEY", "change-me"),
         "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY", "change-me-too"),
-        "SQLALCHEMY_DATABASE_URI": os.getenv("DATABASE_URL"),
+        "SQLALCHEMY_DATABASE_URI": database_url,
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         # AFIP
         "AFIP_ENV": os.getenv("AFIP_ENV", "HOMOLOGACION"),

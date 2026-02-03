@@ -17,29 +17,17 @@ depends_on = None
 
 
 def upgrade():
-    bind = op.get_bind()
-    dialect = bind.dialect.name
-
     with op.batch_alter_table("connections", schema=None) as batch_op:
         batch_op.add_column(sa.Column("pppoe_username", sa.String(length=128), nullable=True))
         batch_op.add_column(sa.Column("pppoe_password", sa.String(length=128), nullable=True))
         batch_op.create_index(batch_op.f("ix_connections_pppoe_username"), ["pppoe_username"], unique=False)
 
-    # Backfill: default user/pass = connection.id
-    if dialect == "sqlite":
-        op.execute(
-            "UPDATE connections SET pppoe_username = CAST(id AS TEXT) WHERE pppoe_username IS NULL OR TRIM(pppoe_username) = ''"
-        )
-        op.execute(
-            "UPDATE connections SET pppoe_password = CAST(id AS TEXT) WHERE pppoe_password IS NULL OR TRIM(pppoe_password) = ''"
-        )
-    else:
-        op.execute(
-            "UPDATE connections SET pppoe_username = CAST(id AS CHAR) WHERE pppoe_username IS NULL OR pppoe_username = ''"
-        )
-        op.execute(
-            "UPDATE connections SET pppoe_password = CAST(id AS CHAR) WHERE pppoe_password IS NULL OR pppoe_password = ''"
-        )
+    op.execute(
+        "UPDATE connections SET pppoe_username = CAST(id AS CHAR) WHERE pppoe_username IS NULL OR pppoe_username = ''"
+    )
+    op.execute(
+        "UPDATE connections SET pppoe_password = CAST(id AS CHAR) WHERE pppoe_password IS NULL OR pppoe_password = ''"
+    )
 
 
 def downgrade():
