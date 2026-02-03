@@ -19,6 +19,15 @@ export default function App() {
       });
   }, []);
 
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setToken(null);
+      setAuthed(false);
+    };
+    window.addEventListener("sc:unauthorized", onUnauthorized as any);
+    return () => window.removeEventListener("sc:unauthorized", onUnauthorized as any);
+  }, []);
+
   if (!authed) {
     return <Login onLoggedIn={() => setAuthed(true)} />;
   }

@@ -53,6 +53,15 @@ async function request(path: string, init: RequestInit = {}) {
     const body = text ? safeJson(text) : null;
 
     if (!res.ok) {
+      // Sesión expirada / token inválido: limpiar y notificar al resto de la app
+      if (res.status === 401) {
+        setToken(null);
+        try {
+          window.dispatchEvent(new CustomEvent("sc:unauthorized", { detail: { path } }));
+        } catch {
+          // ignore
+        }
+      }
       const err: ApiError = { status: res.status, body };
       throw err;
     }
@@ -71,6 +80,11 @@ function safeJson(text: string) {
 }
 
 export const api = {
+  // dashboard
+  getDashboardSummary() {
+    return request("/api/dashboard/summary");
+  },
+
   // auth
   bootstrap(username: string, password: string) {
     return request("/api/auth/bootstrap", {

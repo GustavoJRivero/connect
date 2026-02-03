@@ -9,6 +9,7 @@ from .routes.billing import bp as billing_bp
 from .routes.clients import bp as clients_bp
 from .routes.connections import bp as connections_bp
 from .routes.complaints import bp as complaints_bp
+from .routes.dashboard import bp as dashboard_bp
 from .routes.health import bp as health_bp
 from .routes.invoices import bp as invoices_bp
 from .routes.jobs import bp as jobs_bp
@@ -41,6 +42,7 @@ def create_app() -> Flask:
     app.register_blueprint(clients_bp)
     app.register_blueprint(connections_bp)
     app.register_blueprint(complaints_bp)
+    app.register_blueprint(dashboard_bp)
     app.register_blueprint(invoices_bp)
     app.register_blueprint(jobs_bp)
     app.register_blueprint(network_bp)

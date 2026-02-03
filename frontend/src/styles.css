@@ -56,4 +56,28 @@ body {
   white-space: pre-wrap;
 }
 
+/* Dashboard: alinear íconos (AdminLTE + FontAwesome) */
+.small-box .icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.small-box .icon > i,
+.info-box .info-box-icon > i {
+  line-height: 1;
+}
+
+/* Reutilizar estilo "small-box-footer" como CTA en cards */
+.card .small-box-footer {
+  display: block;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Centrar CTA del footer cuando corresponde */
+.card .small-box-footer.sc-card-footer-center {
+  text-align: center;
+}
+
 
