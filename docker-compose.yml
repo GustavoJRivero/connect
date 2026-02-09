@@ -1,0 +1,59 @@
+services:
+
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: sistemaconnect
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5001:5001"
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-production}
+      FLASK_DEBUG: "0"
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_ROOT_PASSWORD:-root}@db:3306/sistemaconnect
+      # AFIP (opcional)
+      AFIP_ENV: ${AFIP_ENV:-HOMOLOGACION}
+      AFIP_CUIT: ${AFIP_CUIT:-}
+      AFIP_CERT_PATH: ${AFIP_CERT_PATH:-}
+      AFIP_KEY_PATH: ${AFIP_KEY_PATH:-}
+      # Mikrotik (opcional)
+      MIKROTIK_HOST: ${MIKROTIK_HOST:-}
+      MIKROTIK_PORT: ${MIKROTIK_PORT:-8728}
+      MIKROTIK_USER: ${MIKROTIK_USER:-}
+      MIKROTIK_PASS: ${MIKROTIK_PASS:-}
+    volumes:
+      - ./backend/secrets:/app/secrets:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # En producción cambiar por la URL real del backend
+        REACT_APP_API_BASE_URL: ${REACT_APP_API_BASE_URL:-http://localhost:5001}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  mysql_data:
