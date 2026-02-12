@@ -1,12 +1,12 @@
 from datetime import date
-from decimal import Decimal
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 
 from ..extensions import db
+from ..billing.engine import run_billing, get_billing_mode, get_global_billing_day
 from ..mikrotik.ros_client import MikrotikRosClient
-from ..models.client import Client
+from ..models.billing_run import BillingRun
 from ..models.connection import Connection
 from ..models.invoice import Invoice
 from ..models.setting import Setting
@@ -17,25 +17,6 @@ bp = Blueprint("billing", __name__, url_prefix="/api/billing")
 def _get_setting(key: str, default=None):
     s = Setting.query.get(key)
     return s.value if s else default
-
-
-def _issuer():
-    return {
-        "cuit": _get_setting("issuer.cuit", "30716906333"),
-        "point_of_sale": int(_get_setting("issuer.point_of_sale", "2")),
-    }
-
-
-def _plan_price(profile: str) -> Decimal:
-    v = _get_setting(f"plan.price.{profile}", None)
-    if v is None:
-        raise KeyError(f"missing plan.price.{profile}")
-    return Decimal(str(v))
-
-
-def _default_invoice_type(client: Client) -> str:
-    # regla simple: empresa -> A, persona -> B
-    return "A" if client.kind == "COMPANY" else "B"
 
 
 def _get_mt_from_app():
@@ -55,50 +36,103 @@ def _get_mt_from_app():
 @jwt_required(optional=True)
 def generate_monthly_invoices():
     """
-    Genera facturas DRAFT (o ISSUED) para conexiones ACTIVE del mes indicado.
+    Genera facturas usando el motor centralizado.
 
     Body opcional:
     {
-      "issue": true,           // si true las deja ISSUED
-      "issue_date": "2026-01-31"
+      "issue": true,
+      "issue_date": "2026-01-31",
+      "billing_day": 15,
+      "force_all": false
     }
     """
     data = request.get_json(silent=True) or {}
     issue = bool(data.get("issue", False))
     issue_date = date.fromisoformat(data["issue_date"]) if data.get("issue_date") else date.today()
+    force_all = bool(data.get("force_all", False))
+    target_billing_day = data.get("billing_day")
 
-    issuer = _issuer()
+    result = run_billing(
+        billing_date=issue_date,
+        issue=issue,
+        force_all=force_all,
+        target_billing_day=int(target_billing_day) if target_billing_day is not None else None,
+        trigger="MANUAL",
+    )
 
-    created = 0
-    errors = []
+    return jsonify({
+        "run_id": result["run_id"],
+        "created": result["created"],
+        "skipped": result["skipped"],
+        "processed": result["processed"],
+        "errors": result["errors"],
+        "duration_ms": result["duration_ms"],
+        "status": result["status"],
+    })
 
-    conns = Connection.query.filter_by(status="ACTIVE").all()
-    for x in conns:
-        client = Client.query.get(x.client_id)
-        if not client or not client.is_active:
-            continue
 
-        try:
-            total = _plan_price(x.plan_profile)
-        except Exception as e:
-            errors.append({"connection_id": x.id, "error": str(e)})
-            continue
+@bp.get("/status")
+@jwt_required(optional=True)
+def billing_status():
+    """
+    Estado del sistema de facturación:
+    - Últimas ejecuciones
+    - Próximas facturaciones
+    - Estado del scheduler
+    """
+    # Últimas 20 ejecuciones
+    runs = (
+        BillingRun.query
+        .order_by(BillingRun.id.desc())
+        .limit(20)
+        .all()
+    )
 
-        inv = Invoice(
-            client_id=client.id,
-            connection_id=x.id,
-            invoice_type=_default_invoice_type(client),
-            issuer_cuit=str(issuer["cuit"]),
-            point_of_sale=int(issuer["point_of_sale"]),
-            issue_date=issue_date,
-            total=total,
-            status="ISSUED" if issue else "DRAFT",
-        )
-        db.session.add(inv)
-        created += 1
+    runs_out = []
+    for r in runs:
+        runs_out.append({
+            "id": r.id,
+            "billing_date": r.billing_date.isoformat(),
+            "trigger": r.trigger,
+            "status": r.status,
+            "connections_processed": r.connections_processed,
+            "invoices_created": r.invoices_created,
+            "invoices_skipped": r.invoices_skipped,
+            "errors_count": r.errors_count,
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+            "finished_at": r.finished_at.isoformat() if r.finished_at else None,
+            "duration_ms": r.duration_ms,
+        })
 
-    db.session.commit()
-    return jsonify({"created": created, "errors": errors})
+    # Conteo de conexiones por billing_day (próximas facturaciones)
+    from sqlalchemy import func
+    bd_counts = (
+        db.session.query(Connection.billing_day, func.count(Connection.id))
+        .filter(Connection.status == "ACTIVE")
+        .group_by(Connection.billing_day)
+        .order_by(Connection.billing_day.asc())
+        .all()
+    )
+
+    schedule = [{"billing_day": bd, "active_connections": cnt} for bd, cnt in bd_counts]
+
+    # Total conexiones activas
+    total_active = Connection.query.filter_by(status="ACTIVE").count()
+
+    # Modo de facturación
+    mode = get_billing_mode()
+
+    config = {
+        "mode": mode,
+        "global_day": get_global_billing_day() if mode == "GLOBAL" else None,
+    }
+
+    return jsonify({
+        "config": config,
+        "recent_runs": runs_out,
+        "schedule": schedule,
+        "total_active_connections": total_active,
+    })
 
 
 @bp.post("/enforce")
@@ -106,8 +140,8 @@ def generate_monthly_invoices():
 def enforce_service_status():
     """
     Aplica reglas de corte/reconexión:
-    - Si una conexión ACTIVE tiene alguna factura ISSUED vencida (due_date < today) y no pagada -> cortar (profile CORTADO)
-    - Si una conexión CUT no tiene facturas vencidas impagas -> restaurar al plan
+    - Si una conexión ACTIVE tiene alguna factura ISSUED vencida y no pagada -> cortar
+    - Si una conexión CUT no tiene facturas vencidas impagas -> restaurar
     """
     today = date.today()
     cut_profile = (request.get_json(silent=True) or {}).get("cut_profile") or _get_setting("mikrotik.cut_profile", "CORTADO")
@@ -151,4 +185,3 @@ def enforce_service_status():
         mt.close()
 
     return jsonify({"cut": cut, "restored": restored})
-

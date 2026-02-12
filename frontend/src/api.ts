@@ -211,12 +211,67 @@ export const api = {
     return request("/api/settings/kv", { method: "PUT", body: JSON.stringify({ values }) });
   },
 
+  // plans
+  listPlans(activeOnly?: boolean) {
+    const qs = activeOnly ? "?active_only=true" : "";
+    return request(`/api/plans${qs}`);
+  },
+  createPlan(payload: any) {
+    return request("/api/plans", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updatePlan(id: number, payload: any) {
+    return request(`/api/plans/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deletePlan(id: number) {
+    return request(`/api/plans/${id}`, { method: "DELETE" });
+  },
+
   // billing
   generateBilling(payload: any) {
     return request("/api/billing/generate", { method: "POST", body: JSON.stringify(payload) });
   },
   enforceBilling(payload: any) {
     return request("/api/billing/enforce", { method: "POST", body: JSON.stringify(payload) });
+  },
+  getBillingStatus() {
+    return request("/api/billing/status");
+  },
+
+  // logs
+  getLogs(opts?: {
+    module?: string;
+    action?: string;
+    level?: string;
+    ref_type?: string;
+    ref_id?: number;
+    q?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (opts?.module) params.set("module", opts.module);
+    if (opts?.action) params.set("action", opts.action);
+    if (opts?.level) params.set("level", opts.level);
+    if (opts?.ref_type) params.set("ref_type", opts.ref_type);
+    if (opts?.ref_id) params.set("ref_id", String(opts.ref_id));
+    if (opts?.q) params.set("q", opts.q);
+    if (opts?.from) params.set("from", opts.from);
+    if (opts?.to) params.set("to", opts.to);
+    if (opts?.limit) params.set("limit", String(opts.limit));
+    if (opts?.offset) params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return request(`/api/logs${qs ? `?${qs}` : ""}`);
+  },
+  getLogModules() {
+    return request("/api/logs/modules");
+  },
+  getLoggingConfig() {
+    return request("/api/logs/config");
+  },
+  updateLoggingConfig(payload: any) {
+    return request("/api/logs/config", { method: "PUT", body: JSON.stringify(payload) });
   },
 
   // complaints

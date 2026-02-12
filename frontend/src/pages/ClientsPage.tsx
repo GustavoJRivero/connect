@@ -46,9 +46,12 @@ export default function ClientsPage() {
   const [location, setLocation] = useState("");
   const [serverId, setServerId] = useState<string>("");
   const [ip, setIp] = useState<string>("");
+  const [billingDay, setBillingDay] = useState<number>(1);
+  const [prorateFirstMonth, setProrateFirstMonth] = useState<boolean>(true);
   const [servers, setServers] = useState<any[]>([]);
 
-  const [planOptions, setPlanOptions] = useState<string[]>(["25M", "50M", "100M", "300M"]);
+  const [planOptions, setPlanOptions] = useState<any[]>([]);
+  const [billingMode, setBillingMode] = useState<"GLOBAL" | "INDIVIDUAL">("GLOBAL");
 
   const desiredMode = useMemo<"list" | "create" | "detail">(() => {
     if (params.clientId) return "detail";
@@ -95,19 +98,26 @@ export default function ClientsPage() {
 
   useEffect(() => {
     api
-      .getSettings("plan.price.")
-      .then((kv: any) => {
-        const keys = Object.keys(kv || {})
-          .filter((k) => k.startsWith("plan.price."))
-          .map((k) => k.replace("plan.price.", ""));
-        const unique = Array.from(new Set(keys)).sort();
-        if (unique.length) setPlanOptions(unique);
+      .listPlans(true)
+      .then((res: any) => {
+        if (Array.isArray(res) && res.length) {
+          setPlanOptions(res);
+          setPlanProfile(res[0].profile);
+        }
       })
       .catch(() => {});
 
     api
       .listServers()
       .then((xs: any) => setServers(xs || []))
+      .catch(() => {});
+
+    api
+      .getSettings("billing.")
+      .then((kv: any) => {
+        const m = String(kv?.["billing.mode"] ?? "GLOBAL").toUpperCase();
+        setBillingMode(m === "INDIVIDUAL" ? "INDIVIDUAL" : "GLOBAL");
+      })
       .catch(() => {});
   }, []);
 
@@ -140,6 +150,8 @@ export default function ClientsPage() {
             plan_profile: planProfile,
             service_address: serviceAddress || null,
             location: location || null,
+            billing_day: billingDay,
+            prorate_first_month: prorateFirstMonth,
           },
         ],
         provision_mikrotik: true,
@@ -162,6 +174,8 @@ export default function ClientsPage() {
       setLocation("");
       setServerId("");
       setIp("");
+      setBillingDay(1);
+      setProrateFirstMonth(true);
       setSuccess(`Cliente #${newId} creado correctamente.`);
       setClientId(newId);
       navigate(`/clients/${newId}`);
@@ -259,6 +273,7 @@ export default function ClientsPage() {
           onEdit={() => setEditingClientId(clientId)}
           servers={servers}
           planOptions={planOptions}
+          billingMode={billingMode}
         />
       ) : null}
 
@@ -333,16 +348,82 @@ export default function ClientsPage() {
                 <div className="mb-3">
                   <label className="form-label">Plan</label>
                   <select className="form-select" value={planProfile} onChange={(e) => setPlanProfile(e.target.value)}>
-                    {planOptions.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
+                    {planOptions.map((p: any) => (
+                      <option key={p.id ?? p.profile} value={p.profile ?? p}>
+                        {p.name ? `${p.name} (${p.profile}) — $${p.price_with_iva}` : p}
                       </option>
                     ))}
                   </select>
+                  {!planOptions.length ? (
+                    <div className="form-text text-danger">
+                      No hay planes cargados. Crealos en <b>Configuración</b>.
+                    </div>
+                  ) : null}
                 </div>
                 <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} />
                 <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} />
                 <Field label="IP (opcional)" value={ip} onChange={setIp} placeholder="ej: 192.168.1.50" />
+
+                <hr className="my-3" />
+                <h6 className="text-muted mb-2">Facturación</h6>
+                {billingMode === "INDIVIDUAL" ? (
+                  <div className="row">
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">Día de facturación</label>
+                        <select
+                          className="form-select"
+                          value={String(billingDay)}
+                          onChange={(e) => setBillingDay(Number(e.target.value))}
+                        >
+                          {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                            <option key={d} value={String(d)}>
+                              {d}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="form-text">Día del mes en que se genera la factura (1-28).</div>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="mb-3">
+                        <label className="form-label">&nbsp;</label>
+                        <div className="form-check mt-2">
+                          <input
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={prorateFirstMonth}
+                            onChange={(e) => setProrateFirstMonth(e.target.checked)}
+                            id="prorateFirstMonth"
+                          />
+                          <label className="form-check-label" htmlFor="prorateFirstMonth">
+                            Prorratear primer mes
+                          </label>
+                        </div>
+                        <div className="form-text">
+                          Si está activo, el primer mes se cobra proporcionalmente desde el alta hasta el próximo ciclo.
+                          Si no, se cobra el mes completo.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="alert alert-info mb-0" style={{ fontSize: "0.9em" }}>
+                    El día de facturación está configurado de forma <b>global</b> en Configuración.
+                    <div className="form-check mt-2">
+                      <input
+                        className="form-check-input"
+                        type="checkbox"
+                        checked={prorateFirstMonth}
+                        onChange={(e) => setProrateFirstMonth(e.target.checked)}
+                        id="prorateFirstMonth"
+                      />
+                      <label className="form-check-label" htmlFor="prorateFirstMonth">
+                        Prorratear primer mes
+                      </label>
+                    </div>
+                  </div>
+                )}
               </Card>
             </div>
           </div>
@@ -559,7 +640,8 @@ function ClientDetail(props: {
   onBack: () => void;
   onEdit: () => void;
   servers: any[];
-  planOptions: string[];
+  planOptions: any[];
+  billingMode?: "GLOBAL" | "INDIVIDUAL";
 }) {
   const [client, setClient] = useState<any>(null);
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -691,6 +773,7 @@ function ClientDetail(props: {
         clientId={props.clientId}
         servers={props.servers || []}
         planOptions={props.planOptions || []}
+        billingMode={props.billingMode}
         onClose={() => setShowNewConnection(false)}
         onSaved={async () => {
           setShowNewConnection(false);
@@ -703,6 +786,7 @@ function ClientDetail(props: {
         connection={editingConn}
         servers={props.servers || []}
         planOptions={props.planOptions || []}
+        billingMode={props.billingMode}
         onClose={() => setEditingConn(null)}
         onSaved={async () => {
           setEditingConn(null);
@@ -903,6 +987,7 @@ function ClientDetail(props: {
                     <tr>
                       <th>ID</th>
                       <th>Conexión</th>
+                      <th>Período</th>
                       <th>Fecha</th>
                       <th>Vence</th>
                       <th>Estado</th>
@@ -916,6 +1001,11 @@ function ClientDetail(props: {
                       <tr key={x.id}>
                         <td>#{x.id}</td>
                         <td>{x.connection_id ?? "-"}</td>
+                        <td>
+                          {x.period_start && x.period_end
+                            ? `${x.period_start} — ${x.period_end}`
+                            : "-"}
+                        </td>
                         <td>{x.issue_date ?? "-"}</td>
                         <td>{x.due_date ?? "-"}</td>
                         <td>{statusBadge(x.payment_status ?? x.status)}</td>

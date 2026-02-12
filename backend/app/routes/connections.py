@@ -9,6 +9,7 @@ from ..extensions import db
 from ..models.client import Client
 from ..models.connection import Connection
 from ..models.mikrotik_server import MikrotikServer
+from ..models.plan import Plan
 from ..tasks.queue import (
     JOB_MT_CREATE_PPP_SECRET,
     JOB_MT_DELETE_PPP_SECRET,
@@ -65,7 +66,9 @@ def _conn_to_dict(x: Connection) -> dict:
         "server_name": server_name,
         "service_address": x.service_address,
         "location": x.location,
+        "plan_id": getattr(x, "plan_id", None),
         "plan_profile": x.plan_profile,
+        "plan_name": x.plan.name if getattr(x, "plan", None) else x.plan_profile,
         "status": x.status,
         "status_ui": status_ui,
         "mikrotik_profile": x.mikrotik_profile,
@@ -78,6 +81,8 @@ def _conn_to_dict(x: Connection) -> dict:
         "last_connected_at": _iso(getattr(x, "last_connected_at", None)),
         "last_disconnected_at": _iso(getattr(x, "last_disconnected_at", None)),
         "last_seen_at": _iso(getattr(x, "last_seen_at", None)),
+        "billing_day": getattr(x, "billing_day", 1),
+        "prorate_first_month": bool(getattr(x, "prorate_first_month", True)),
     }
 
 
@@ -120,11 +125,25 @@ def create_connection():
     if getattr(client, "status", "ACTIVE") == "RETIRED":
         client.status = "ACTIVE"
         client.is_active = True
+    billing_day = data.get("billing_day")
+    if billing_day is not None:
+        billing_day = max(1, min(28, int(billing_day)))
+    else:
+        billing_day = 1
+    prorate_first_month = data.get("prorate_first_month", True)
+
+    # Resolver plan_id desde plan_profile o plan_id directo
+    plan_id = data.get("plan_id")
+    if not plan_id:
+        plan_obj = Plan.query.filter_by(profile=plan_profile).first()
+        plan_id = plan_obj.id if plan_obj else None
+
     x = Connection(
         client_id=client.id,
         server_id=(int(server_id) if server_id else None),
         service_address=(data.get("service_address") or None),
         location=(data.get("location") or None),
+        plan_id=plan_id,
         plan_profile=plan_profile,
         status="ACTIVE",
         mikrotik_profile=plan_profile,
@@ -132,6 +151,8 @@ def create_connection():
         ip_is_fixed=bool(ip),
         pppoe_username=pppoe_username,
         pppoe_password_value=pppoe_password,
+        billing_day=billing_day,
+        prorate_first_month=bool(prorate_first_month),
     )
     db.session.add(x)
     db.session.commit()  # asigna x.id (pppoe)
@@ -178,6 +199,10 @@ def update_connection(connection_id: int):
         x.location = data.get("location") or None
     if "server_id" in data:
         x.server_id = int(data.get("server_id")) if data.get("server_id") else None
+    if "billing_day" in data:
+        x.billing_day = max(1, min(28, int(data.get("billing_day") or 1)))
+    if "prorate_first_month" in data:
+        x.prorate_first_month = bool(data.get("prorate_first_month"))
 
     ip_changed = False
     if "ip" in data:
@@ -204,14 +229,21 @@ def update_connection(connection_id: int):
         x.pppoe_password_value = raw or str(x.id)
         creds_changed = True
 
-    if "plan_profile" in data:
-        plan_profile = (data.get("plan_profile") or "").strip()
-        if not plan_profile:
-            return jsonify({"error": "plan_profile_required"}), 400
-        x.plan_profile = plan_profile
-        # Si estaba ACTIVE, el profile en MT debería quedar igual al plan
+    if "plan_id" in data or "plan_profile" in data:
+        if "plan_id" in data and data["plan_id"]:
+            plan_obj = Plan.query.get(int(data["plan_id"]))
+            if plan_obj:
+                x.plan_id = plan_obj.id
+                x.plan_profile = plan_obj.profile
+        elif "plan_profile" in data:
+            plan_profile = (data.get("plan_profile") or "").strip()
+            if not plan_profile:
+                return jsonify({"error": "plan_profile_required"}), 400
+            x.plan_profile = plan_profile
+            plan_obj = Plan.query.filter_by(profile=plan_profile).first()
+            x.plan_id = plan_obj.id if plan_obj else None
         if x.status == "ACTIVE":
-            x.mikrotik_profile = plan_profile
+            x.mikrotik_profile = x.plan_profile
 
     db.session.commit()
 

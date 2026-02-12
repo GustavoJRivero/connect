@@ -20,8 +20,11 @@ class Connection(db.Model):
     # Ubicación (texto libre: barrio, referencia, GPS, etc.)
     location = db.Column(db.String(255), nullable=True)
 
-    # Plan contratado: se mapea 1:1 con el profile de Mikrotik
-    plan_profile = db.Column(db.String(64), nullable=False)  # ej: 25M / 50M / 100M / 300M
+    # Plan contratado
+    plan_id = db.Column(db.Integer, db.ForeignKey("plans.id"), nullable=True, index=True)
+    plan_profile = db.Column(db.String(64), nullable=False)  # profile Mikrotik (ej: 50M)
+
+    plan = db.relationship("Plan", foreign_keys=[plan_id], lazy="joined")
 
     # Estado lógico
     status = db.Column(db.String(32), nullable=False, default="ACTIVE")  # ACTIVE / CUT / DISABLED
@@ -36,6 +39,10 @@ class Connection(db.Model):
     last_connected_at = db.Column(db.DateTime, nullable=True)
     last_disconnected_at = db.Column(db.DateTime, nullable=True)
     last_seen_at = db.Column(db.DateTime, nullable=True)
+
+    # Facturación
+    billing_day = db.Column(db.Integer, nullable=False, default=1)  # día del mes (1-28)
+    prorate_first_month = db.Column(db.Boolean, nullable=False, default=True)  # prorratear primer mes
 
     # PPPoE credentials (por defecto = id, pero editable)
     pppoe_username = db.Column(db.String(128), nullable=True, index=True)

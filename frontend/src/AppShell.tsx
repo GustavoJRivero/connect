@@ -9,6 +9,7 @@ import BillingPage from "./pages/BillingPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
+import LogsPage from "./pages/LogsPage";
 import NetworkPage from "./pages/NetworkPage";
 
 export default function AppShell(props: { onLogout: () => void }) {
@@ -53,6 +54,7 @@ export default function AppShell(props: { onLogout: () => void }) {
       { to: "/invoices", id: "invoices", label: "Facturas", icon: "fa-file-invoice" },
       { to: "/payments", id: "payments", label: "Pagos", icon: "fa-receipt" },
       { to: "/network", id: "network", label: "Red", icon: "fa-network-wired" },
+      { to: "/logs", id: "logs", label: "Logs", icon: "fa-clipboard-list" },
       { to: "/settings", id: "settings", label: "Configuración", icon: "fa-gear" },
     ],
     []
@@ -185,6 +187,7 @@ export default function AppShell(props: { onLogout: () => void }) {
               <Route path="/payments" element={<PaymentsPage />} />
               <Route path="/network" element={<NetworkPage />} />
               <Route path="/network/:serverId" element={<NetworkPage />} />
+              <Route path="/logs" element={<LogsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>
