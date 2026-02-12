@@ -6,7 +6,8 @@ export function ConnectionEditModal(props: {
   open: boolean;
   connection: any | null;
   servers: any[];
-  planOptions: string[];
+  planOptions: any[];
+  billingMode?: "GLOBAL" | "INDIVIDUAL";
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -21,6 +22,8 @@ export function ConnectionEditModal(props: {
   const [ip, setIp] = useState<string>("");
   const [pppoeUsername, setPppoeUsername] = useState<string>("");
   const [pppoePassword, setPppoePassword] = useState<string>("");
+  const [billingDay, setBillingDay] = useState<number>(1);
+  const [prorateFirstMonth, setProrateFirstMonth] = useState<boolean>(true);
 
   useEffect(() => {
     if (!props.open) return;
@@ -32,6 +35,8 @@ export function ConnectionEditModal(props: {
     setIp(String(conn?.ip ?? ""));
     setPppoeUsername(String(conn?.pppoe_username ?? conn?.pppoe_name ?? ""));
     setPppoePassword(String(conn?.pppoe_password ?? ""));
+    setBillingDay(Number(conn?.billing_day ?? 1));
+    setProrateFirstMonth(conn?.prorate_first_month !== false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open, conn?.id]);
 
@@ -66,6 +71,8 @@ export function ConnectionEditModal(props: {
         ip: ip || null,
         pppoe_username: pppoeUsername.trim() || null,
         pppoe_password: pppoePassword || null,
+        billing_day: billingDay,
+        prorate_first_month: prorateFirstMonth,
         sync_mikrotik: true,
       });
       props.onSaved();
@@ -115,9 +122,9 @@ export function ConnectionEditModal(props: {
                   <div className="mb-3">
                     <label className="form-label">Plan</label>
                     <select className="form-select form-select-sm" value={planProfile} onChange={(e) => setPlanProfile(e.target.value)}>
-                      {(props.planOptions?.length ? props.planOptions : ["25M", "50M", "100M", "300M"]).map((p) => (
-                        <option key={p} value={p}>
-                          {p}
+                      {(props.planOptions ?? []).map((p: any) => (
+                        <option key={p.id ?? p.profile ?? p} value={p.profile ?? p}>
+                          {p.name ? `${p.name} (${p.profile}) — $${p.price_with_iva}` : p}
                         </option>
                       ))}
                     </select>
@@ -136,6 +143,55 @@ export function ConnectionEditModal(props: {
                   <Field label="Contraseña PPPoE" value={pppoePassword} onChange={setPppoePassword} type="password" />
                 </div>
               </div>
+
+              <hr className="my-3" />
+              <h6 className="text-muted mb-2">Facturación</h6>
+              {(props.billingMode ?? "GLOBAL") === "INDIVIDUAL" ? (
+                <div className="row">
+                  <div className="col-md-6">
+                    <div className="mb-3">
+                      <label className="form-label">Día de facturación</label>
+                      <select
+                        className="form-select form-select-sm"
+                        value={String(billingDay)}
+                        onChange={(e) => setBillingDay(Number(e.target.value))}
+                      >
+                        {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                          <option key={d} value={String(d)}>{d}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="col-md-6">
+                    <div className="mb-3 mt-md-4">
+                      <div className="form-check">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          checked={prorateFirstMonth}
+                          onChange={(e) => setProrateFirstMonth(e.target.checked)}
+                          id="cemProrate"
+                        />
+                        <label className="form-check-label" htmlFor="cemProrate">Prorratear primer mes</label>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="alert alert-info mb-0" style={{ fontSize: "0.9em" }}>
+                  Día de facturación configurado de forma <b>global</b> en Configuración.
+                  <div className="form-check mt-2">
+                    <input
+                      className="form-check-input"
+                      type="checkbox"
+                      checked={prorateFirstMonth}
+                      onChange={(e) => setProrateFirstMonth(e.target.checked)}
+                      id="cemProrate"
+                    />
+                    <label className="form-check-label" htmlFor="cemProrate">Prorratear primer mes</label>
+                  </div>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <Button variant="default" onClick={props.onClose}>

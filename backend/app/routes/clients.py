@@ -10,6 +10,7 @@ from ..models.client import Client
 from ..models.connection import Connection
 from ..models.mikrotik_server import MikrotikServer
 from ..models.invoice import Invoice
+from ..models.plan import Plan
 from ..tasks.queue import JOB_MT_CREATE_PPP_SECRET, JOB_MT_DELETE_PPP_SECRET, JOB_MT_SET_PPP_PROFILE, enqueue_job
 
 bp = Blueprint("clients", __name__, url_prefix="/api/clients")
@@ -54,7 +55,9 @@ def _client_to_dict(c: Client) -> dict:
                 "server_name": (server_map.get(sid) if sid else None),
                 "service_address": x.service_address,
                 "location": x.location,
+                "plan_id": getattr(x, "plan_id", None),
                 "plan_profile": x.plan_profile,
+                "plan_name": x.plan.name if getattr(x, "plan", None) else x.plan_profile,
                 "status": x.status,
                 "status_ui": ("Suspend" if x.status == "CUT" else "Active"),
                 "mikrotik_profile": x.mikrotik_profile,
@@ -67,6 +70,8 @@ def _client_to_dict(c: Client) -> dict:
                 "last_connected_at": x.last_connected_at.isoformat() if getattr(x, "last_connected_at", None) else None,
                 "last_disconnected_at": x.last_disconnected_at.isoformat() if getattr(x, "last_disconnected_at", None) else None,
                 "last_seen_at": x.last_seen_at.isoformat() if getattr(x, "last_seen_at", None) else None,
+                "billing_day": getattr(x, "billing_day", 1),
+                "prorate_first_month": bool(getattr(x, "prorate_first_month", True)),
             }
         )
 
@@ -355,6 +360,19 @@ def create_client():
         pppoe_username = (conn.get("pppoe_username") or "").strip() or None
         pppoe_password = (conn.get("pppoe_password") or "").strip() or None
 
+        billing_day = conn.get("billing_day")
+        if billing_day is not None:
+            billing_day = max(1, min(28, int(billing_day)))
+        else:
+            billing_day = 1
+        prorate_first_month = conn.get("prorate_first_month", True)
+
+        # Resolver plan_id
+        conn_plan_id = conn.get("plan_id")
+        if not conn_plan_id:
+            plan_obj = Plan.query.filter_by(profile=plan_profile).first()
+            conn_plan_id = plan_obj.id if plan_obj else None
+
         c.connections.append(
             Connection(
                 service_address=(conn.get("service_address") or None),
@@ -364,9 +382,12 @@ def create_client():
                 ip_is_fixed=bool(ip),
                 pppoe_username=pppoe_username,
                 pppoe_password_value=pppoe_password,
+                plan_id=conn_plan_id,
                 plan_profile=plan_profile,
                 status="ACTIVE",
                 mikrotik_profile=plan_profile,
+                billing_day=billing_day,
+                prorate_first_month=bool(prorate_first_month),
             )
         )
 

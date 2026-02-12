@@ -39,6 +39,10 @@ class Invoice(db.Model):
     deleted_at = db.Column(db.DateTime, nullable=True)
     deleted_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
 
+    # Período de facturación
+    period_start = db.Column(db.Date, nullable=True)
+    period_end = db.Column(db.Date, nullable=True)
+
     # AFIP CAE
     cae = db.Column(db.String(32), nullable=True)
     cae_due_date = db.Column(db.Date, nullable=True)

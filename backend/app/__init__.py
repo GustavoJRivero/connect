@@ -13,10 +13,13 @@ from .routes.dashboard import bp as dashboard_bp
 from .routes.health import bp as health_bp
 from .routes.invoices import bp as invoices_bp
 from .routes.jobs import bp as jobs_bp
+from .routes.logs import bp as logs_bp
 from .routes.network import bp as network_bp
 from .routes.payments import bp as payments_bp
+from .routes.plans import bp as plans_bp
 from .routes.settings import bp as settings_bp
 from .tasks.worker import start_worker
+from .tasks.billing_scheduler import start_billing_scheduler
 
 
 def create_app() -> Flask:
@@ -40,11 +43,15 @@ def create_app() -> Flask:
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(invoices_bp)
     app.register_blueprint(jobs_bp)
+    app.register_blueprint(logs_bp)
     app.register_blueprint(network_bp)
     app.register_blueprint(payments_bp)
+    app.register_blueprint(plans_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(health_bp)
     # Worker en segundo plano para tareas (Mikrotik, etc.)
     start_worker(app)
+    # Scheduler de facturación automática
+    start_billing_scheduler(app)
     return app
 

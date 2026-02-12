@@ -82,6 +82,8 @@ def _invoice_to_dict(x: Invoice) -> dict:
         "deleted_at": x.deleted_at.isoformat() if getattr(x, "deleted_at", None) else None,
         "deleted_by_user_id": getattr(x, "deleted_by_user_id", None),
         "deleted_by": {"id": u.id, "username": u.username} if u else None,
+        "period_start": x.period_start.isoformat() if getattr(x, "period_start", None) else None,
+        "period_end": x.period_end.isoformat() if getattr(x, "period_end", None) else None,
         "cae": x.cae,
         "cae_due_date": x.cae_due_date.isoformat() if x.cae_due_date else None,
     }
