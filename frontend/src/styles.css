@@ -1,22 +1,18 @@
-/* AdminLTE base: este archivo solo aplica pequeños ajustes */
-
 html,
 body,
 #root {
   height: 100%;
 }
 
-/* Tipografía general un poco más chica (Bootstrap/AdminLTE) */
 body {
   font-size: 0.9rem;
+  margin: 0;
 }
 
-/* Titulos de cards un poco más chicos */
-.card-title {
-  font-size: 1rem;
+.sc-error {
+  white-space: pre-wrap;
 }
 
-/* Progress bar superior (global) */
 .sc-progress-top {
   position: absolute;
   left: 0;
@@ -24,60 +20,22 @@ body {
   top: 0;
   height: 3px;
   overflow: hidden;
-  z-index: 1055; /* arriba del navbar */
+  z-index: 1055;
 }
 
 .sc-progress-top-bar {
   height: 100%;
   width: 35%;
-  background: var(--bs-primary, #0d6efd);
+  background: var(--mantine-color-blue-6);
   animation: sc-progress-indeterminate 1s ease-in-out infinite;
 }
 
 @keyframes sc-progress-indeterminate {
-  0% {
-    transform: translateX(-40%);
-  }
-  50% {
-    transform: translateX(140%);
-  }
-  100% {
-    transform: translateX(340%);
-  }
+  0% { transform: translateX(-40%); }
+  50% { transform: translateX(140%); }
+  100% { transform: translateX(340%); }
 }
 
-/* Evitar que botones de nuestra UI queden pegados */
-.btn + .btn {
-  margin-left: 0.5rem;
+.sc-dashboard-stat-card:hover {
+  box-shadow: var(--mantine-shadow-md);
 }
-
-/* Errores API legibles */
-.sc-error {
-  white-space: pre-wrap;
-}
-
-/* Dashboard: alinear íconos (AdminLTE + FontAwesome) */
-.small-box .icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.small-box .icon > i,
-.info-box .info-box-icon > i {
-  line-height: 1;
-}
-
-/* Reutilizar estilo "small-box-footer" como CTA en cards */
-.card .small-box-footer {
-  display: block;
-  padding: 0.5rem 0.75rem;
-  background: rgba(0, 0, 0, 0.04);
-}
-
-/* Centrar CTA del footer cuando corresponde */
-.card .small-box-footer.sc-card-footer-center {
-  text-align: center;
-}
-
-

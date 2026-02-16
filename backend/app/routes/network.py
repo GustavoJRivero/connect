@@ -3,7 +3,10 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 
+from sqlalchemy import func
+
 from ..extensions import db
+from ..mikrotik.ros_client import MikrotikRosClient
 from ..models.connection import Connection
 from ..models.job import Job
 from ..models.mikrotik_server import MikrotikServer
@@ -33,6 +36,7 @@ def _job_to_dict(j: Job) -> dict:
         "server_id": j.server_id,
         "attempts": j.attempts,
         "run_after": j.run_after.isoformat() if j.run_after else None,
+        "locked_at": j.locked_at.isoformat() if j.locked_at else None,
         "finished_at": j.finished_at.isoformat() if j.finished_at else None,
         "last_error": j.last_error,
         "payload_json": j.payload_json,
@@ -44,7 +48,17 @@ def _job_to_dict(j: Job) -> dict:
 @jwt_required(optional=True)
 def list_servers():
     items = MikrotikServer.query.order_by(MikrotikServer.id.desc()).all()
-    return jsonify([_server_to_dict(x) for x in items])
+    pending = (
+        db.session.query(Job.server_id, func.count(Job.id).label("cnt"))
+        .filter(Job.status == "PENDING")
+        .group_by(Job.server_id)
+        .all()
+    )
+    count_map = {int(sid): int(c) for sid, c in pending}
+    return jsonify([
+        {**_server_to_dict(x), "pending_jobs": count_map.get(x.id, 0)}
+        for x in items
+    ])
 
 
 @bp.post("/servers")
@@ -153,4 +167,74 @@ def list_server_jobs(server_id: int):
     MikrotikServer.query.get_or_404(server_id)
     items = Job.query.filter_by(server_id=int(server_id)).order_by(Job.id.desc()).limit(200).all()
     return jsonify([_job_to_dict(x) for x in items])
+
+
+def _test_connection(host: str, port: int, username: str, password: str, use_ssl: bool) -> tuple[bool, str]:
+    """Intenta conectar al RouterOS y retorna (ok, error_message)."""
+    client = None
+    try:
+        client = MikrotikRosClient(
+            host=host,
+            user=username,
+            password=password,
+            port=port,
+            use_ssl=use_ssl,
+        )
+        client.connect()
+        return True, ""
+    except Exception as e:
+        return False, str(e) or "Error desconocido"
+    finally:
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
+
+
+@bp.post("/servers/<int:server_id>/test")
+@jwt_required(optional=True)
+def test_server_connection(server_id: int):
+    """
+    Prueba la conexión al servidor. Opcionalmente recibe body con overrides
+    (host, port, username, password, use_ssl) para probar con datos del formulario sin guardar.
+    """
+    s = MikrotikServer.query.get_or_404(server_id)
+    data = request.get_json(silent=True) or {}
+    host = (data.get("host") or "").strip() or s.host
+    port = int(data.get("port") or s.port)
+    username = (data.get("username") or "").strip() or s.username
+    password = (data.get("password") or "").strip() if data.get("password") is not None else s.password
+    use_ssl = data.get("use_ssl") if "use_ssl" in data else s.use_ssl
+    if not host or not username or not password:
+        return jsonify({"ok": False, "error": "Faltan host, usuario o contraseña"}), 400
+    ok, err = _test_connection(host, port, username, password, bool(use_ssl))
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": err}), 200
+
+
+@bp.post("/servers/test")
+@jwt_required(optional=True)
+def test_connection_inline():
+    """
+    Prueba conexión con credenciales enviadas en el body (para formulario de alta).
+    Body: host, port, username, password, use_ssl.
+    """
+    data = request.get_json(force=True) or {}
+    host = (data.get("host") or "").strip()
+    port = int(data.get("port") or 8728)
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+    use_ssl = bool(data.get("use_ssl", False))
+    if not host:
+        return jsonify({"ok": False, "error": "Falta host"}), 400
+    if not username:
+        return jsonify({"ok": False, "error": "Falta usuario"}), 400
+    if not password:
+        return jsonify({"ok": False, "error": "Falta contraseña"}), 400
+    ok, err = _test_connection(host, port, username, password, use_ssl)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": err}), 200
 

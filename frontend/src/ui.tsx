@@ -1,7 +1,16 @@
 import React from "react";
+import {
+  Card as MantineCard,
+  Button as MantineButton,
+  TextInput,
+  Group,
+  Title,
+  Paper,
+} from "@mantine/core";
 
 export function Card(props: {
   title?: string;
+  header?: React.ReactNode;
   children: React.ReactNode;
   className?: string;
   bodyClassName?: string;
@@ -9,16 +18,28 @@ export function Card(props: {
   footer?: React.ReactNode;
 }) {
   return (
-    <div className={props.className ?? "card"}>
-      {props.title ? (
-        <div className="card-header d-flex align-items-center justify-content-between">
-          <h3 className="card-title mb-0">{props.title}</h3>
-          {props.headerRight ? <div className="card-tools">{props.headerRight}</div> : null}
-        </div>
+    <MantineCard withBorder padding="lg" radius="md" className={props.className}>
+      {props.header !== undefined ? (
+        <MantineCard.Section withBorder inheritPadding py="xs">
+          {props.header}
+        </MantineCard.Section>
+      ) : props.title ? (
+        <MantineCard.Section withBorder inheritPadding py="xs">
+          <Group justify="space-between">
+            <Title order={5}>{props.title}</Title>
+            {props.headerRight ? <div>{props.headerRight}</div> : null}
+          </Group>
+        </MantineCard.Section>
       ) : null}
-      <div className={props.bodyClassName ?? "card-body"}>{props.children}</div>
-      {props.footer ? <div className="card-footer">{props.footer}</div> : null}
-    </div>
+      <MantineCard.Section inheritPadding py="md">
+        {props.children}
+      </MantineCard.Section>
+      {props.footer ? (
+        <MantineCard.Section withBorder inheritPadding py="xs">
+          {props.footer}
+        </MantineCard.Section>
+      ) : null}
+    </MantineCard>
   );
 }
 
@@ -30,52 +51,63 @@ export function Field(props: {
   placeholder?: string;
 }) {
   return (
-    <div className="mb-3">
-      <label className="form-label">{props.label}</label>
-      <input
-        type={props.type ?? "text"}
-        value={props.value}
-        placeholder={props.placeholder}
-        onChange={(e) => props.onChange(e.target.value)}
-        className="form-control"
-      />
-    </div>
+    <TextInput
+      label={props.label}
+      value={props.value}
+      onChange={(e) => props.onChange(e.currentTarget.value)}
+      type={props.type ?? "text"}
+      placeholder={props.placeholder}
+    />
   );
 }
+
+const variantMap = {
+  primary: "filled",
+  danger: "filled",
+  default: "light",
+  secondary: "light",
+  ghost: "subtle",
+  info: "filled",
+  warning: "filled",
+} as const;
+
+const colorMap = {
+  primary: "blue",
+  danger: "red",
+  default: "gray",
+  secondary: "gray",
+  ghost: "gray",
+  info: "cyan",
+  warning: "yellow",
+} as const;
 
 export function Button(props: {
   children: React.ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
-  variant?: "primary" | "danger" | "default" | "ghost";
+  variant?: "primary" | "danger" | "default" | "secondary" | "ghost" | "info" | "warning";
   disabled?: boolean;
 }) {
-  const klass =
-    props.variant === "primary"
-      ? "btn btn-sm btn-primary"
-      : props.variant === "danger"
-        ? "btn btn-sm btn-danger"
-        : props.variant === "ghost"
-          ? "btn btn-sm btn-link"
-          : "btn btn-sm btn-secondary";
-
+  const variant = variantMap[props.variant ?? "default"];
+  const color = colorMap[props.variant ?? "default"];
   return (
-    <button
+    <MantineButton
       type={props.type ?? "button"}
       disabled={props.disabled}
       onClick={props.onClick}
-      className={klass}
+      variant={variant}
+      color={color}
+      size="sm"
     >
       {props.children}
-    </button>
+    </MantineButton>
   );
 }
 
-export function CodeBlock({ data }: { data: any }) {
+export function CodeBlock({ data }: { data: unknown }) {
   return (
-    <pre className="p-3 mb-0 bg-light" style={{ borderRadius: 6, overflow: "auto" }}>
-      {JSON.stringify(data, null, 2)}
-    </pre>
+    <Paper p="md" radius="sm" withBorder style={{ overflow: "auto" }}>
+      <pre style={{ margin: 0 }}>{JSON.stringify(data, null, 2)}</pre>
+    </Paper>
   );
 }
-

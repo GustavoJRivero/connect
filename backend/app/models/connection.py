@@ -23,6 +23,10 @@ class Connection(db.Model):
     # Plan contratado: se mapea 1:1 con el profile de Mikrotik
     plan_profile = db.Column(db.String(64), nullable=False)  # ej: 25M / 50M / 100M / 300M
 
+    # Facturación: día del mes (1-28) para cerrar período; prorratear primer mes
+    billing_day = db.Column(db.Integer, nullable=False, default=1)
+    prorate_first_month = db.Column(db.Boolean, nullable=False, default=True)
+
     # Estado lógico
     status = db.Column(db.String(32), nullable=False, default="ACTIVE")  # ACTIVE / CUT / DISABLED
 

@@ -120,12 +120,22 @@ def create_connection():
     if getattr(client, "status", "ACTIVE") == "RETIRED":
         client.status = "ACTIVE"
         client.is_active = True
+
+    billing_day = int(data.get("billing_day", 1))
+    if billing_day < 1 or billing_day > 28:
+        billing_day = 1
+    prorate = data.get("prorate_first_month", True)
+    if not isinstance(prorate, bool):
+        prorate = str(prorate).lower() not in ("0", "false", "no")
+
     x = Connection(
         client_id=client.id,
         server_id=(int(server_id) if server_id else None),
         service_address=(data.get("service_address") or None),
         location=(data.get("location") or None),
         plan_profile=plan_profile,
+        billing_day=billing_day,
+        prorate_first_month=prorate,
         status="ACTIVE",
         mikrotik_profile=plan_profile,
         ip=ip,
@@ -250,10 +260,11 @@ def update_connection(connection_id: int):
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
 
-    if sync_mikrotik and ip_changed:
+    # Solo sincronizar IP en Mikrotik si se está asignando una IP fija (no si se deja vacío)
+    if sync_mikrotik and ip_changed and (x.ip or "").strip():
         j = enqueue_job(
             job_type=JOB_MT_SET_PPP_REMOTE_ADDRESS,
-            payload={"name": x.pppoe_name(), "remote_address": x.ip or ""},
+            payload={"name": x.pppoe_name(), "remote_address": (x.ip or "").strip()},
             server_id=(int(x.server_id) if x.server_id else None),
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
@@ -345,11 +356,11 @@ def connection_mt_status(connection_id: int):
 def cut_connection(connection_id: int):
     """
     Corte por falta de pago:
-    - cambia profile del secret a CORTADO
+    - cambia profile del secret a suspended (o el que se pase)
     - marca status CUT
     """
     data = request.get_json(silent=True) or {}
-    cut_profile = (data.get("cut_profile") or "CORTADO").strip()
+    cut_profile = (data.get("cut_profile") or "suspended").strip()
 
     x = Connection.query.get_or_404(connection_id)
 

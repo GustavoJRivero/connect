@@ -1,45 +1,104 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
-import { Button, Card, Field } from "../ui";
+import { ServerEditModal } from "../components/ServerEditModal";
+import { Button } from "../ui";
+import {
+  Group,
+  Table,
+  Alert,
+  Badge,
+  Stack,
+  Text,
+  Card,
+  Title,
+  Skeleton,
+} from "@mantine/core";
+
+type ServerRow = {
+  id: number;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  pending_jobs?: number;
+};
+
+type JobRow = {
+  id: number;
+  created_at?: string;
+  job_type: string;
+  status: string;
+  run_after?: string;
+  locked_at?: string;
+  attempts?: number;
+  last_error?: string;
+  payload_json?: string;
+};
 
 export default function NetworkPage() {
   const params = useParams();
   const navigate = useNavigate();
-  const loc = useLocation();
-
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<ServerRow[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const [name, setName] = useState("");
-  const [host, setHost] = useState("");
-  const [port, setPort] = useState("8728");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [useSsl, setUseSsl] = useState(false);
-
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [serverModalOpen, setServerModalOpen] = useState(false);
+  const [serverModalId, setServerModalId] = useState<number | null>(null);
+  const [jobs, setJobs] = useState<JobRow[]>([]);
+  const [jobsLoading, setJobsLoading] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [testMessage, setTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
   const serverId = params.serverId ? Number(params.serverId) : null;
   const mode = useMemo<"list" | "detail">(() => (serverId ? "detail" : "list"), [serverId]);
+  const selected = serverId ? items.find((x) => Number(x.id) === serverId) : null;
+
+  const summary = useMemo(() => {
+    const total = items.length;
+    const totalPending = items.reduce((acc, s) => acc + (Number(s.pending_jobs) || 0), 0);
+    return { total, totalPending };
+  }, [items]);
+
+  const jobsSorted = useMemo(() => {
+    const order = (a: { status: string; id: number }, b: { status: string; id: number }) => {
+      const s = (x: string) => (x === "PENDING" ? 0 : x === "RUNNING" ? 1 : 2);
+      if (s(a.status) !== s(b.status)) return s(a.status) - s(b.status);
+      return Number(b.id) - Number(a.id);
+    };
+    return [...jobs].sort(order);
+  }, [jobs]);
+
+  const STUCK_MS = 35000;
+  const isStuck = (j: { status: string; locked_at?: string }) =>
+    j.status === "RUNNING" && j.locked_at && Date.now() - new Date(j.locked_at).getTime() > STUCK_MS;
+  const stuckJobs = jobs.filter(isStuck);
+  const hasStuck = stuckJobs.length > 0;
 
   async function reload() {
     setError(null);
+    setLoading(true);
     try {
       const res = await api.listServers();
-      setItems(res);
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+      setItems(Array.isArray(res) ? (res as ServerRow[]) : []);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+    } finally {
+      setLoading(false);
     }
   }
 
   async function reloadJobs(id: number) {
     setError(null);
+    setJobsLoading(true);
     try {
       const res = await api.listServerJobs(id);
-      setJobs(res);
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+      setJobs(Array.isArray(res) ? (res as JobRow[]) : []);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+    } finally {
+      setJobsLoading(false);
     }
   }
 
@@ -52,187 +111,348 @@ export default function NetworkPage() {
     reloadJobs(serverId);
   }, [serverId]);
 
-  async function createServer() {
-    setError(null);
+  useEffect(() => {
+    if (!serverId) return;
+    const t = setInterval(() => reloadJobs(serverId), 5000);
+    return () => clearInterval(t);
+  }, [serverId]);
+
+  async function testConnection(sid: number) {
+    setTestMessage(null);
+    setTestingConnection(true);
     try {
-      const res = await api.createServer({
-        name,
-        host,
-        port: Number(port),
-        username,
-        password,
-        use_ssl: useSsl,
+      const res = (await api.testServerConnection(sid)) as { ok?: boolean; error?: string };
+      setTestMessage(
+        res?.ok ? { ok: true, text: "Conexión exitosa." } : { ok: false, text: res?.error || "Error" }
+      );
+    } catch (e: unknown) {
+      const err = e as { body?: { error?: string; message?: string } };
+      setTestMessage({
+        ok: false,
+        text: err?.body?.error || err?.body?.message || "Error de red",
       });
-      setName("");
-      setHost("");
-      setPort("8728");
-      setUsername("");
-      setPassword("");
-      setUseSsl(false);
-      await reload();
-      navigate(`/network/${res.id}`);
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+    } finally {
+      setTestingConnection(false);
     }
   }
 
-  const selected = serverId ? items.find((x) => Number(x.id) === serverId) : null;
+  const jobStatusColor = (status: string) =>
+    status === "DONE" ? "green" : status === "FAILED" ? "red" : status === "CANCELLED" ? "gray" : "yellow";
 
   return (
-    <div>
-      {error ? <div className="alert alert-danger sc-error">{error}</div> : null}
+    <Stack gap="md">
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error">
+          {error}
+        </Alert>
+      ) : null}
 
       {mode === "list" ? (
-        <div className="row">
-          <div className="col-lg-6">
-            <Card className="card card-outline card-primary" title="Red / Gestión de red — Servidores PPPoE">
-              <Field label="Nombre" value={name} onChange={setName} placeholder="ej: MT-PPPOE-1" />
-              <div className="row">
-                <div className="col-md-8">
-                  <Field label="IP / Host" value={host} onChange={setHost} placeholder="ej: 10.0.0.1" />
-                </div>
-                <div className="col-md-4">
-                  <Field label="Puerto" value={port} onChange={setPort} placeholder="8728" />
-                </div>
-              </div>
-              <div className="row">
-                <div className="col-md-6">
-                  <Field label="User" value={username} onChange={setUsername} />
-                </div>
-                <div className="col-md-6">
-                  <Field label="Password" value={password} onChange={setPassword} type="password" />
-                </div>
-              </div>
-              <div className="form-check mb-3">
-                <input className="form-check-input" type="checkbox" checked={useSsl} onChange={(e) => setUseSsl(e.target.checked)} id="useSsl" />
-                <label className="form-check-label" htmlFor="useSsl">
-                  Usar SSL
-                </label>
-              </div>
-              <Button variant="primary" onClick={createServer}>
-                <i className="fa-solid fa-plus me-2" />
-                Crear servidor
+        <>
+          <Group justify="space-between" wrap="wrap" gap="sm">
+            <Group gap="sm">
+              <Text fw={600}>Resumen</Text>
+              <Badge color="blue" variant="light">
+                Servidores: {summary.total}
+              </Badge>
+              <Badge color="yellow" variant="light">
+                Jobs pendientes: {summary.totalPending}
+              </Badge>
+            </Group>
+            <Group>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setServerModalId(null);
+                  setServerModalOpen(true);
+                }}
+              >
+                Agregar servidor
               </Button>
               <Button variant="default" onClick={reload}>
-                <i className="fa-solid fa-rotate me-2" />
                 Recargar
               </Button>
-            </Card>
-          </div>
+            </Group>
+          </Group>
 
-          <div className="col-lg-6">
-            <Card className="card card-outline card-secondary" title="Listado de servidores">
-              <div className="table-responsive">
-                <table className="table table-bordered table-hover">
-                  <thead>
-                    <tr>
-                      <th>ID</th>
-                      <th>Nombre</th>
-                      <th>Host</th>
-                      <th>Usuario</th>
-                      <th style={{ width: 140 }}>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((s) => (
-                      <tr key={s.id}>
-                        <td>#{s.id}</td>
-                        <td>{s.name}</td>
-                        <td>
-                          {s.host}:{s.port}
-                        </td>
-                        <td>{s.username}</td>
-                        <td>
-                          <Button variant="default" onClick={() => navigate(`/network/${s.id}`)}>
-                            Ver
-                          </Button>
-                          <Button
-                            variant="danger"
-                            onClick={async () => {
-                              if (!window.confirm("¿Eliminar servidor? (solo si no está en uso)")) return;
-                              await api.deleteServer(Number(s.id));
-                              await reload();
-                            }}
-                          >
-                            Eliminar
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!items.length ? <div className="text-muted">Sin servidores.</div> : null}
-              </div>
-            </Card>
-          </div>
-        </div>
+          <Card withBorder padding="lg" radius="md">
+            <Card.Section withBorder inheritPadding py="sm">
+              <Title order={5}>Servidores PPPoE</Title>
+            </Card.Section>
+            <Table.ScrollContainer minWidth={600} mt="md">
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>ID</Table.Th>
+                    <Table.Th>Nombre</Table.Th>
+                    <Table.Th>Host</Table.Th>
+                    <Table.Th>Usuario</Table.Th>
+                    <Table.Th>Pendientes</Table.Th>
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {loading ? (
+                    Array.from({ length: 4 }).map((_, i) => (
+                      <Table.Tr key={i}>
+                        {Array.from({ length: 6 }).map((_, j) => (
+                          <Table.Td key={j}>
+                            <Skeleton height={20} width={j === 5 ? 140 : "80%"} />
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
+                    ))
+                  ) : (
+                    items.map((s) => (
+                      <Table.Tr key={s.id}>
+                        <Table.Td>#{s.id}</Table.Td>
+                        <Table.Td>{s.name}</Table.Td>
+                        <Table.Td>{s.host}:{s.port}</Table.Td>
+                        <Table.Td>{s.username}</Table.Td>
+                        <Table.Td>{Number(s.pending_jobs) ?? 0}</Table.Td>
+                        <Table.Td>
+                          <Group gap="xs">
+                            <Button variant="default" onClick={() => navigate(`/network/${s.id}`)}>
+                              Ver
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              onClick={() => {
+                                setServerModalId(Number(s.id));
+                                setServerModalOpen(true);
+                              }}
+                            >
+                              Editar
+                            </Button>
+                            <Button
+                              variant="danger"
+                              onClick={async () => {
+                                if (!window.confirm("¿Eliminar servidor? (solo si no está en uso)")) return;
+                                await api.deleteServer(Number(s.id));
+                                await reload();
+                              }}
+                            >
+                              Eliminar
+                            </Button>
+                          </Group>
+                        </Table.Td>
+                      </Table.Tr>
+                    ))
+                  )}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+            {!loading && !items.length ? (
+              <Text c="dimmed" size="sm" p="md">
+                Sin servidores. Agregá uno con el botón de arriba.
+              </Text>
+            ) : null}
+          </Card>
+        </>
       ) : (
-        <div>
-          <Card
-            className="card card-outline card-primary"
-            title={`Servidor PPPoE #${serverId}`}
-            headerRight={
-              <>
-                <Button variant="default" onClick={() => navigate("/network")}>
-                  <i className="fa-solid fa-arrow-left me-2" />
-                  Volver
-                </Button>
-                <Button
-                  variant="default"
-                  onClick={() => {
-                    if (!serverId) return;
-                    reloadJobs(serverId);
-                  }}
-                >
-                  <i className="fa-solid fa-rotate me-2" />
-                  Recargar jobs
-                </Button>
-              </>
-            }
-          >
-            <div className="text-muted">Nombre: {selected?.name ?? "-"}</div>
-            <div className="text-muted">
-              Host: {selected?.host ?? "-"}:{selected?.port ?? "-"}
-            </div>
-            <div className="text-muted">Usuario: {selected?.username ?? "-"}</div>
+        <>
+          <Card withBorder padding="lg" radius="md">
+            <Card.Section withBorder inheritPadding py="sm">
+              <Group justify="space-between">
+                <Title order={5}>Servidor PPPoE #{serverId}</Title>
+                <Group gap="xs">
+                  <Button variant="default" onClick={() => navigate("/network")}>
+                    Volver
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={() =>
+                      serverId && (setServerModalId(Number(serverId)), setServerModalOpen(true))
+                    }
+                  >
+                    Editar
+                  </Button>
+                  <Button
+                    variant="info"
+                    onClick={() => serverId && testConnection(serverId)}
+                    disabled={testingConnection}
+                  >
+                    {testingConnection ? "Probando..." : "Probar conexión"}
+                  </Button>
+                  <Button variant="default" onClick={() => serverId && reloadJobs(serverId)}>
+                    Recargar jobs
+                  </Button>
+                </Group>
+              </Group>
+            </Card.Section>
+            {testMessage ? (
+              <Alert
+                color={testMessage.ok ? "green" : "red"}
+                mb="sm"
+                title={testMessage.ok ? "OK" : "Error"}
+              >
+                <Text size="sm">{testMessage.text}</Text>
+              </Alert>
+            ) : null}
+            <Stack gap="xs" mt="md">
+              <Text size="sm" c="dimmed">
+                Nombre: {selected?.name ?? "-"}
+              </Text>
+              <Text size="sm" c="dimmed">
+                Host: {selected?.host ?? "-"}:{selected?.port ?? "-"}
+              </Text>
+              <Text size="sm" c="dimmed">
+                Usuario: {selected?.username ?? "-"}
+              </Text>
+            </Stack>
           </Card>
 
-          <Card className="card card-outline card-secondary" title="Jobs">
-            <div className="table-responsive">
-              <table className="table table-bordered table-hover">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Fecha</th>
-                    <th>Tipo</th>
-                    <th>Estado</th>
-                    <th>Intentos</th>
-                    <th>Error</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {jobs.map((j) => (
-                    <tr key={j.id}>
-                      <td>#{j.id}</td>
-                      <td>{(j.created_at ?? "").slice(0, 19).replace("T", " ") || "-"}</td>
-                      <td>{j.job_type}</td>
-                      <td>
-                        <span className={`badge ${j.status === "DONE" ? "text-bg-success" : j.status === "FAILED" ? "text-bg-danger" : "text-bg-warning"}`}>
-                          {j.status}
-                        </span>
-                      </td>
-                      <td>{j.attempts ?? 0}</td>
-                      <td style={{ maxWidth: 380, whiteSpace: "pre-wrap" }}>{j.last_error ?? "-"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!jobs.length ? <div className="text-muted">Sin jobs.</div> : null}
-            </div>
+          <Card withBorder padding="lg" radius="md">
+            <Card.Section withBorder inheritPadding py="sm">
+              <Title order={5}>Cola de jobs</Title>
+            </Card.Section>
+            <Text size="sm" c="dimmed" mt="sm" mb="md">
+              Se actualiza cada 5 segundos. Arriba: pendientes y en ejecución; abajo: terminados o cancelados.
+            </Text>
+            {hasStuck ? (
+              <Alert color="yellow" mb="md" title="Jobs posiblemente colgados">
+                <Group justify="space-between" wrap="wrap">
+                  <Text size="sm">
+                    {stuckJobs.length} job(s) en RUNNING hace más de 35 s.
+                  </Text>
+                  <Button
+                    variant="warning"
+                    onClick={async () => {
+                      if (!serverId) return;
+                      try {
+                        const r = (await api.recoverStuckJobs(serverId)) as { count?: number };
+                        if (r?.count) await reloadJobs(serverId);
+                      } catch (e: unknown) {
+                        const err = e as { status?: number; body?: unknown };
+                        setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+                      }
+                    }}
+                  >
+                    Recuperar colgados
+                  </Button>
+                </Group>
+              </Alert>
+            ) : null}
+            <Table.ScrollContainer minWidth={700}>
+              <Table striped highlightOnHover>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>ID</Table.Th>
+                    <Table.Th>Fecha</Table.Th>
+                    <Table.Th>Tipo</Table.Th>
+                    <Table.Th>Estado</Table.Th>
+                    <Table.Th>Cola</Table.Th>
+                    <Table.Th>Intentos</Table.Th>
+                    <Table.Th>Error</Table.Th>
+                    <Table.Th>Acciones</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {jobsLoading && !jobs.length ? (
+                    Array.from({ length: 3 }).map((_, i) => (
+                      <Table.Tr key={i}>
+                        {Array.from({ length: 8 }).map((_, j) => (
+                          <Table.Td key={j}>
+                            <Skeleton height={20} width="80%" />
+                          </Table.Td>
+                        ))}
+                      </Table.Tr>
+                    ))
+                  ) : (
+                    jobsSorted.map((j) => (
+                      <Table.Tr key={j.id}>
+                        <Table.Td>#{j.id}</Table.Td>
+                        <Table.Td>{(j.created_at ?? "").slice(0, 19).replace("T", " ") || "-"}</Table.Td>
+                        <Table.Td>{j.job_type}</Table.Td>
+                        <Table.Td>
+                          <Group gap="xs">
+                            <Badge size="sm" color={jobStatusColor(j.status)} variant="light">
+                              {j.status}
+                            </Badge>
+                            {isStuck(j) ? (
+                              <Text span size="xs" c="yellow">
+                                (colgado?)
+                              </Text>
+                            ) : null}
+                          </Group>
+                        </Table.Td>
+                        <Table.Td>
+                          {j.status === "PENDING"
+                            ? j.run_after
+                              ? `A las ${String(j.run_after).slice(11, 19)}`
+                              : "En cola"
+                            : j.status === "RUNNING"
+                              ? j.locked_at
+                                ? `Desde ${String(j.locked_at).slice(11, 19)}`
+                                : "Ejecutando…"
+                              : "-"}
+                        </Table.Td>
+                        <Table.Td>{j.attempts ?? 0}</Table.Td>
+                        <Table.Td style={{ maxWidth: 380, whiteSpace: "pre-wrap" }}>{j.last_error ?? "-"}</Table.Td>
+                        <Table.Td>
+                          {j.status === "FAILED" || (j.status === "RUNNING" && isStuck(j)) ? (
+                            <Button
+                              variant="primary"
+                              onClick={async () => {
+                                if (!serverId) return;
+                                try {
+                                  await api.retryJob(Number(j.id));
+                                  await reloadJobs(serverId);
+                                } catch (e: unknown) {
+                                  const err = e as { status?: number; body?: unknown };
+                                  setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+                                }
+                              }}
+                            >
+                              {j.status === "RUNNING" ? "Recuperar" : "Reintentar"}
+                            </Button>
+                          ) : j.status === "PENDING" ? (
+                            <Button
+                              variant="danger"
+                              onClick={async () => {
+                                if (!serverId) return;
+                                if (!window.confirm("¿Cancelar este job? No se ejecutará.")) return;
+                                try {
+                                  await api.cancelJob(Number(j.id));
+                                  await reloadJobs(serverId);
+                                } catch (e: unknown) {
+                                  const err = e as { status?: number; body?: unknown };
+                                  setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+                                }
+                              }}
+                            >
+                              Cancelar
+                            </Button>
+                          ) : (
+                            "-"
+                          )}
+                        </Table.Td>
+                      </Table.Tr>
+                    ))
+                  )}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+            {!jobsLoading && !jobs.length ? (
+              <Text c="dimmed" size="sm" py="md">
+                Sin jobs.
+              </Text>
+            ) : null}
           </Card>
-        </div>
+        </>
       )}
-    </div>
+
+      <ServerEditModal
+        open={serverModalOpen}
+        serverId={serverModalId}
+        onClose={() => {
+          setServerModalOpen(false);
+          setServerModalId(null);
+        }}
+        onSaved={() => {
+          reload();
+        }}
+      />
+    </Stack>
   );
 }
-

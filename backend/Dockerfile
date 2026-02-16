@@ -16,8 +16,8 @@ COPY . .
 
 EXPOSE 5001
 
-# Script de entrada: aplica migraciones y levanta gunicorn
+# Script de entrada: aplica migraciones y levanta gunicorn (normalizar CRLF→LF)
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]

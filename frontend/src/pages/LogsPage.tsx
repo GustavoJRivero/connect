@@ -104,12 +104,12 @@ export default function LogsPage() {
   async function toggleMaster() {
     if (!config) return;
     const next = !config.enabled;
-    await api.updateLoggingConfig({ enabled: next });
+    await api.putLoggingConfig({ enabled: next });
     await loadConfig();
   }
 
   async function toggleModule(moduleId: string, current: boolean) {
-    await api.updateLoggingConfig({ modules: { [moduleId]: !current } });
+    await api.putLoggingConfig({ modules: { [moduleId]: !current } });
     await loadConfig();
   }
 

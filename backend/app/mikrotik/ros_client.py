@@ -1,6 +1,11 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from routeros_api import RouterOsApiPool
+
+
+def _item_id(item: Dict[str, Any]) -> str:
+    """RouterOS devuelve el identificador como '.id' o a veces 'id'."""
+    return item.get(".id") or item.get("id") or ""
 
 
 class MikrotikRosClient:
@@ -60,27 +65,35 @@ class MikrotikRosClient:
         res = self._api.get_resource("/ppp/secret")
         items = res.get(name=name)
         for item in items:
-            # routeros-api usa `.id` para borrar
-            res.remove(id=item[".id"])
+            rid = _item_id(item)
+            if rid:
+                res.remove(**{".id": rid})
 
     def set_pppoe_secret_profile(self, *, name: str, profile: str) -> None:
         if not self._api:
             raise RuntimeError("Not connected")
+        if not profile:
+            raise ValueError("profile no puede estar vacío")
         res = self._api.get_resource("/ppp/secret")
         items = res.get(name=name)
         for item in items:
-            res.set(id=item[".id"], profile=profile)
+            rid = _item_id(item)
+            if rid:
+                res.set(**{".id": rid, "profile": profile})
 
     def set_pppoe_secret_remote_address(self, *, name: str, remote_address: str) -> None:
         """
         Setea remote-address en el secret. Si remote_address es vacío, lo limpia (pool dinámico).
+        Usamos .id como clave para evitar "Malformed sentence" con routeros_api.
         """
         if not self._api:
             raise RuntimeError("Not connected")
         res = self._api.get_resource("/ppp/secret")
         items = res.get(name=name)
         for item in items:
-            res.set(id=item[".id"], **{"remote-address": remote_address})
+            rid = _item_id(item)
+            if rid:
+                res.set(**{".id": rid, "remote-address": remote_address})
 
     def set_pppoe_secret_credentials(self, *, old_name: str, new_name: str, new_password: str) -> None:
         """
@@ -95,7 +108,9 @@ class MikrotikRosClient:
         if not items:
             raise RuntimeError("pppoe_secret_not_found")
         for item in items:
-            res.set(id=item[".id"], name=new_name, password=new_password)
+            rid = _item_id(item)
+            if rid:
+                res.set(**{".id": rid, "name": new_name, "password": new_password})
 
     def get_pppoe_active(self, *, name: str):
         if not self._api:
@@ -103,6 +118,24 @@ class MikrotikRosClient:
         res = self._api.get_resource("/ppp/active")
         items = res.get(name=name)
         return items[0] if items else None
+
+    def disconnect_pppoe_session(self, *, name: str) -> bool:
+        """
+        Desconecta la sesión PPPoE activa para el usuario dado.
+        Así, al reconectar, el cliente toma el perfil actual del secret (ej. suspended).
+        Retorna True si se desconectó una sesión, False si no había sesión activa.
+        """
+        if not self._api:
+            raise RuntimeError("Not connected")
+        res = self._api.get_resource("/ppp/active")
+        items = res.get(name=name)
+        disconnected = False
+        for item in items or []:
+            rid = _item_id(item)
+            if rid:
+                res.remove(**{".id": rid})
+                disconnected = True
+        return disconnected
 
     def get_pppoe_secret(self, *, name: str):
         if not self._api:

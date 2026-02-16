@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
@@ -53,11 +54,59 @@ def retry_job(job_id: int):
     j = Job.query.get_or_404(job_id)
     if j.status == "DONE":
         return jsonify({"error": "already_done"}), 409
+    if j.status == "CANCELLED":
+        return jsonify({"error": "job_cancelled"}), 409
+    # Permitir reintentar FAILED o RUNNING (colgado)
     j.status = "PENDING"
+    j.attempts = 0
     j.run_after = None
     j.locked_at = None
     j.finished_at = None
+    j.result_json = None
     j.last_error = None
+    db.session.commit()
+    return jsonify(_job_to_dict(j))
+
+
+STUCK_RUNNING_SECONDS = 35
+
+
+@bp.post("/recover-stuck")
+@jwt_required(optional=True)
+def recover_stuck():
+    """Vuelve a PENDING los jobs RUNNING que llevan más de 35s (colgados). Opcional: server_id."""
+    server_id = request.args.get("server_id", type=int)
+    now = datetime.utcnow()
+    cutoff = now - timedelta(seconds=STUCK_RUNNING_SECONDS)
+    q = (
+        Job.query.filter(Job.status == "RUNNING")
+        .filter(Job.locked_at.isnot(None))
+        .filter(Job.locked_at < cutoff)
+    )
+    if server_id is not None:
+        q = q.filter(Job.server_id == server_id)
+    stuck = q.all()
+    for j in stuck:
+        j.status = "PENDING"
+        j.locked_at = None
+        j.run_after = None  # para que el worker los tome de inmediato
+    if stuck:
+        db.session.commit()
+    return jsonify({"recovered": [x.id for x in stuck], "count": len(stuck)})
+
+
+@bp.post("/<int:job_id>/cancel")
+@jwt_required(optional=True)
+def cancel_job(job_id: int):
+    """Quita el job de la cola: pasa a CANCELLED y no se ejecutará. Solo para PENDING."""
+    j = Job.query.get_or_404(job_id)
+    if j.status != "PENDING":
+        return jsonify({"error": "only_pending_can_be_cancelled", "status": j.status}), 409
+    j.status = "CANCELLED"
+    j.run_after = None
+    j.locked_at = None
+    j.finished_at = datetime.utcnow()
+    j.last_error = j.last_error or "Cancelado por el usuario"
     db.session.commit()
     return jsonify(_job_to_dict(j))
 

@@ -1,6 +1,21 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
-import { Button, Card, Field } from "../ui";
+import { Button, Field } from "../ui";
+import {
+  Grid,
+  Table,
+  Select,
+  Alert,
+  Card,
+  Title,
+  Group,
+  TextInput,
+  Skeleton,
+  Anchor,
+  Text,
+  Stack,
+} from "@mantine/core";
 
 type PaymentMethod = "TRANSFER" | "MERCADOPAGO" | "CASH" | "CARD";
 
@@ -11,36 +26,48 @@ const PAYMENT_METHODS: { value: PaymentMethod; label: string }[] = [
   { value: "CARD", label: "Tarjeta de Crédito/Débito" },
 ];
 
-export default function PaymentsPage() {
-  const [items, setItems] = useState<any[]>([]);
-  const [error, setError] = useState<string | null>(null);
+type PaymentRow = {
+  id: number;
+  paid_at?: string;
+  client_id: number;
+  created_by?: { username: string };
+  amount: string;
+  method?: string;
+  allocations?: { invoice_id: number }[];
+};
 
+export default function PaymentsPage() {
+  const [items, setItems] = useState<PaymentRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [clientId, setClientId] = useState("");
   const [amount, setAmount] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
-  const [paidAt, setPaidAt] = useState<string>(new Date().toISOString().slice(0, 10));
-
-  const [from, setFrom] = useState<string>("");
-  const [to, setTo] = useState<string>("");
+  const [paidAt, setPaidAt] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
 
   async function reload() {
     setError(null);
+    setLoading(true);
     try {
       const res = await api.listPayments(clientId ? Number(clientId) : undefined, {
         from: from || undefined,
         to: to || undefined,
       });
-      setItems(res);
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+      setItems(Array.isArray(res) ? (res as PaymentRow[]) : []);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function create() {
@@ -58,161 +85,176 @@ export default function PaymentsPage() {
       setReference("");
       setNote("");
       await reload();
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
     }
   }
 
+  const setToday = () => {
+    const d = new Date().toISOString().slice(0, 10);
+    setFrom(d);
+    setTo(d);
+  };
+  const setThisMonth = () => {
+    const n = new Date();
+    setFrom(new Date(n.getFullYear(), n.getMonth(), 1).toISOString().slice(0, 10));
+    setTo(new Date(n.getFullYear(), n.getMonth() + 1, 0).toISOString().slice(0, 10));
+  };
+  const setThisYear = () => {
+    const n = new Date();
+    setFrom(new Date(n.getFullYear(), 0, 1).toISOString().slice(0, 10));
+    setTo(new Date(n.getFullYear(), 11, 31).toISOString().slice(0, 10));
+  };
+
   return (
-    <div className="row">
-      <div className="col-12">
-        <Card
-          className="card card-outline card-primary"
-          title="Registrar pago"
-          headerRight={
-            <>
+    <Stack gap="md">
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error">
+          {error}
+        </Alert>
+      ) : null}
+
+      <Card withBorder padding="lg" radius="md">
+        <Card.Section withBorder inheritPadding py="sm">
+          <Group justify="space-between">
+            <Title order={5}>Registrar pago</Title>
+            <Group gap="xs">
               <Button variant="primary" onClick={create}>
-                <i className="fa-solid fa-plus me-2" />
                 Registrar
               </Button>
               <Button variant="default" onClick={reload}>
-                <i className="fa-solid fa-rotate me-2" />
                 Recargar
               </Button>
-            </>
-          }
-        >
-          <div className="row">
-            <div className="col-md-3">
-              <Field label="Client ID" value={clientId} onChange={setClientId} />
-            </div>
-            <div className="col-md-3">
-              <Field label="Monto" value={amount} onChange={setAmount} />
-            </div>
-            <div className="col-md-3">
-              <div className="mb-3">
-                <label className="form-label">Medio de pago</label>
-                <select className="form-select" value={method} onChange={(e) => setMethod(e.target.value as any)}>
-                  {PAYMENT_METHODS.map((m) => (
-                    <option key={m.value} value={m.value}>
-                      {m.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="col-md-3">
-              <Field label="Referencia" value={reference} onChange={setReference} />
-            </div>
-          </div>
-          <div className="row">
-            <div className="col-md-3">
-              <div className="mb-3">
-                <label className="form-label">Fecha</label>
-                <input type="date" className="form-control" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} />
-              </div>
-            </div>
-            <div className="col-md-9">
-              <Field label="Nota" value={note} onChange={setNote} placeholder="Opcional" />
-            </div>
-          </div>
-          {error ? <div className="alert alert-danger sc-error mb-0">{error}</div> : null}
-        </Card>
-      </div>
+            </Group>
+          </Group>
+        </Card.Section>
+        <Grid mt="md">
+          <Grid.Col span={{ base: 12, md: 3 }}>
+            <Field label="Client ID" value={clientId} onChange={setClientId} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 3 }}>
+            <Field label="Monto" value={amount} onChange={setAmount} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 3 }}>
+            <Select
+              label="Medio de pago"
+              value={method}
+              onChange={(v) => v && setMethod(v as PaymentMethod)}
+              data={PAYMENT_METHODS.map((m) => ({ value: m.value, label: m.label }))}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 3 }}>
+            <Field label="Referencia" value={reference} onChange={setReference} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 3 }}>
+            <TextInput
+              label="Fecha"
+              type="date"
+              value={paidAt}
+              onChange={(e) => setPaidAt(e.currentTarget.value)}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 9 }}>
+            <Field label="Nota" value={note} onChange={setNote} placeholder="Opcional" />
+          </Grid.Col>
+        </Grid>
+      </Card>
 
-      <div className="col-lg-8">
-        <Card className="card card-outline card-secondary" title="Listado">
-          <div className="row g-2 mb-3">
-            <div className="col-md-4">
-              <div className="mb-0">
-                <label className="form-label">Desde</label>
-                <input type="date" className="form-control" value={from} onChange={(e) => setFrom(e.target.value)} />
-              </div>
-            </div>
-            <div className="col-md-4">
-              <div className="mb-0">
-                <label className="form-label">Hasta</label>
-                <input type="date" className="form-control" value={to} onChange={(e) => setTo(e.target.value)} />
-              </div>
-            </div>
-            <div className="col-md-4 d-flex align-items-end gap-2">
-              <Button
-                variant="default"
-                onClick={() => {
-                  const d = new Date().toISOString().slice(0, 10);
-                  setFrom(d);
-                  setTo(d);
-                }}
-              >
+      <Card withBorder padding="lg" radius="md">
+        <Card.Section withBorder inheritPadding py="sm">
+          <Title order={5}>Listado de pagos</Title>
+        </Card.Section>
+        <Grid mt="md" mb="md">
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <TextInput
+              label="Desde"
+              type="date"
+              value={from}
+              onChange={(e) => setFrom(e.currentTarget.value)}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <TextInput
+              label="Hasta"
+              type="date"
+              value={to}
+              onChange={(e) => setTo(e.currentTarget.value)}
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <Text size="sm" c="dimmed" mb={4} style={{ display: "block" }}>
+              Rango rápido
+            </Text>
+            <Group gap="xs">
+              <Button variant="default" onClick={setToday}>
                 Hoy
               </Button>
-              <Button
-                variant="default"
-                onClick={() => {
-                  const now = new Date();
-                  const start = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-                  const end = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
-                  setFrom(start);
-                  setTo(end);
-                }}
-              >
+              <Button variant="default" onClick={setThisMonth}>
                 Este mes
               </Button>
-              <Button
-                variant="default"
-                onClick={() => {
-                  const now = new Date();
-                  const start = new Date(now.getFullYear(), 0, 1).toISOString().slice(0, 10);
-                  const end = new Date(now.getFullYear(), 11, 31).toISOString().slice(0, 10);
-                  setFrom(start);
-                  setTo(end);
-                }}
-              >
+              <Button variant="default" onClick={setThisYear}>
                 Este año
               </Button>
-              <Button
-                variant="default"
-                onClick={() => {
-                  setFrom("");
-                  setTo("");
-                }}
-              >
+              <Button variant="default" onClick={() => { setFrom(""); setTo(""); }}>
                 Limpiar
               </Button>
-            </div>
-          </div>
-
-          <div className="table-responsive">
-            <table className="table table-bordered table-hover">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Fecha</th>
-                  <th>Cliente</th>
-                  <th>Usuario</th>
-                  <th>Monto</th>
-                  <th>Medio</th>
-                  <th>Facturas</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((p) => (
-                  <tr key={p.id}>
-                    <td>#{p.id}</td>
-                    <td>{p.paid_at ?? "-"}</td>
-                    <td>{p.client_id}</td>
-                    <td>{p.created_by?.username ?? "-"}</td>
-                    <td>{p.amount}</td>
-                    <td>{p.method ?? "-"}</td>
-                    <td>{(p.allocations ?? []).map((a: any) => `#${a.invoice_id}`).join(", ") || "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-    </div>
+            </Group>
+          </Grid.Col>
+        </Grid>
+        <Table.ScrollContainer minWidth={600}>
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>ID</Table.Th>
+                <Table.Th>Fecha</Table.Th>
+                <Table.Th>Cliente</Table.Th>
+                <Table.Th>Usuario</Table.Th>
+                <Table.Th>Monto</Table.Th>
+                <Table.Th>Medio</Table.Th>
+                <Table.Th>Facturas</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {loading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <Table.Tr key={i}>
+                    {Array.from({ length: 7 }).map((_, j) => (
+                      <Table.Td key={j}>
+                        <Skeleton height={20} width={j === 2 ? 40 : "70%"} />
+                      </Table.Td>
+                    ))}
+                  </Table.Tr>
+                ))
+              ) : items.length ? (
+                items.map((p) => (
+                  <Table.Tr key={p.id}>
+                    <Table.Td>#{p.id}</Table.Td>
+                    <Table.Td>{p.paid_at ?? "-"}</Table.Td>
+                    <Table.Td>
+                      <Anchor component={Link} to={`/clients/${p.client_id}`} size="sm">
+                        #{p.client_id}
+                      </Anchor>
+                    </Table.Td>
+                    <Table.Td>{p.created_by?.username ?? "-"}</Table.Td>
+                    <Table.Td fw={600}>{p.amount}</Table.Td>
+                    <Table.Td>{p.method ?? "-"}</Table.Td>
+                    <Table.Td>
+                      {(p.allocations ?? []).map((a) => `#${a.invoice_id}`).join(", ") || "-"}
+                    </Table.Td>
+                  </Table.Tr>
+                ))
+              ) : (
+                <Table.Tr>
+                  <Table.Td colSpan={7} c="dimmed" py="xl" ta="center">
+                    No hay pagos en el rango seleccionado.
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </Card>
+    </Stack>
   );
 }
-
