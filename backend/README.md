@@ -57,7 +57,7 @@ Healthcheck:
 - **Conexiones**
   - `POST /api/connections` (agrega conexión a un cliente + crea PPPoE secret)
   - `PUT /api/connections/<id>` (edita conexión; si está activa sync Mikrotik)
-  - `POST /api/connections/<id>/cut` (aplica profile `CORTADO`)
+  - `POST /api/connections/<id>/cut` (aplica profile `suspended` por defecto)
   - `POST /api/connections/<id>/restore` (vuelve al profile del plan)
   - `DELETE /api/connections/<id>`
 - **Settings**

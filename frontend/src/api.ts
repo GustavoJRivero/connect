@@ -235,6 +235,9 @@ export const api = {
   listServers() {
     return request("/api/network/servers");
   },
+  getServer(id: number) {
+    return request(`/api/network/servers/${id}`);
+  },
   createServer(payload: any) {
     return request("/api/network/servers", { method: "POST", body: JSON.stringify(payload) });
   },
@@ -244,8 +247,62 @@ export const api = {
   deleteServer(id: number) {
     return request(`/api/network/servers/${id}`, { method: "DELETE" });
   },
+  testServerConnection(serverId: number, overrides?: { host?: string; port?: number; username?: string; password?: string; use_ssl?: boolean }) {
+    return request(`/api/network/servers/${serverId}/test`, {
+      method: "POST",
+      body: JSON.stringify(overrides || {}),
+    });
+  },
+  testConnectionInline(payload: { host: string; port: number; username: string; password: string; use_ssl?: boolean }) {
+    return request("/api/network/servers/test", { method: "POST", body: JSON.stringify(payload) });
+  },
   listServerJobs(server_id: number) {
     return request(`/api/network/servers/${server_id}/jobs`);
+  },
+  retryJob(job_id: number) {
+    return request(`/api/jobs/${job_id}/retry`, { method: "POST", body: JSON.stringify({}) });
+  },
+  cancelJob(job_id: number) {
+    return request(`/api/jobs/${job_id}/cancel`, { method: "POST", body: JSON.stringify({}) });
+  },
+  /** Vuelve a PENDING los jobs RUNNING colgados (>35s). Opcional server_id para solo este servidor. */
+  recoverStuckJobs(server_id?: number) {
+    const q = server_id != null ? `?server_id=${server_id}` : "";
+    return request(`/api/jobs/recover-stuck${q}`, { method: "POST", body: JSON.stringify({}) });
+  },
+
+  // logs
+  getLogs(opts?: {
+    module?: string;
+    level?: string;
+    q?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (opts?.module) params.set("module", opts.module);
+    if (opts?.level) params.set("level", opts.level);
+    if (opts?.q) params.set("q", opts.q);
+    if (opts?.from) params.set("from", opts.from);
+    if (opts?.to) params.set("to", opts.to);
+    if (typeof opts?.limit === "number") params.set("limit", String(opts.limit));
+    if (typeof opts?.offset === "number") params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return request(`/api/logs${qs ? `?${qs}` : ""}`);
+  },
+  getLogModules() {
+    return request("/api/logs/modules");
+  },
+  getLoggingConfig() {
+    return request("/api/logs/config");
+  },
+  putLoggingConfig(payload: { enabled?: boolean; modules?: Record<string, boolean> }) {
+    return request("/api/logs/config", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
   },
 };
 

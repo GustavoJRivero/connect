@@ -183,7 +183,7 @@ export default function ClientsPage() {
     setError(null);
     try {
       if (conn.status === "CUT") await api.restoreConnection(conn.id);
-      else await api.cutConnection(conn.id, "CORTADO");
+      else await api.cutConnection(conn.id, "suspended");
       await reloadList();
     } catch (e: any) {
       setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
@@ -607,7 +607,7 @@ function ClientDetail(props: {
     setError(null);
     try {
       if (conn.status === "CUT") await api.restoreConnection(conn.id);
-      else await api.cutConnection(conn.id, "CORTADO");
+      else await api.cutConnection(conn.id, "suspended");
       await reloadDetail();
     } catch (e: any) {
       setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
@@ -634,8 +634,8 @@ function ClientDetail(props: {
   async function suspendAllServices() {
     setError(null);
     try {
-      if (!window.confirm("¿Suspender TODOS los servicios del cliente? (Se aplicará CORTADO)")) return;
-      await api.suspendClientServices(props.clientId, "CORTADO");
+      if (!window.confirm("¿Suspender TODOS los servicios del cliente? (Se aplicará suspended)")) return;
+      await api.suspendClientServices(props.clientId, "suspended");
       await reloadDetail();
     } catch (e: any) {
       setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
@@ -724,7 +724,7 @@ function ClientDetail(props: {
             <button
               type="button"
               className="btn btn-sm btn-outline-warning me-2"
-              title="Suspender servicios (CORTADO)"
+              title="Suspender servicios (suspended)"
               onClick={suspendAllServices}
             >
               <i className="fa-solid fa-ban" />
@@ -839,7 +839,15 @@ function ClientDetail(props: {
                       <td>#{conn.id}</td>
                       <td>{conn.pppoe_name}</td>
                       <td>{conn.server_name ?? "-"}</td>
-                      <td>{conn.ip ?? "-"}</td>
+                      <td>
+                        {conn.ip ? (
+                          <a href={`http://${conn.ip.trim()}`} target="_blank" rel="noopener noreferrer" className="text-primary">
+                            {conn.ip}
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
                       <td>{conn.plan_profile}</td>
                       <td>{conn.service_address ?? "-"}</td>
                       <td>

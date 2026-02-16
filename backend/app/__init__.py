@@ -16,9 +16,6 @@ from .routes.jobs import bp as jobs_bp
 from .routes.network import bp as network_bp
 from .routes.payments import bp as payments_bp
 from .routes.settings import bp as settings_bp
-from .tasks.worker import start_worker
-
-
 def create_app() -> Flask:
     load_dotenv()
 
@@ -44,7 +41,6 @@ def create_app() -> Flask:
     app.register_blueprint(payments_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(health_bp)
-    # Worker en segundo plano para tareas (Mikrotik, etc.)
-    start_worker(app)
+    # Cola de jobs: se arranca en gunicorn_config.post_worker_init (hilo en el mismo proceso).
     return app
 

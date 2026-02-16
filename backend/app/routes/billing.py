@@ -106,11 +106,11 @@ def generate_monthly_invoices():
 def enforce_service_status():
     """
     Aplica reglas de corte/reconexión:
-    - Si una conexión ACTIVE tiene alguna factura ISSUED vencida (due_date < today) y no pagada -> cortar (profile CORTADO)
+    - Si una conexión ACTIVE tiene alguna factura ISSUED vencida (due_date < today) y no pagada -> cortar (profile suspended)
     - Si una conexión CUT no tiene facturas vencidas impagas -> restaurar al plan
     """
     today = date.today()
-    cut_profile = (request.get_json(silent=True) or {}).get("cut_profile") or _get_setting("mikrotik.cut_profile", "CORTADO")
+    cut_profile = (request.get_json(silent=True) or {}).get("cut_profile") or _get_setting("mikrotik.cut_profile", "suspended")
 
     mt = _get_mt_from_app()
     if not mt:
@@ -136,12 +136,14 @@ def enforce_service_status():
 
             if x.status == "ACTIVE" and overdue:
                 mt.set_pppoe_secret_profile(name=x.pppoe_name(), profile=cut_profile)
+                mt.disconnect_pppoe_session(name=x.pppoe_name())
                 x.status = "CUT"
                 x.mikrotik_profile = cut_profile
                 cut.append(int(x.id))
 
             if x.status == "CUT" and not overdue:
                 mt.set_pppoe_secret_profile(name=x.pppoe_name(), profile=x.plan_profile)
+                mt.disconnect_pppoe_session(name=x.pppoe_name())
                 x.status = "ACTIVE"
                 x.mikrotik_profile = x.plan_profile
                 restored.append(int(x.id))

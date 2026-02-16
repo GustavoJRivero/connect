@@ -46,7 +46,7 @@ def seed():
             "billing.mode": "GLOBAL",
             "billing.global_day": "1",
             "billing.due_days": "10",
-            "mikrotik.cut_profile": "CORTADO",
+            "mikrotik.cut_profile": "suspended",
             "issuer.cuit": "",
             "issuer.point_of_sale": "1",
         }

@@ -470,11 +470,11 @@ def suspend_services(client_id: int):
     """
     Suspende manualmente TODOS los servicios (conexiones) del cliente:
     - marca status CUT
-    - aplica mikrotik_profile = CORTADO (o el que se pase)
+    - aplica mikrotik_profile = suspended (o el que se pase)
     - encola jobs para setear el profile en Mikrotik (por server_id)
     """
     data = request.get_json(silent=True) or {}
-    cut_profile = (data.get("cut_profile") or "CORTADO").strip()
+    cut_profile = (data.get("cut_profile") or "suspended").strip()
 
     c = Client.query.get_or_404(client_id)
     conns = list(c.connections or [])

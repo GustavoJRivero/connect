@@ -47,7 +47,7 @@ export function Button(props: {
   children: React.ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
-  variant?: "primary" | "danger" | "default" | "ghost";
+  variant?: "primary" | "danger" | "default" | "secondary" | "ghost" | "info" | "warning";
   disabled?: boolean;
 }) {
   const klass =
@@ -55,9 +55,13 @@ export function Button(props: {
       ? "btn btn-sm btn-primary"
       : props.variant === "danger"
         ? "btn btn-sm btn-danger"
-        : props.variant === "ghost"
-          ? "btn btn-sm btn-link"
-          : "btn btn-sm btn-secondary";
+        : props.variant === "info"
+          ? "btn btn-sm btn-info"
+          : props.variant === "warning"
+            ? "btn btn-sm btn-warning"
+            : props.variant === "ghost"
+              ? "btn btn-sm btn-link"
+              : "btn btn-sm btn-secondary";
 
   return (
     <button

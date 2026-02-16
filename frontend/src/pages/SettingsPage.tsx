@@ -34,7 +34,7 @@ export default function SettingsPage() {
       const mtRes = await api.getSettings("mikrotik.");
       setBilling((prev) => ({
         ...prev,
-        cut_profile: String(mtRes["mikrotik.cut_profile"] ?? "CORTADO"),
+        cut_profile: String(mtRes["mikrotik.cut_profile"] ?? "suspended"),
       }));
     } catch (e: any) {
       setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
@@ -72,7 +72,7 @@ export default function SettingsPage() {
     try {
       const res = await api.putSettings({
         "billing.due_days": billing.due_days ?? "10",
-        "mikrotik.cut_profile": billing.cut_profile ?? "CORTADO",
+        "mikrotik.cut_profile": billing.cut_profile ?? "suspended",
       });
       await reload();
     } catch (e: any) {
@@ -120,7 +120,7 @@ export default function SettingsPage() {
           />
           <Field
             label="mikrotik.cut_profile"
-            value={billing.cut_profile ?? "CORTADO"}
+            value={billing.cut_profile ?? "suspended"}
             onChange={(v) => setBilling((b) => ({ ...b, cut_profile: v }))}
           />
         </Card>

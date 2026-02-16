@@ -29,10 +29,11 @@ echo "Aplicando migraciones..."
 export FLASK_APP=wsgi.py
 flask db upgrade
 
-echo "Iniciando servidor..."
+echo "Iniciando servidor (1 worker de Gunicorn + hilo de cola de jobs en el mismo proceso)..."
 exec gunicorn wsgi:app \
+    --config gunicorn_config.py \
     --bind 0.0.0.0:5001 \
-    --workers 2 \
+    --workers 1 \
     --timeout 120 \
     --access-logfile - \
     --error-logfile -
