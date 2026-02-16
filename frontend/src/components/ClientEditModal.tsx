@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Modal, Select, Grid, Checkbox, Alert, Group } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -10,8 +11,7 @@ export function ClientEditModal(props: {
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [client, setClient] = useState<any | null>(null);
-
+  const [client, setClient] = useState<unknown>(null);
   const [kind, setKind] = useState<"PERSON" | "COMPANY">("PERSON");
   const [fullName, setFullName] = useState("");
   const [dni, setDni] = useState("");
@@ -29,36 +29,24 @@ export function ClientEditModal(props: {
     setLoading(true);
     api
       .getClient(Number(props.clientId))
-      .then((c: any) => {
+      .then((c: unknown) => {
+        const x = c as { kind?: string; full_name?: string; dni?: string; cuit?: string; phone?: string; email?: string; address?: string; is_active?: boolean };
         setClient(c);
-        setKind((c?.kind ?? "PERSON").toUpperCase() === "COMPANY" ? "COMPANY" : "PERSON");
-        setFullName(String(c?.full_name ?? ""));
-        setDni(String(c?.dni ?? ""));
-        setCuit(String(c?.cuit ?? ""));
-        setPhone(String(c?.phone ?? ""));
-        setEmail(String(c?.email ?? ""));
-        setAddress(String(c?.address ?? ""));
-        setIsActive(Boolean(c?.is_active ?? true));
+        setKind((x?.kind ?? "PERSON").toUpperCase() === "COMPANY" ? "COMPANY" : "PERSON");
+        setFullName(String(x?.full_name ?? ""));
+        setDni(String(x?.dni ?? ""));
+        setCuit(String(x?.cuit ?? ""));
+        setPhone(String(x?.phone ?? ""));
+        setEmail(String(x?.email ?? ""));
+        setAddress(String(x?.address ?? ""));
+        setIsActive(Boolean(x?.is_active ?? true));
       })
-      .catch((e: any) => setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`))
+      .catch((e: unknown) => {
+        const err = e as { status?: number; body?: unknown };
+        setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      })
       .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.open, props.clientId]);
-
-  useEffect(() => {
-    if (!props.open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") props.onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    document.body.classList.add("modal-open");
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.classList.remove("modal-open");
-      document.body.style.overflow = "";
-    };
-  }, [props.open, props.onClose]);
 
   async function save() {
     setError(null);
@@ -79,104 +67,62 @@ export function ClientEditModal(props: {
         is_active: Boolean(isActive),
       });
       props.onSaved();
-    } catch (e: any) {
-      const body = e?.body ?? e;
-      if (e?.status === 409 && body?.error === "dni_already_exists") {
-        setError(`DNI ya existe (cliente #${body?.client_id}).`);
+    } catch (e: unknown) {
+      const body = (e as { status?: number; body?: { error?: string; client_id?: number } })?.body ?? e;
+      const err = e as { status?: number; body?: { error?: string; client_id?: number } };
+      if (err?.status === 409 && (body as { error?: string })?.error === "dni_already_exists") {
+        setError(`DNI ya existe (cliente #${(body as { client_id?: number })?.client_id}).`);
         return;
       }
-      if (e?.status === 409 && body?.error === "cuit_already_exists") {
-        setError(`CUIT ya existe (cliente #${body?.client_id}).`);
+      if (err?.status === 409 && (body as { error?: string })?.error === "cuit_already_exists") {
+        setError(`CUIT ya existe (cliente #${(body as { client_id?: number })?.client_id}).`);
         return;
       }
-      setError(`${e?.status ?? ""} ${JSON.stringify(body)}`);
+      setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
     }
   }
 
-  if (!props.open) return null;
-
   return (
-    <>
-      <div
-        className="modal fade show"
-        style={{ display: "block" }}
-        tabIndex={-1}
-        role="dialog"
-        onMouseDown={(e) => {
-          if (e.target === e.currentTarget) props.onClose();
-        }}
-      >
-        <div className="modal-dialog modal-lg" role="document">
-          <div className="modal-content">
-            <div className="modal-header">
-              <h5 className="modal-title">Editar cliente {props.clientId ? `#${props.clientId}` : ""}</h5>
-              <button type="button" className="btn-close" aria-label="Close" onClick={props.onClose} />
-            </div>
-            <div className="modal-body">
-              {error ? <div className="alert alert-danger sc-error">{error}</div> : null}
-              {loading ? <div className="text-muted">Cargando...</div> : null}
+    <Modal
+      opened={props.open}
+      onClose={props.onClose}
+      title={`Editar cliente ${props.clientId ? `#${props.clientId}` : ""}`}
+      size="lg"
+    >
+      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {loading ? <div>Cargando...</div> : null}
 
-              {!loading && client ? (
-                <div className="row">
-                  <div className="col-lg-6">
-                    <div className="mb-3">
-                      <label className="form-label">Tipo</label>
-                      <select
-                        className="form-select form-select-sm"
-                        value={kind}
-                        onChange={(e) => {
-                          const k = e.target.value as any;
-                          setKind(k);
-                          if (k === "PERSON") setCuit("");
-                          else setDni("");
-                        }}
-                      >
-                        <option value="PERSON">Persona</option>
-                        <option value="COMPANY">Empresa</option>
-                      </select>
-                    </div>
-                    <Field label="Nombre / Razón social" value={fullName} onChange={setFullName} />
-                    {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} /> : <Field label="CUIT" value={cuit} onChange={setCuit} />}
-                    <div className="row">
-                      <div className="col-md-6">
-                        <Field label="Tel/Cel" value={phone} onChange={setPhone} />
-                      </div>
-                      <div className="col-md-6">
-                        <Field label="Email" value={email} onChange={setEmail} />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="col-lg-6">
-                    <Field label="Dirección" value={address} onChange={setAddress} />
-                    <div className="form-check mb-3">
-                      <input
-                        className="form-check-input"
-                        type="checkbox"
-                        checked={isActive}
-                        onChange={(e) => setIsActive(e.target.checked)}
-                        id="clientActive"
-                      />
-                      <label className="form-check-label" htmlFor="clientActive">
-                        Activo
-                      </label>
-                    </div>
-                    <div className="text-muted small">Solo se editan datos del titular. Las conexiones se gestionan en la solapa “Conexiones”.</div>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-            <div className="modal-footer">
-              <Button variant="default" onClick={props.onClose}>
-                Cancelar
-              </Button>
-              <Button variant="primary" onClick={save}>
-                Guardar
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div className="modal-backdrop fade show" />
-    </>
+      {!loading && client ? (
+        <>
+          <Grid>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <Select
+                label="Tipo"
+                value={kind}
+                onChange={(v) => { const k = (v ?? "PERSON") as "PERSON" | "COMPANY"; setKind(k); if (k === "PERSON") setCuit(""); else setDni(""); }}
+                data={[{ value: "PERSON", label: "Persona" }, { value: "COMPANY", label: "Empresa" }]}
+              />
+              <Field label="Nombre / Razón social" value={fullName} onChange={setFullName} />
+              {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} /> : <Field label="CUIT" value={cuit} onChange={setCuit} />}
+              <Grid>
+                <Grid.Col span={6}><Field label="Tel/Cel" value={phone} onChange={setPhone} /></Grid.Col>
+                <Grid.Col span={6}><Field label="Email" value={email} onChange={setEmail} /></Grid.Col>
+              </Grid>
+            </Grid.Col>
+            <Grid.Col span={{ base: 12, md: 6 }}>
+              <Field label="Dirección" value={address} onChange={setAddress} />
+              <Checkbox label="Activo" checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} mt="sm" />
+              <p style={{ fontSize: "var(--mantine-font-size-sm)", color: "var(--mantine-color-dimmed)", marginTop: 12 }}>
+                Solo se editan datos del titular. Las conexiones se gestionan en la solapa "Conexiones".
+              </p>
+            </Grid.Col>
+          </Grid>
+          <Group justify="flex-end" mt="md">
+            <Button variant="default" onClick={props.onClose}>Cancelar</Button>
+            <Button variant="primary" onClick={save}>Guardar</Button>
+          </Group>
+        </>
+      ) : null}
+    </Modal>
   );
 }

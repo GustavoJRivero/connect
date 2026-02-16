@@ -34,7 +34,11 @@ export default function App() {
 
   return (
     <>
-      {error ? <pre style={{ color: "crimson" }}>{error}</pre> : null}
+      {error ? (
+        <div style={{ padding: 16 }}>
+          <div style={{ color: "var(--mantine-color-red-6)", whiteSpace: "pre-wrap" }}>{error}</div>
+        </div>
+      ) : null}
       <BrowserRouter>
         <AppShell onLogout={() => setAuthed(false)} />
       </BrowserRouter>

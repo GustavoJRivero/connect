@@ -1,23 +1,24 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
-import { Button, Card, Field } from "../ui";
+import { Button, Card } from "../ui";
 import { InvoiceModal } from "../components/InvoiceModal";
 import { PaymentModal } from "../components/PaymentModal";
+import { Grid, Table, Alert } from "@mantine/core";
 
 export default function InvoicesPage() {
-  const [items, setItems] = useState<any[]>([]);
+  const [items, setItems] = useState<unknown[]>([]);
   const [error, setError] = useState<string | null>(null);
-
-  const [paying, setPaying] = useState<any | null>(null);
+  const [paying, setPaying] = useState<unknown>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
 
   async function reload() {
     setError(null);
     try {
       const res = await api.listInvoices();
-      setItems(res);
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+      setItems(Array.isArray(res) ? res : []);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
     }
   }
 
@@ -30,8 +31,9 @@ export default function InvoicesPage() {
     try {
       await api.issueInvoice(id);
       await reload();
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
     }
   }
 
@@ -40,20 +42,18 @@ export default function InvoicesPage() {
     try {
       if (!window.confirm("¿Eliminar factura? (baja lógica, solo si no tiene pagos)")) return;
       await api.deleteInvoice(id);
-      if (paying?.id === id) setPaying(null);
+      if (paying && typeof paying === "object" && "id" in paying && (paying as { id: number }).id === id) setPaying(null);
       await reload();
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
     }
   }
 
-  function openPay(x: any) {
-    setError(null);
-    setPaying(x);
-  }
+  const list = items as { id: number; invoice_type?: string; point_of_sale?: number; cbte_number?: string; client_id: number; connection_id?: number; total: string; paid_total?: string; due_date?: string; status: string }[];
 
   return (
-    <div className="row">
+    <Grid>
       <InvoiceModal
         open={showNewInvoice}
         onClose={() => setShowNewInvoice(false)}
@@ -73,88 +73,72 @@ export default function InvoicesPage() {
         }}
       />
 
-      <div className="col-12">
+      <Grid.Col span={12}>
         <Card
-          className="card card-outline card-primary"
           title="Facturas"
           headerRight={
             <>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setShowNewInvoice(true);
-                  setError(null);
-                }}
-              >
-                <i className="fa-solid fa-plus me-2" />
+              <Button variant="primary" onClick={() => { setShowNewInvoice(true); setError(null); }}>
                 Nueva factura
               </Button>
               <Button variant="default" onClick={reload}>
-                <i className="fa-solid fa-rotate me-2" />
                 Recargar
               </Button>
             </>
           }
         >
-          {error ? <div className="alert alert-danger sc-error mb-0">{error}</div> : null}
+          {error ? <Alert color="red" className="sc-error mb-0">{error}</Alert> : null}
         </Card>
-      </div>
+      </Grid.Col>
 
-      <div className="col-lg-8">
-        <Card className="card card-outline card-secondary" title="Listado">
-          <div className="table-responsive">
-            <table className="table table-bordered table-hover">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Tipo</th>
-                  <th>PV</th>
-                  <th>N°</th>
-                  <th>Cliente</th>
-                  <th>Conexión</th>
-                  <th>Total</th>
-                  <th>Pagado</th>
-                  <th>Vence</th>
-                  <th>Estado</th>
-                  <th style={{ width: 240 }}>Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((x) => (
-                  <tr key={x.id}>
-                    <td>#{x.id}</td>
-                    <td>{x.invoice_type}</td>
-                    <td>{x.point_of_sale}</td>
-                    <td>{x.cbte_number ?? "-"}</td>
-                    <td>{x.client_id}</td>
-                    <td>{x.connection_id ?? "-"}</td>
-                    <td>{x.total}</td>
-                    <td>{x.paid_total ?? "0"}</td>
-                    <td>{x.due_date ?? "-"}</td>
-                    <td>{x.status}</td>
-                    <td>
+      <Grid.Col span={{ base: 12, lg: 8 }}>
+        <Card title="Listado">
+          <Table.ScrollContainer minWidth={800}>
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>ID</Table.Th>
+                  <Table.Th>Tipo</Table.Th>
+                  <Table.Th>PV</Table.Th>
+                  <Table.Th>N°</Table.Th>
+                  <Table.Th>Cliente</Table.Th>
+                  <Table.Th>Conexión</Table.Th>
+                  <Table.Th>Total</Table.Th>
+                  <Table.Th>Pagado</Table.Th>
+                  <Table.Th>Vence</Table.Th>
+                  <Table.Th>Estado</Table.Th>
+                  <Table.Th>Acciones</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {list.map((x) => (
+                  <Table.Tr key={x.id}>
+                    <Table.Td>#{x.id}</Table.Td>
+                    <Table.Td>{x.invoice_type}</Table.Td>
+                    <Table.Td>{x.point_of_sale}</Table.Td>
+                    <Table.Td>{x.cbte_number ?? "-"}</Table.Td>
+                    <Table.Td>{x.client_id}</Table.Td>
+                    <Table.Td>{x.connection_id ?? "-"}</Table.Td>
+                    <Table.Td>{x.total}</Table.Td>
+                    <Table.Td>{x.paid_total ?? "0"}</Table.Td>
+                    <Table.Td>{x.due_date ?? "-"}</Table.Td>
+                    <Table.Td>{x.status}</Table.Td>
+                    <Table.Td>
                       {x.status === "DRAFT" ? (
-                        <Button variant="primary" onClick={() => issue(x.id)}>
-                          Emitir
-                        </Button>
+                        <Button variant="primary" onClick={() => issue(x.id)}>Emitir</Button>
                       ) : null}
-                      {x.status === "ISSUED" || x.status === "DRAFT" ? (
-                        <Button variant="primary" onClick={() => openPay(x)}>
-                          Registrar pago
-                        </Button>
+                      {(x.status === "ISSUED" || x.status === "DRAFT") ? (
+                        <Button variant="primary" onClick={() => setPaying(x)}>Registrar pago</Button>
                       ) : null}
-                      <Button variant="danger" onClick={() => removeInvoice(x.id)}>
-                        Eliminar
-                      </Button>
-                    </td>
-                  </tr>
+                      <Button variant="danger" onClick={() => removeInvoice(x.id)}>Eliminar</Button>
+                    </Table.Td>
+                  </Table.Tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
         </Card>
-      </div>
-    </div>
+      </Grid.Col>
+    </Grid>
   );
 }
-

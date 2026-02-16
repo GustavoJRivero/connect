@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { api } from "../api";
 import { Button, Card, Field } from "../ui";
+import { Grid, Checkbox, Alert } from "@mantine/core";
 
 export default function BillingPage() {
   const [issueDate, setIssueDate] = useState("");
@@ -10,71 +11,65 @@ export default function BillingPage() {
   async function generate() {
     setError(null);
     try {
-      const payload: any = { issue };
+      const payload: { issue?: boolean; issue_date?: string } = { issue };
       if (issueDate) payload.issue_date = issueDate;
-      const res = await api.generateBilling(payload);
-      // no-op: quitamos debug json
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+      await api.generateBilling(payload);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
     }
   }
 
   async function enforce() {
     setError(null);
     try {
-      const res = await api.enforceBilling({});
-      // no-op: quitamos debug json
-    } catch (e: any) {
-      setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`);
+      await api.enforceBilling({});
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: unknown };
+      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
     }
   }
 
   return (
-    <div className="row">
-      <div className="col-lg-6">
-        <Card className="card card-outline card-primary" title="Generación de facturas (por conexión)">
+    <Grid>
+      <Grid.Col span={{ base: 12, lg: 6 }}>
+        <Card title="Generación de facturas (por conexión)">
           <Field
             label="Fecha de emisión (opcional YYYY-MM-DD)"
             value={issueDate}
             onChange={setIssueDate}
             placeholder="2026-01-31"
           />
-          <div className="form-check mb-3">
-            <input
-              className="form-check-input"
-              type="checkbox"
-              checked={issue}
-              onChange={(e) => setIssue(e.target.checked)}
-              id="issueDirect"
-            />
-            <label className="form-check-label" htmlFor="issueDirect">
-              Emitir directamente (ISSUED)
-            </label>
-          </div>
+          <Checkbox
+            label="Emitir directamente (ISSUED)"
+            checked={issue}
+            onChange={(e) => setIssue(e.currentTarget.checked)}
+            mt="sm"
+          />
           <Button variant="primary" onClick={generate}>
-            <i className="fa-solid fa-rotate me-2" />
             Generar
           </Button>
         </Card>
-      </div>
+      </Grid.Col>
 
-      <div className="col-lg-6">
-        <Card className="card card-outline card-danger" title="Corte / reconexión automático">
-          <p className="text-muted mb-3">Evalúa facturas vencidas impagas y aplica CUT/RESTORE en Mikrotik.</p>
+      <Grid.Col span={{ base: 12, lg: 6 }}>
+        <Card title="Corte / reconexión automático">
+          <p style={{ color: "var(--mantine-color-dimmed)", marginBottom: 12 }}>
+            Evalúa facturas vencidas impagas y aplica CUT/RESTORE en Mikrotik.
+          </p>
           <Button variant="danger" onClick={enforce}>
-            <i className="fa-solid fa-bolt me-2" />
             Ejecutar enforce
           </Button>
         </Card>
-      </div>
+      </Grid.Col>
 
       {error ? (
-        <div className="col-12">
-          <div className="alert alert-danger sc-error">{error}</div>
-        </div>
+        <Grid.Col span={12}>
+          <Alert color="red" className="sc-error">
+            {error}
+          </Alert>
+        </Grid.Col>
       ) : null}
-
-    </div>
+    </Grid>
   );
 }
-
