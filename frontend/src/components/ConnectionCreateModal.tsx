@@ -64,7 +64,11 @@ export function ConnectionCreateModal(props: {
 
   return (
     <Modal opened={props.open} onClose={props.onClose} title="Nueva conexión" size="lg">
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
       <Grid>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Select label="Servidor PPPoE (Mikrotik)" value={serverId} onChange={(v) => v != null && setServerId(v)} data={[{ value: "", label: "(Seleccionar servidor)" }, ...serverData]} />

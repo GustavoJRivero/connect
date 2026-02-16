@@ -9,7 +9,7 @@ import { ConnectionDetailsModal } from "../components/ConnectionDetailsModal";
 import { ClientEditModal } from "../components/ClientEditModal";
 import { ConnectionCreateModal } from "../components/ConnectionCreateModal";
 import { ConnectionEditModal } from "../components/ConnectionEditModal";
-import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination } from "@mantine/core";
+import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Skeleton, Tabs } from "@mantine/core";
 
 type SortCol = "id" | "full_name" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count";
 
@@ -194,7 +194,7 @@ export default function ClientsPage() {
       <ClientEditModal open={editingClientId != null} clientId={editingClientId} onClose={() => setEditingClientId(null)} onSaved={async () => { setEditingClientId(null); await reloadList(); }} />
 
       {mode === "detail" && clientId && success ? (
-        <Alert color="green" onClose={() => setSuccess(null)} withCloseButton>{success}</Alert>
+        <Alert color="green" title="Éxito" onClose={() => setSuccess(null)} withCloseButton>{success}</Alert>
       ) : null}
 
       {mode === "detail" && clientId ? (
@@ -231,7 +231,7 @@ export default function ClientsPage() {
             <Button variant="primary" onClick={create}>Guardar</Button>
             <Button variant="default" onClick={() => { setError(null); setSuccess(null); navigate("/clients"); }}>Cancelar</Button>
           </Group>
-          {error ? <Alert color="red" className="sc-error" mt="md">{error}</Alert> : null}
+          {error ? <Alert color="red" className="sc-error" title="Error" mt="md">{error}</Alert> : null}
         </Card>
       ) : null}
 
@@ -253,7 +253,7 @@ export default function ClientsPage() {
               <Button variant="default" onClick={reloadList}>Recargar</Button>
             </Group>
           </Group>
-          {error ? <Alert color="red" className="sc-error">{error}</Alert> : null}
+          {error ? <Alert color="red" className="sc-error" title="Error">{error}</Alert> : null}
           <Table.ScrollContainer minWidth={900}>
             <Table>
               <Table.Thead>
@@ -413,7 +413,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
             </Group>
           }
         >
-          {error ? <Alert color="red" className="sc-error">{error}</Alert> : null}
+          {error ? <Alert color="red" className="sc-error" title="Error">{error}</Alert> : null}
           {client ? (
             <Grid>
               <Grid.Col span={6}>
@@ -435,17 +435,14 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
           )}
         </Card>
 
-        <Card
-          header={
-            <Group gap="xs">
-              <Button variant={tab === "connections" ? "primary" : "default"} onClick={() => setTab("connections")}>Conexiones</Button>
-              <Button variant={tab === "billing" ? "primary" : "default"} onClick={() => setTab("billing")}>Facturación</Button>
-              <Button variant={tab === "complaints" ? "primary" : "default"} onClick={() => setTab("complaints")}>Reclamos</Button>
-            </Group>
-          }
-        >
-          {tab === "connections" ? (
-            <>
+        <Card>
+          <Tabs value={tab} onChange={(v) => v && setTab(v as "connections" | "billing" | "complaints")}>
+            <Tabs.List grow>
+              <Tabs.Tab value="connections">Conexiones</Tabs.Tab>
+              <Tabs.Tab value="billing">Facturación</Tabs.Tab>
+              <Tabs.Tab value="complaints">Reclamos</Tabs.Tab>
+            </Tabs.List>
+            <Tabs.Panel value="connections" pt="md" px="md" pb="md">
               <Group justify="space-between" mb="sm">
                 <Text c="dimmed">Conexiones del cliente</Text>
                 <Button variant="primary" onClick={() => setShowNewConnection(true)}>Nueva conexión</Button>
@@ -457,18 +454,23 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                   </Table.Thead>
                   <Table.Tbody>
                     {connections.map((conn) => (
-                      <Table.Tr key={conn.id}>
+                      <Table.Tr
+                        key={conn.id}
+                        style={{ cursor: "pointer" }}
+                        onClick={() => setConnDetails(conn)}
+                      >
                         <Table.Td>#{conn.id}</Table.Td>
                         <Table.Td>{conn.pppoe_name}</Table.Td>
                         <Table.Td>{conn.server_name ?? "-"}</Table.Td>
-                        <Table.Td>{conn.ip ? <Anchor href={`http://${String(conn.ip).trim()}`} target="_blank" rel="noopener noreferrer">{conn.ip}</Anchor> : "-"}</Table.Td>
+                        <Table.Td onClick={(e) => e.stopPropagation()}>
+                          {conn.ip ? <Anchor href={`http://${String(conn.ip).trim()}`} target="_blank" rel="noopener noreferrer">{conn.ip}</Anchor> : "-"}
+                        </Table.Td>
                         <Table.Td>{conn.plan_profile}</Table.Td>
                         <Table.Td>{conn.service_address ?? "-"}</Table.Td>
                         <Table.Td><Badge color={conn.status === "CUT" ? "red" : "green"}>{conn.status === "CUT" ? "Suspend" : "Active"}</Badge></Table.Td>
-                        <Table.Td>
+                        <Table.Td onClick={(e) => e.stopPropagation()}>
                           <Group gap="xs">
                             <Button variant="default" onClick={() => setEditingConn(conn)}>Editar</Button>
-                            <Button variant="default" onClick={() => setConnDetails(conn)}>Detalles</Button>
                             <Button variant={conn.status === "CUT" ? "primary" : "danger"} onClick={() => cutRestore(conn)}>{conn.status === "CUT" ? "Restaurar" : "Cortar"}</Button>
                           </Group>
                         </Table.Td>
@@ -477,9 +479,8 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                   </Table.Tbody>
                 </Table>
               </Table.ScrollContainer>
-            </>
-          ) : tab === "billing" ? (
-            <>
+            </Tabs.Panel>
+            <Tabs.Panel value="billing" pt="md" px="md" pb="md">
               <Group justify="space-between" mb="md">
                 <Text c="dimmed">Facturas del cliente</Text>
                 <Button variant="primary" onClick={() => setShowNewInvoice(true)}>Nueva factura</Button>
@@ -511,9 +512,8 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 </Table>
               </Table.ScrollContainer>
               {!invoices.length ? <Text c="dimmed">Sin facturas.</Text> : null}
-            </>
-          ) : (
-            <>
+            </Tabs.Panel>
+            <Tabs.Panel value="complaints" pt="md" px="md" pb="md">
               <Group justify="space-between" mb="md">
                 <Text c="dimmed">Reclamos del cliente</Text>
                 <Group><Button variant="primary" onClick={() => setShowNewComplaint(true)}>Nuevo reclamo</Button><Button variant="default" onClick={reloadDetail}>Recargar</Button></Group>
@@ -557,8 +557,8 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 </Table>
               </Table.ScrollContainer>
               {!complaints.length ? <Text c="dimmed">Sin reclamos.</Text> : null}
-            </>
-          )}
+            </Tabs.Panel>
+          </Tabs>
         </Card>
         </div>
       </Stack>

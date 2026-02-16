@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Grid, Alert, Group, Text } from "@mantine/core";
+import { Modal, Grid, Alert, Group, Text, Divider } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -43,7 +43,11 @@ export function ConnectionDetailsModal(props: {
 
   return (
     <Modal opened={props.open} onClose={props.onClose} title={`Conexión #${conn?.id} — Detalles`} size="lg">
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
       <Grid>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Text size="sm" c="dimmed">PPPoE: {conn?.pppoe_name ?? "-"}</Text>
@@ -58,11 +62,11 @@ export function ConnectionDetailsModal(props: {
           <Text size="sm" c="dimmed">Última desconexión: {conn?.last_disconnected_at ? String(conn.last_disconnected_at).replace("T", " ").slice(0, 19) : "-"}</Text>
         </Grid.Col>
       </Grid>
-      <hr style={{ border: "none", borderTop: "1px solid var(--mantine-color-default-border)", margin: "16px 0" }} />
+      <Divider my="md" />
       <Grid>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Field label="IP (opcional)" value={ip} onChange={setIp} placeholder="ej: 192.168.1.50" />
-          <p style={{ fontSize: "var(--mantine-font-size-xs)", color: "var(--mantine-color-dimmed)" }}>Si se setea, se aplica al PPP secret como IP fija (remote-address).</p>
+          <Text size="xs" c="dimmed" mt="xs">Si se setea, se aplica al PPP secret como IP fija (remote-address).</Text>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Text size="sm" c="dimmed">Estado Mikrotik (en vivo)</Text>

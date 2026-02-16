@@ -13,6 +13,8 @@ import {
   Tooltip,
   useMantineColorScheme,
   useComputedColorScheme,
+  Text,
+  ThemeIcon,
 } from "@mantine/core";
 import { api, setToken } from "./api";
 import { Button } from "./ui";
@@ -25,14 +27,14 @@ import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
 import NetworkPage from "./pages/NetworkPage";
 
-const NAV_ITEMS: { to: string; id: string; label: string }[] = [
-  { to: "/dashboard", id: "dashboard", label: "Dashboard" },
-  { to: "/clients", id: "clients", label: "Clientes" },
-  { to: "/billing", id: "billing", label: "Cobranza" },
-  { to: "/invoices", id: "invoices", label: "Facturas" },
-  { to: "/payments", id: "payments", label: "Pagos" },
-  { to: "/network", id: "network", label: "Red" },
-  { to: "/settings", id: "settings", label: "Configuración" },
+const NAV_ITEMS: { to: string; id: string; label: string; icon: string }[] = [
+  { to: "/dashboard", id: "dashboard", label: "Dashboard", icon: "📊" },
+  { to: "/clients", id: "clients", label: "Clientes", icon: "👥" },
+  { to: "/billing", id: "billing", label: "Cobranza", icon: "💰" },
+  { to: "/invoices", id: "invoices", label: "Facturas", icon: "📄" },
+  { to: "/payments", id: "payments", label: "Pagos", icon: "💵" },
+  { to: "/network", id: "network", label: "Red", icon: "🌐" },
+  { to: "/settings", id: "settings", label: "Configuración", icon: "⚙️" },
 ];
 
 export default function AppShell(props: { onLogout: () => void }) {
@@ -122,20 +124,54 @@ export default function AppShell(props: { onLogout: () => void }) {
 
       <MantineAppShell.Navbar p="xs">
         <MantineAppShell.Section>
-          <UnstyledButton component={Link} to="/dashboard" style={{ fontWeight: 300, fontSize: "1.1rem" }}>
-            SistemaConnect
-          </UnstyledButton>
+          <Tooltip label="Inicio" position="right" disabled={!collapsed}>
+            <UnstyledButton
+              component={Link}
+              to="/dashboard"
+              style={{
+                fontWeight: 600,
+                fontSize: collapsed ? "1rem" : "1.1rem",
+                display: "block",
+                width: "100%",
+                textAlign: collapsed ? "center" : "left",
+                padding: collapsed ? "8px" : "8px 12px",
+              }}
+            >
+              {collapsed ? "SC" : "SistemaConnect"}
+            </UnstyledButton>
+          </Tooltip>
         </MantineAppShell.Section>
         <MantineAppShell.Section grow mt="md">
-          {NAV_ITEMS.map((t) => (
-            <MantineNavLink
-              key={t.id}
-              component={NavLink}
-              to={t.to}
-              label={t.label}
-              active={loc.pathname === "/" ? t.to === "/dashboard" : loc.pathname.startsWith(t.to)}
-            />
-          ))}
+          {NAV_ITEMS.map((t) => {
+            const isActive = loc.pathname === "/" ? t.to === "/dashboard" : loc.pathname.startsWith(t.to);
+            if (collapsed) {
+              return (
+                <Tooltip key={t.id} label={t.label} position="right" withArrow>
+                  <Box style={{ marginBottom: 2 }}>
+                    <MantineNavLink
+                      component={NavLink}
+                      to={t.to}
+                      leftSection={<ThemeIcon variant="light" size="md" style={{ minWidth: 36, minHeight: 36 }}>{t.icon}</ThemeIcon>}
+                      active={isActive}
+                      style={{ borderRadius: "var(--mantine-radius-sm)" }}
+                    />
+                  </Box>
+                </Tooltip>
+              );
+            }
+            return (
+              <Box key={t.id} mb={2}>
+                <MantineNavLink
+                  component={NavLink}
+                  to={t.to}
+                  label={t.label}
+                  leftSection={<Text span style={{ fontSize: "1.1em" }}>{t.icon}</Text>}
+                  active={isActive}
+                  style={{ borderRadius: "var(--mantine-radius-sm)" }}
+                />
+              </Box>
+            );
+          })}
         </MantineAppShell.Section>
       </MantineAppShell.Navbar>
 

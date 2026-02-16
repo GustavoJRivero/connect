@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Select, Grid, Alert, Group } from "@mantine/core";
+import { Modal, Select, Grid, Alert, Group, Text } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -63,11 +63,15 @@ export function ConnectionEditModal(props: {
 
   return (
     <Modal opened={props.open} onClose={props.onClose} title={`Editar conexión #${conn?.id}`} size="lg">
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
       <Grid>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Select label="Servidor PPPoE (Mikrotik)" value={serverId} onChange={(v) => v != null && setServerId(v)} data={[{ value: "", label: "(Seleccionar servidor)" }, ...serverData]} />
-          <p style={{ fontSize: "var(--mantine-font-size-xs)", color: "var(--mantine-color-dimmed)" }}>No se edita el estado desde acá.</p>
+          <Text size="xs" c="dimmed" mt="xs">No se edita el estado desde acá.</Text>
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Select label="Plan" value={planProfile} onChange={(v) => v && setPlanProfile(v)} data={planData} />

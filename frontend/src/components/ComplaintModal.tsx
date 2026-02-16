@@ -58,7 +58,11 @@ export function ComplaintModal(props: {
 
   return (
     <Modal opened={props.open} onClose={props.onClose} title="Nuevo reclamo" size="lg">
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
       <Select
         label="Conexión"
         value={connectionId}

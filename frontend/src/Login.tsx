@@ -1,5 +1,17 @@
 import React, { useState } from "react";
-import { Card, Text, TextInput, PasswordInput, Button, Group, Stack, Alert } from "@mantine/core";
+import {
+  Card,
+  Text,
+  TextInput,
+  PasswordInput,
+  Button,
+  Group,
+  Stack,
+  Alert,
+  Title,
+  Box,
+  Paper,
+} from "@mantine/core";
 import { api, setToken } from "./api";
 
 export default function Login(props: { onLoggedIn: () => void }) {
@@ -28,12 +40,21 @@ export default function Login(props: { onLoggedIn: () => void }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <Card shadow="sm" padding="lg" radius="md" withBorder style={{ maxWidth: 400, width: "100%" }}>
-        <Stack gap="md">
-          <Text size="xl" fw={700} ta="center">
-            <b>Sistema</b>Connect
-          </Text>
+    <Box
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+        background: "var(--mantine-color-default-hover)",
+      }}
+    >
+      <Paper shadow="md" p="xl" radius="md" withBorder style={{ maxWidth: 400, width: "100%" }}>
+        <Stack gap="lg">
+          <Title order={2} ta="center" fw={700}>
+            SistemaConnect
+          </Title>
           <Text size="sm" c="dimmed" ta="center">
             Iniciá sesión con JWT. Si es la primera vez, usá "Bootstrap admin" para crear el primer usuario.
           </Text>
@@ -44,12 +65,12 @@ export default function Login(props: { onLoggedIn: () => void }) {
             placeholder="admin"
           />
           <PasswordInput
-            label="Password"
+            label="Contraseña"
             value={password}
             onChange={(e) => setPassword(e.currentTarget.value)}
             placeholder="••••••••"
           />
-          <Group>
+          <Group justify="flex-start">
             <Button variant="filled" disabled={busy} onClick={submit}>
               {busy ? "Procesando..." : mode === "login" ? "Entrar" : "Crear admin + Entrar"}
             </Button>
@@ -58,16 +79,16 @@ export default function Login(props: { onLoggedIn: () => void }) {
               disabled={busy}
               onClick={() => setMode(mode === "login" ? "bootstrap" : "login")}
             >
-              Cambiar a {mode === "login" ? "Bootstrap" : "Login"}
+              {mode === "login" ? "Bootstrap admin" : "Volver a login"}
             </Button>
           </Group>
           {error ? (
-            <Alert color="red" className="sc-error">
+            <Alert color="red" className="sc-error" title="Error">
               {error}
             </Alert>
           ) : null}
         </Stack>
-      </Card>
-    </div>
+      </Paper>
+    </Box>
   );
 }

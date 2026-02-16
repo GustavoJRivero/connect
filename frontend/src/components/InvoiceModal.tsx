@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Select, Grid, Alert, Group } from "@mantine/core";
+import { Modal, Select, Grid, Alert, Group, Text } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -68,7 +68,11 @@ export function InvoiceModal(props: {
 
   return (
     <Modal opened={props.open} onClose={props.onClose} title="Nueva factura (monto libre)" size="lg">
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
       <Grid>
         <Grid.Col span={{ base: 12, md: 3 }}>
           <Field label="Client ID" value={clientIdFixed || clientId} onChange={setClientId} placeholder="ej: 1" />

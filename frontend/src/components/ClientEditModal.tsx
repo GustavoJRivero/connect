@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Select, Grid, Checkbox, Alert, Group } from "@mantine/core";
+import { Modal, Select, Grid, Checkbox, Alert, Group, Stack, Text, Skeleton } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -89,8 +89,19 @@ export function ClientEditModal(props: {
       title={`Editar cliente ${props.clientId ? `#${props.clientId}` : ""}`}
       size="lg"
     >
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
-      {loading ? <div>Cargando...</div> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
+      {loading ? (
+        <Stack gap="md">
+          <Skeleton height={36} />
+          <Skeleton height={36} />
+          <Skeleton height={36} />
+          <Skeleton height={60} />
+        </Stack>
+      ) : null}
 
       {!loading && client ? (
         <>
@@ -112,9 +123,9 @@ export function ClientEditModal(props: {
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Field label="Dirección" value={address} onChange={setAddress} />
               <Checkbox label="Activo" checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} mt="sm" />
-              <p style={{ fontSize: "var(--mantine-font-size-sm)", color: "var(--mantine-color-dimmed)", marginTop: 12 }}>
+              <Text size="sm" c="dimmed" mt="md">
                 Solo se editan datos del titular. Las conexiones se gestionan en la solapa "Conexiones".
-              </p>
+              </Text>
             </Grid.Col>
           </Grid>
           <Group justify="flex-end" mt="md">

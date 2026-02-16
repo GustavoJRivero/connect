@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Select, Grid, Alert, Group } from "@mantine/core";
+import { Modal, Select, Grid, Alert, Group, Text, TextInput } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -71,7 +71,11 @@ export function PaymentModal(props: {
       title={inv ? `Registrar pago — Factura #${inv.id} (Cliente ${inv.client_id})` : "Registrar pago"}
       size="lg"
     >
-      {error ? <Alert color="red" className="sc-error" mb="md">{error}</Alert> : null}
+      {error ? (
+        <Alert color="red" className="sc-error" title="Error" mb="md">
+          {error}
+        </Alert>
+      ) : null}
       {inv ? (
         <>
           <Grid>
@@ -85,11 +89,15 @@ export function PaymentModal(props: {
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 3 }}>
               <Field label="Monto" value={amount} onChange={setAmount} />
-              <p style={{ fontSize: "var(--mantine-font-size-xs)", color: "var(--mantine-color-dimmed)" }}>Saldo: AR$ {remaining.toFixed(2)}</p>
+              <Text size="xs" c="dimmed" mt="xs">Saldo: AR$ {remaining.toFixed(2)}</Text>
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 4 }}>
-              <label style={{ fontSize: "var(--mantine-font-size-sm)", fontWeight: 500 }}>Fecha</label>
-              <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)} style={{ width: "100%", padding: "var(--mantine-spacing-xs) var(--mantine-spacing-sm)", border: "1px solid var(--mantine-color-default-border)", borderRadius: "var(--mantine-radius-sm)" }} />
+              <TextInput
+                label="Fecha"
+                type="date"
+                value={paidAt}
+                onChange={(e) => setPaidAt(e.currentTarget.value)}
+              />
             </Grid.Col>
           </Grid>
           <Field label="Referencia (op/comprobante)" value={reference} onChange={setReference} placeholder="Opcional" />
@@ -99,7 +107,7 @@ export function PaymentModal(props: {
           </Group>
         </>
       ) : (
-        <p style={{ color: "var(--mantine-color-dimmed)" }}>Seleccioná una factura.</p>
+        <Text size="sm" c="dimmed">Seleccioná una factura.</Text>
       )}
     </Modal>
   );

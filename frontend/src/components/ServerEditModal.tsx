@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Grid, Alert, Group, Checkbox } from "@mantine/core";
+import { Modal, Grid, Alert, Group, Checkbox, Stack, Skeleton } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 
@@ -140,12 +140,21 @@ export function ServerEditModal(props: {
       size="lg"
     >
       {loading ? (
-        <div>Cargando...</div>
+        <Stack gap="md">
+          <Skeleton height={36} />
+          <Skeleton height={36} />
+          <Skeleton height={36} />
+          <Skeleton height={36} />
+        </Stack>
       ) : (
         <>
-          {error ? <Alert color="red" mb="md">{error}</Alert> : null}
+          {error ? (
+            <Alert color="red" title="Error" mb="md">
+              {error}
+            </Alert>
+          ) : null}
           {testResult ? (
-            <Alert color={testResult.ok ? "green" : "red"} mb="md">
+            <Alert color={testResult.ok ? "green" : "red"} title={testResult.ok ? "OK" : "Error"} mb="md">
               {testResult.message}
             </Alert>
           ) : null}

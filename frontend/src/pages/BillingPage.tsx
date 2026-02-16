@@ -1,7 +1,16 @@
 import React, { useState } from "react";
 import { api } from "../api";
-import { Button, Card, Field } from "../ui";
-import { Grid, Checkbox, Alert } from "@mantine/core";
+import { Button, Field } from "../ui";
+import {
+  Grid,
+  Checkbox,
+  Alert,
+  Card,
+  Title,
+  Text,
+  Stack,
+  Group,
+  } from "@mantine/core";
 
 export default function BillingPage() {
   const [issueDate, setIssueDate] = useState("");
@@ -31,45 +40,56 @@ export default function BillingPage() {
   }
 
   return (
-    <Grid>
-      <Grid.Col span={{ base: 12, lg: 6 }}>
-        <Card title="Generación de facturas (por conexión)">
-          <Field
-            label="Fecha de emisión (opcional YYYY-MM-DD)"
-            value={issueDate}
-            onChange={setIssueDate}
-            placeholder="2026-01-31"
-          />
-          <Checkbox
-            label="Emitir directamente (ISSUED)"
-            checked={issue}
-            onChange={(e) => setIssue(e.currentTarget.checked)}
-            mt="sm"
-          />
-          <Button variant="primary" onClick={generate}>
-            Generar
-          </Button>
-        </Card>
-      </Grid.Col>
-
-      <Grid.Col span={{ base: 12, lg: 6 }}>
-        <Card title="Corte / reconexión automático">
-          <p style={{ color: "var(--mantine-color-dimmed)", marginBottom: 12 }}>
-            Evalúa facturas vencidas impagas y aplica CUT/RESTORE en Mikrotik.
-          </p>
-          <Button variant="danger" onClick={enforce}>
-            Ejecutar enforce
-          </Button>
-        </Card>
-      </Grid.Col>
-
+    <Stack gap="md">
       {error ? (
-        <Grid.Col span={12}>
-          <Alert color="red" className="sc-error">
-            {error}
-          </Alert>
-        </Grid.Col>
+        <Alert color="red" className="sc-error" title="Error">
+          {error}
+        </Alert>
       ) : null}
-    </Grid>
+
+      <Grid>
+        <Grid.Col span={{ base: 12, lg: 6 }}>
+          <Card withBorder padding="lg" radius="md">
+            <Card.Section withBorder inheritPadding py="sm">
+              <Title order={5}>Generación de facturas (por conexión)</Title>
+            </Card.Section>
+            <Stack gap="md" mt="md">
+              <Field
+                label="Fecha de emisión (opcional YYYY-MM-DD)"
+                value={issueDate}
+                onChange={setIssueDate}
+                placeholder="2026-01-31"
+              />
+              <Checkbox
+                label="Emitir directamente (ISSUED)"
+                checked={issue}
+                onChange={(e) => setIssue(e.currentTarget.checked)}
+              />
+              <Group>
+                <Button variant="primary" onClick={generate}>
+                  Generar
+                </Button>
+              </Group>
+            </Stack>
+          </Card>
+        </Grid.Col>
+
+        <Grid.Col span={{ base: 12, lg: 6 }}>
+          <Card withBorder padding="lg" radius="md">
+            <Card.Section withBorder inheritPadding py="sm">
+              <Title order={5}>Corte / reconexión automático</Title>
+            </Card.Section>
+            <Stack gap="md" mt="md">
+              <Text size="sm" c="dimmed">
+                Evalúa facturas vencidas impagas y aplica CUT/RESTORE en Mikrotik.
+              </Text>
+              <Button variant="danger" onClick={enforce}>
+                Ejecutar enforce
+              </Button>
+            </Stack>
+          </Card>
+        </Grid.Col>
+      </Grid>
+    </Stack>
   );
 }
