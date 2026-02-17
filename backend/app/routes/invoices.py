@@ -1,14 +1,23 @@
+import logging
+import smtplib
 from decimal import Decimal
 from datetime import date, datetime, timedelta
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email.mime.text import MIMEText
+from email import encoders
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, make_response
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
 from ..models.invoice import Invoice
+from ..models.client import Client
 from ..models.payment import PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("invoices", __name__, url_prefix="/api/invoices")
 
@@ -63,9 +72,11 @@ def _payment_status(x: Invoice) -> str:
 
 def _invoice_to_dict(x: Invoice) -> dict:
     u = User.query.get(int(x.deleted_by_user_id)) if getattr(x, "deleted_by_user_id", None) else None
+    client = Client.query.get(x.client_id) if x.client_id else None
     return {
         "id": x.id,
         "client_id": x.client_id,
+        "client_name": client.full_name if client else None,
         "connection_id": x.connection_id,
         "invoice_type": x.invoice_type,
         "issuer_cuit": x.issuer_cuit,
@@ -78,6 +89,8 @@ def _invoice_to_dict(x: Invoice) -> dict:
         "paid_total": str(x.paid_total),
         "status": x.status,
         "payment_status": _payment_status(x),
+        "description": getattr(x, "description", None),
+        "notes": getattr(x, "notes", None),
         "is_deleted": bool(getattr(x, "is_deleted", False)),
         "deleted_at": x.deleted_at.isoformat() if getattr(x, "deleted_at", None) else None,
         "deleted_by_user_id": getattr(x, "deleted_by_user_id", None),
@@ -128,6 +141,8 @@ def create_invoice_draft():
         issuer_cuit=str(issuer["cuit"]),
         point_of_sale=int(issuer["point_of_sale"]),
         total=total,
+        description=(data.get("description") or "").strip() or None,
+        notes=(data.get("notes") or "").strip() or None,
         status="DRAFT",
     )
 
@@ -208,4 +223,152 @@ def delete_invoice(invoice_id: int):
     x.status = "VOID"
     db.session.commit()
     return jsonify(_invoice_to_dict(x))
+
+
+# ─────────────────────────────────────────────
+# PDF Download
+# ─────────────────────────────────────────────
+
+@bp.get("/<int:invoice_id>/pdf")
+@jwt_required(optional=True)
+def download_invoice_pdf(invoice_id: int):
+    """Genera y descarga la factura como PDF."""
+    x = Invoice.query.get_or_404(invoice_id)
+
+    from ..billing.pdf import generate_invoice_pdf
+    pdf_bytes = generate_invoice_pdf(x)
+
+    filename = _pdf_filename(x)
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = f'inline; filename="{filename}"'
+    return resp
+
+
+def _pdf_filename(x: Invoice) -> str:
+    pv = str(x.point_of_sale).zfill(5)
+    num = str(x.cbte_number or x.id).zfill(8)
+    return f"factura_{x.invoice_type}_{pv}_{num}.pdf"
+
+
+# ─────────────────────────────────────────────
+# Enviar factura por email
+# ─────────────────────────────────────────────
+
+@bp.post("/<int:invoice_id>/send_email")
+@jwt_required(optional=True)
+def send_invoice_email(invoice_id: int):
+    """
+    Genera el PDF y lo envía por email al cliente.
+
+    Body opcional:
+    {
+      "to": "override@email.com"   // si no se indica, usa el email del cliente
+    }
+
+    Requiere configuración SMTP en settings:
+      smtp.host, smtp.port, smtp.user, smtp.password, smtp.from_email, smtp.use_tls
+    """
+    x = Invoice.query.get_or_404(invoice_id)
+    data = request.get_json(silent=True) or {}
+
+    # Determinar destinatario
+    client = Client.query.get(x.client_id)
+    to_email = data.get("to") or (client.email if client else None)
+    if not to_email:
+        return jsonify({"error": "no_email", "message": "El cliente no tiene email configurado."}), 400
+
+    # Configuración SMTP
+    smtp_host = _get_setting("smtp.host")
+    smtp_port = int(_get_setting("smtp.port", "587") or "587")
+    smtp_user = _get_setting("smtp.user")
+    smtp_password = _get_setting("smtp.password")
+    smtp_from = _get_setting("smtp.from_email") or smtp_user
+    smtp_tls = (_get_setting("smtp.use_tls", "true") or "true").lower() in ("1", "true", "yes")
+
+    if not smtp_host or not smtp_user or not smtp_password:
+        return jsonify({
+            "error": "smtp_not_configured",
+            "message": "Configurá SMTP en Ajustes (smtp.host, smtp.user, smtp.password).",
+        }), 400
+
+    # Generar PDF
+    from ..billing.pdf import generate_invoice_pdf
+    pdf_bytes = generate_invoice_pdf(x)
+    filename = _pdf_filename(x)
+
+    # Construir nombre del emisor
+    issuer_name = _get_setting("issuer.name", "Connect ISP")
+
+    # Armar email
+    pv = str(x.point_of_sale).zfill(5)
+    num = str(x.cbte_number or x.id).zfill(8)
+    subject = f"{issuer_name} — Factura {x.invoice_type} {pv}-{num}"
+
+    total_str = f"${Decimal(str(x.total)):,.2f}"
+    due_str = x.due_date.strftime("%d/%m/%Y") if x.due_date else "N/A"
+    client_name = client.full_name if client else f"Cliente #{x.client_id}"
+
+    html_body = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #1a1a2e;">{issuer_name}</h2>
+        <p>Estimado/a <b>{client_name}</b>,</p>
+        <p>Le enviamos adjunta su factura correspondiente:</p>
+        <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+            <tr style="background: #f5f5f5;">
+                <td style="padding: 8px; border: 1px solid #ddd;"><b>Comprobante</b></td>
+                <td style="padding: 8px; border: 1px solid #ddd;">Factura {x.invoice_type} {pv}-{num}</td>
+            </tr>
+            <tr>
+                <td style="padding: 8px; border: 1px solid #ddd;"><b>Total</b></td>
+                <td style="padding: 8px; border: 1px solid #ddd;">{total_str}</td>
+            </tr>
+            <tr style="background: #f5f5f5;">
+                <td style="padding: 8px; border: 1px solid #ddd;"><b>Vencimiento</b></td>
+                <td style="padding: 8px; border: 1px solid #ddd;">{due_str}</td>
+            </tr>
+        </table>
+        <p>Por favor, no dude en contactarnos ante cualquier consulta.</p>
+        <p style="color: #999; font-size: 12px;">Este es un mensaje automático generado por {issuer_name}.</p>
+    </div>
+    """
+
+    msg = MIMEMultipart()
+    msg["From"] = f"{issuer_name} <{smtp_from}>"
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(html_body, "html", "utf-8"))
+
+    # Adjuntar PDF
+    part = MIMEBase("application", "pdf")
+    part.set_payload(pdf_bytes)
+    encoders.encode_base64(part)
+    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
+    msg.attach(part)
+
+    # Enviar
+    try:
+        if smtp_tls:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            server.ehlo()
+            server.starttls()
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=15)
+            server.ehlo()
+
+        server.login(smtp_user, smtp_password)
+        server.sendmail(smtp_from, [to_email], msg.as_string())
+        server.quit()
+    except Exception as e:
+        logger.exception("Error enviando email de factura #%d a %s", invoice_id, to_email)
+        return jsonify({
+            "error": "send_failed",
+            "message": f"Error al enviar: {e}",
+        }), 500
+
+    return jsonify({
+        "ok": True,
+        "to": to_email,
+        "message": f"Factura enviada a {to_email}",
+    })
 

@@ -32,13 +32,27 @@ def _job_to_dict(j: Job) -> dict:
 def list_jobs():
     status = request.args.get("status")
     server_id = request.args.get("server_id")
+    job_type = request.args.get("job_type")
+    limit = request.args.get("limit", 200, type=int)
+    offset = request.args.get("offset", 0, type=int)
     q = Job.query
     if status:
         q = q.filter_by(status=status.upper())
     if server_id:
         q = q.filter_by(server_id=int(server_id))
-    items = q.order_by(Job.id.desc()).limit(200).all()
-    return jsonify([_job_to_dict(x) for x in items])
+    if job_type:
+        q = q.filter_by(job_type=job_type.upper())
+    total = q.count()
+    items = q.order_by(Job.id.desc()).offset(offset).limit(min(limit, 500)).all()
+    return jsonify({"items": [_job_to_dict(x) for x in items], "total": total})
+
+
+@bp.get("/types")
+@jwt_required(optional=True)
+def list_job_types():
+    """Devuelve los tipos de job distintos que existen en la tabla."""
+    rows = db.session.query(Job.job_type).distinct().all()
+    return jsonify([r[0] for r in rows])
 
 
 @bp.get("/<int:job_id>")

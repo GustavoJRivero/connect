@@ -26,6 +26,10 @@ class Invoice(db.Model):
 
     issue_date = db.Column(db.Date, default=date.today, nullable=False)
     due_date = db.Column(db.Date, nullable=True, index=True)
+
+    # Período de facturación
+    period_start = db.Column(db.Date, nullable=True)
+    period_end = db.Column(db.Date, nullable=True)
     currency = db.Column(db.String(3), default="ARS", nullable=False)
 
     # Totales (por ahora simple; luego detallamos IVA/percepciones/etc)
@@ -33,6 +37,10 @@ class Invoice(db.Model):
     paid_total = db.Column(db.Numeric(12, 2), nullable=False, default=0)
 
     status = db.Column(db.String(16), nullable=False, default="DRAFT")  # DRAFT / ISSUED / PAID / VOID
+
+    # Concepto / descripción libre (para facturas manuales)
+    description = db.Column(db.String(500), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
 
     # Baja lógica (auditoría)
     is_deleted = db.Column(db.Boolean, default=False, nullable=False, index=True)

@@ -5,6 +5,7 @@ Desktop.ini
 # IDEs
 .vscode/
 .idea/
+.cursor/
 
 # Logs
 *.log

@@ -26,6 +26,9 @@ import InvoicesPage from "./pages/InvoicesPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
 import NetworkPage from "./pages/NetworkPage";
+import PlansPage from "./pages/PlansPage";
+import LogsPage from "./pages/LogsPage";
+import JobsPage from "./pages/JobsPage";
 
 const NAV_ITEMS: { to: string; id: string; label: string; icon: string }[] = [
   { to: "/dashboard", id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -34,6 +37,9 @@ const NAV_ITEMS: { to: string; id: string; label: string; icon: string }[] = [
   { to: "/invoices", id: "invoices", label: "Facturas", icon: "📄" },
   { to: "/payments", id: "payments", label: "Pagos", icon: "💵" },
   { to: "/network", id: "network", label: "Red", icon: "🌐" },
+  { to: "/plans", id: "plans", label: "Planes", icon: "📋" },
+  { to: "/jobs", id: "jobs", label: "Jobs / Crons", icon: "🔧" },
+  { to: "/logs", id: "logs", label: "Logs", icon: "📜" },
   { to: "/settings", id: "settings", label: "Configuración", icon: "⚙️" },
 ];
 
@@ -201,6 +207,9 @@ export default function AppShell(props: { onLogout: () => void }) {
           <Route path="/payments" element={<PaymentsPage />} />
           <Route path="/network" element={<NetworkPage />} />
           <Route path="/network/:serverId" element={<NetworkPage />} />
+          <Route path="/plans" element={<PlansPage />} />
+          <Route path="/jobs" element={<JobsPage />} />
+          <Route path="/logs" element={<LogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

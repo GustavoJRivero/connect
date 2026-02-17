@@ -215,8 +215,8 @@ export const api = {
   generateBilling(payload: any) {
     return request("/api/billing/generate", { method: "POST", body: JSON.stringify(payload) });
   },
-  enforceBilling(payload: any) {
-    return request("/api/billing/enforce", { method: "POST", body: JSON.stringify(payload) });
+  updateServices(payload?: any) {
+    return request("/api/billing/update-services", { method: "POST", body: JSON.stringify(payload || {}) });
   },
 
   // complaints
@@ -265,10 +265,36 @@ export const api = {
   cancelJob(job_id: number) {
     return request(`/api/jobs/${job_id}/cancel`, { method: "POST", body: JSON.stringify({}) });
   },
-  /** Vuelve a PENDING los jobs RUNNING colgados (>35s). Opcional server_id para solo este servidor. */
   recoverStuckJobs(server_id?: number) {
     const q = server_id != null ? `?server_id=${server_id}` : "";
     return request(`/api/jobs/recover-stuck${q}`, { method: "POST", body: JSON.stringify({}) });
+  },
+  listJobs(params?: { status?: string; job_type?: string; limit?: number; offset?: number }) {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.job_type) qs.set("job_type", params.job_type);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    const q = qs.toString();
+    return request(`/api/jobs${q ? `?${q}` : ""}`);
+  },
+  getJobTypes() {
+    return request("/api/jobs/types");
+  },
+
+  // plans
+  listPlans(activeOnly = false) {
+    const qs = activeOnly ? "?active=1" : "";
+    return request(`/api/plans${qs}`);
+  },
+  createPlan(payload: any) {
+    return request("/api/plans", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updatePlan(id: number, payload: any) {
+    return request(`/api/plans/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deletePlan(id: number) {
+    return request(`/api/plans/${id}`, { method: "DELETE" });
   },
 
   // logs
@@ -290,7 +316,7 @@ export const api = {
     if (typeof opts?.limit === "number") params.set("limit", String(opts.limit));
     if (typeof opts?.offset === "number") params.set("offset", String(opts.offset));
     const qs = params.toString();
-    return request(`/api/logs${qs ? `?${qs}` : ""}`);
+    return request(`/api/logs${qs ? `?${qs}` : ""}`)
   },
   getLogModules() {
     return request("/api/logs/modules");
@@ -298,11 +324,25 @@ export const api = {
   getLoggingConfig() {
     return request("/api/logs/config");
   },
-  putLoggingConfig(payload: { enabled?: boolean; modules?: Record<string, boolean> }) {
-    return request("/api/logs/config", {
-      method: "PUT",
-      body: JSON.stringify(payload),
+  updateLoggingConfig(payload: { enabled?: boolean; modules?: Record<string, boolean> }) {
+    return request("/api/logs/config", { method: "PUT", body: JSON.stringify(payload) });
+  },
+
+  // invoice PDF & email
+  getInvoicePdfUrl(id: number) {
+    const token = getToken();
+    return `${API_BASE_URL}/api/invoices/${id}/pdf${token ? `?jwt=${token}` : ""}`;
+  },
+  sendInvoiceEmail(id: number, to?: string) {
+    return request(`/api/invoices/${id}/send_email`, {
+      method: "POST",
+      body: JSON.stringify(to ? { to } : {}),
     });
+  },
+
+  // billing status
+  getBillingStatus() {
+    return request("/api/billing/status")
   },
 };
 

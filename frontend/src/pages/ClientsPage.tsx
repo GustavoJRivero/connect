@@ -9,7 +9,7 @@ import { ConnectionDetailsModal } from "../components/ConnectionDetailsModal";
 import { ClientEditModal } from "../components/ClientEditModal";
 import { ConnectionCreateModal } from "../components/ConnectionCreateModal";
 import { ConnectionEditModal } from "../components/ConnectionEditModal";
-import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Skeleton, Tabs } from "@mantine/core";
+import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Skeleton, Tabs, ActionIcon, Tooltip } from "@mantine/core";
 
 type SortCol = "id" | "full_name" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count";
 
@@ -325,6 +325,29 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
   const [connDetails, setConnDetails] = useState<ConnectionDetailsData | null>(null);
   const [editingConn, setEditingConn] = useState<unknown>(null);
   const [tab, setTab] = useState<"connections" | "billing" | "complaints">("connections");
+  const [sendingEmail, setSendingEmail] = useState<number | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+
+  function openPdf(id: number) {
+    const url = api.getInvoicePdfUrl(id);
+    window.open(url, "_blank");
+  }
+
+  async function sendEmail(id: number) {
+    setError(null);
+    setEmailSuccess(null);
+    setSendingEmail(id);
+    try {
+      const res = (await api.sendInvoiceEmail(id)) as { ok: boolean; to: string; message: string };
+      setEmailSuccess(res.message || `Enviada a ${res.to}`);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: any };
+      const msg = err?.body?.message || JSON.stringify(err?.body ?? e);
+      setError(`Error enviando email: ${msg}`);
+    } finally {
+      setSendingEmail(null);
+    }
+  }
 
   async function reloadDetail() {
     setError(null);
@@ -485,24 +508,59 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 <Text c="dimmed">Facturas del cliente</Text>
                 <Button variant="primary" onClick={() => setShowNewInvoice(true)}>Nueva factura</Button>
               </Group>
-              <Table.ScrollContainer minWidth={600}>
-                <Table>
+              {emailSuccess ? (
+                <Alert color="green" title="Email enviado" withCloseButton onClose={() => setEmailSuccess(null)} mb="sm">
+                  {emailSuccess}
+                </Alert>
+              ) : null}
+              <Table.ScrollContainer minWidth={700}>
+                <Table striped highlightOnHover>
                   <Table.Thead>
-                    <Table.Tr><Table.Th>ID</Table.Th><Table.Th>Conexión</Table.Th><Table.Th>Fecha</Table.Th><Table.Th>Vence</Table.Th><Table.Th>Estado</Table.Th><Table.Th>Total</Table.Th><Table.Th>Pagado</Table.Th><Table.Th>Acciones</Table.Th></Table.Tr>
+                    <Table.Tr>
+                      <Table.Th>ID</Table.Th>
+                      <Table.Th>Tipo</Table.Th>
+                      <Table.Th>Concepto</Table.Th>
+                      <Table.Th>Fecha</Table.Th>
+                      <Table.Th>Vence</Table.Th>
+                      <Table.Th>Estado</Table.Th>
+                      <Table.Th>Total</Table.Th>
+                      <Table.Th>Pagado</Table.Th>
+                      <Table.Th>Acciones</Table.Th>
+                    </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {invoices.map((x) => (
                       <Table.Tr key={Number(x.id)}>
                         <Table.Td>#{String(x.id)}</Table.Td>
-                        <Table.Td>{String(x.connection_id ?? "-")}</Table.Td>
+                        <Table.Td><Badge variant="light" size="sm">{String(x.invoice_type ?? "-")}</Badge></Table.Td>
+                        <Table.Td style={{ maxWidth: 180 }}>
+                          <Text size="sm" truncate>{String(x.description || "Servicio")}</Text>
+                        </Table.Td>
                         <Table.Td>{String(x.issue_date ?? "-")}</Table.Td>
                         <Table.Td>{String(x.due_date ?? "-")}</Table.Td>
                         <Table.Td>{statusBadge(String(x.payment_status ?? x.status ?? ""))}</Table.Td>
-                        <Table.Td>{String(x.total)}</Table.Td>
-                        <Table.Td>{String(x.paid_total ?? "0")}</Table.Td>
+                        <Table.Td fw={600}>${String(x.total)}</Table.Td>
+                        <Table.Td>${String(x.paid_total ?? "0")}</Table.Td>
                         <Table.Td>
-                          <Group gap="xs">
-                            {(x.status === "ISSUED" || x.status === "DRAFT") ? <Button variant="primary" onClick={() => setPaying(x)}>Registrar pago</Button> : null}
+                          <Group gap={4} wrap="nowrap">
+                            <Tooltip label="Ver PDF">
+                              <ActionIcon variant="light" color="blue" onClick={() => openPdf(Number(x.id))}>
+                                📄
+                              </ActionIcon>
+                            </Tooltip>
+                            <Tooltip label="Enviar vía Mail">
+                              <ActionIcon
+                                variant="light"
+                                color="teal"
+                                loading={sendingEmail === Number(x.id)}
+                                onClick={() => sendEmail(Number(x.id))}
+                              >
+                                ✉️
+                              </ActionIcon>
+                            </Tooltip>
+                            {(x.status === "ISSUED" || x.status === "DRAFT") ? (
+                              <Button variant="primary" onClick={() => setPaying(x)}>Pagar</Button>
+                            ) : null}
                             <Button variant="danger" onClick={() => deleteInvoice(Number(x.id))}>Eliminar</Button>
                           </Group>
                         </Table.Td>

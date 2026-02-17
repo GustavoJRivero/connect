@@ -5,7 +5,6 @@ import { Button } from "../ui";
 import { InvoiceModal } from "../components/InvoiceModal";
 import { PaymentModal } from "../components/PaymentModal";
 import {
-  Grid,
   Table,
   Alert,
   Card,
@@ -15,6 +14,8 @@ import {
   Skeleton,
   Badge,
   Stack,
+  ActionIcon,
+  Tooltip,
 } from "@mantine/core";
 
 type InvoiceRow = {
@@ -23,11 +24,14 @@ type InvoiceRow = {
   point_of_sale?: number;
   cbte_number?: string;
   client_id: number;
+  client_name?: string;
   connection_id?: number;
   total: string;
   paid_total?: string;
   due_date?: string;
   status: string;
+  description?: string;
+  notes?: string;
 };
 
 export default function InvoicesPage() {
@@ -36,6 +40,8 @@ export default function InvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [paying, setPaying] = useState<InvoiceRow | null>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
+  const [sendingEmail, setSendingEmail] = useState<number | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
 
   async function reload() {
     setError(null);
@@ -79,6 +85,27 @@ export default function InvoicesPage() {
     }
   }
 
+  function openPdf(id: number) {
+    const url = api.getInvoicePdfUrl(id);
+    window.open(url, "_blank");
+  }
+
+  async function sendEmail(id: number) {
+    setError(null);
+    setEmailSuccess(null);
+    setSendingEmail(id);
+    try {
+      const res = (await api.sendInvoiceEmail(id)) as { ok: boolean; to: string; message: string };
+      setEmailSuccess(res.message || `Enviada a ${res.to}`);
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: any };
+      const msg = err?.body?.message || JSON.stringify(err?.body ?? e);
+      setError(`Error enviando email: ${msg}`);
+    } finally {
+      setSendingEmail(null);
+    }
+  }
+
   const statusColor = (status: string) =>
     status === "ISSUED" ? "green" : status === "DRAFT" ? "gray" : status === "OVERDUE" ? "red" : "blue";
 
@@ -104,8 +131,14 @@ export default function InvoicesPage() {
       />
 
       {error ? (
-        <Alert color="red" className="sc-error" title="Error">
+        <Alert color="red" className="sc-error" title="Error" withCloseButton onClose={() => setError(null)}>
           {error}
+        </Alert>
+      ) : null}
+
+      {emailSuccess ? (
+        <Alert color="green" title="Email enviado" withCloseButton onClose={() => setEmailSuccess(null)}>
+          {emailSuccess}
         </Alert>
       ) : null}
 
@@ -136,10 +169,9 @@ export default function InvoicesPage() {
               <Table.Tr>
                 <Table.Th>ID</Table.Th>
                 <Table.Th>Tipo</Table.Th>
-                <Table.Th>PV</Table.Th>
                 <Table.Th>N°</Table.Th>
                 <Table.Th>Cliente</Table.Th>
-                <Table.Th>Conexión</Table.Th>
+                <Table.Th>Concepto</Table.Th>
                 <Table.Th>Total</Table.Th>
                 <Table.Th>Pagado</Table.Th>
                 <Table.Th>Vence</Table.Th>
@@ -151,9 +183,9 @@ export default function InvoicesPage() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <Table.Tr key={i}>
-                    {Array.from({ length: 11 }).map((_, j) => (
+                    {Array.from({ length: 10 }).map((_, j) => (
                       <Table.Td key={j}>
-                        <Skeleton height={20} width={j === 10 ? 120 : "80%"} />
+                        <Skeleton height={20} width={j === 9 ? 120 : "80%"} />
                       </Table.Td>
                     ))}
                   </Table.Tr>
@@ -162,17 +194,32 @@ export default function InvoicesPage() {
                 items.map((x) => (
                   <Table.Tr key={x.id}>
                     <Table.Td>#{x.id}</Table.Td>
-                    <Table.Td>{x.invoice_type}</Table.Td>
-                    <Table.Td>{x.point_of_sale}</Table.Td>
-                    <Table.Td>{x.cbte_number ?? "-"}</Table.Td>
+                    <Table.Td>
+                      <Badge variant="light" size="sm">
+                        {x.invoice_type}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>{x.cbte_number ? `${String(x.point_of_sale ?? 0).padStart(5, "0")}-${String(x.cbte_number).padStart(8, "0")}` : "-"}</Table.Td>
                     <Table.Td>
                       <Anchor component={Link} to={`/clients/${x.client_id}`} size="sm">
-                        #{x.client_id}
+                        {x.client_name || `#${x.client_id}`}
                       </Anchor>
                     </Table.Td>
-                    <Table.Td>{x.connection_id ?? "-"}</Table.Td>
-                    <Table.Td fw={600}>{x.total}</Table.Td>
-                    <Table.Td>{x.paid_total ?? "0"}</Table.Td>
+                    <Table.Td style={{ maxWidth: 200 }}>
+                      {x.description ? (
+                        <Tooltip label={x.description} disabled={x.description.length <= 30}>
+                          <span style={{ fontSize: "var(--mantine-font-size-sm)" }}>
+                            {x.description.length > 30 ? x.description.slice(0, 30) + "..." : x.description}
+                          </span>
+                        </Tooltip>
+                      ) : (
+                        <span style={{ fontSize: "var(--mantine-font-size-sm)", color: "var(--mantine-color-dimmed)" }}>
+                          Servicio
+                        </span>
+                      )}
+                    </Table.Td>
+                    <Table.Td fw={600}>${x.total}</Table.Td>
+                    <Table.Td>${x.paid_total ?? "0"}</Table.Td>
                     <Table.Td>{x.due_date ?? "-"}</Table.Td>
                     <Table.Td>
                       <Badge size="sm" color={statusColor(x.status)} variant="light">
@@ -180,7 +227,22 @@ export default function InvoicesPage() {
                       </Badge>
                     </Table.Td>
                     <Table.Td>
-                      <Group gap="xs">
+                      <Group gap={4} wrap="nowrap">
+                        <Tooltip label="Ver PDF">
+                          <ActionIcon variant="light" color="blue" onClick={() => openPdf(x.id)}>
+                            📄
+                          </ActionIcon>
+                        </Tooltip>
+                        <Tooltip label="Enviar vía Mail">
+                          <ActionIcon
+                            variant="light"
+                            color="teal"
+                            loading={sendingEmail === x.id}
+                            onClick={() => sendEmail(x.id)}
+                          >
+                            ✉️
+                          </ActionIcon>
+                        </Tooltip>
                         {x.status === "DRAFT" ? (
                           <Button variant="primary" onClick={() => issue(x.id)}>
                             Emitir
@@ -188,7 +250,7 @@ export default function InvoicesPage() {
                         ) : null}
                         {(x.status === "ISSUED" || x.status === "DRAFT") ? (
                           <Button variant="primary" onClick={() => setPaying(x)}>
-                            Registrar pago
+                            Pagar
                           </Button>
                         ) : null}
                         <Button variant="danger" onClick={() => removeInvoice(x.id)}>
@@ -200,7 +262,7 @@ export default function InvoicesPage() {
                 ))
               ) : (
                 <Table.Tr>
-                  <Table.Td colSpan={11} c="dimmed" py="xl" ta="center">
+                  <Table.Td colSpan={10} c="dimmed" py="xl" ta="center">
                     No hay facturas. Creá una con "Nueva factura".
                   </Table.Td>
                 </Table.Tr>

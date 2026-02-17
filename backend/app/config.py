@@ -19,6 +19,8 @@ def get_config() -> dict:
     return {
         "SECRET_KEY": os.getenv("SECRET_KEY", "change-me"),
         "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY", "change-me-too"),
+        "JWT_TOKEN_LOCATION": ["headers", "query_string"],
+        "JWT_QUERY_STRING_NAME": "jwt",
         "SQLALCHEMY_DATABASE_URI": database_url,
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         # AFIP
