@@ -9,7 +9,9 @@ from ..mikrotik.ros_client import MikrotikRosClient
 from ..models.client import Client
 from ..models.connection import Connection
 from ..models.mikrotik_server import MikrotikServer
+from ..models.complaint import Complaint
 from ..models.invoice import Invoice
+from ..models.payment import Payment, PaymentAllocation
 from ..tasks.queue import JOB_MT_CREATE_PPP_SECRET, JOB_MT_DELETE_PPP_SECRET, JOB_MT_SET_PPP_PROFILE, enqueue_job
 
 bp = Blueprint("clients", __name__, url_prefix="/api/clients")
@@ -452,6 +454,27 @@ def delete_client(client_id: int):
     # Capturar secrets antes de borrar (para poder encolar luego)
     secrets = [{"name": x.pppoe_name(), "server_id": int(x.server_id) if x.server_id else None} for x in (c.connections or [])]
 
+    # Obtener IDs de registros dependientes
+    conn_ids = [x.id for x in (c.connections or [])]
+    invoice_ids = [i.id for i in Invoice.query.filter_by(client_id=client_id).all()]
+    payment_ids = [p.id for p in Payment.query.filter_by(client_id=client_id).all()]
+
+    # 1. payment_allocations (depende de invoices y payments)
+    if invoice_ids:
+        PaymentAllocation.query.filter(PaymentAllocation.invoice_id.in_(invoice_ids)).delete(synchronize_session=False)
+    if payment_ids:
+        PaymentAllocation.query.filter(PaymentAllocation.payment_id.in_(payment_ids)).delete(synchronize_session=False)
+
+    # 2. complaints (depende de connections y clients)
+    Complaint.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+
+    # 3. invoices (depende de connections y clients)
+    Invoice.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+
+    # 4. payments (depende de clients)
+    Payment.query.filter_by(client_id=client_id).delete(synchronize_session=False)
+
+    # 5. client + connections (cascade de SQLAlchemy)
     db.session.delete(c)
     db.session.commit()
 

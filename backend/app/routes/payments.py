@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 from datetime import date, timedelta
 
@@ -9,6 +10,8 @@ from ..models.invoice import Invoice
 from ..models.payment import Payment, PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint("payments", __name__, url_prefix="/api/payments")
 
@@ -193,6 +196,15 @@ def create_payment():
             inv.status = "PAID"
 
     db.session.commit()
+
+    # Encolar actualización de estado de servicios
+    from ..tasks.queue import enqueue_job, JOB_BILLING_UPDATE_CLIENT_SERVICES
+    enqueue_job(
+        job_type=JOB_BILLING_UPDATE_CLIENT_SERVICES,
+        payload={"client_id": int(client_id)},
+    )
+    logger.info("Pago #%d registrado, actualización de servicios encolada para cliente #%s", p.id, client_id)
+
     return jsonify(_payment_to_dict(p)), 201
 
 

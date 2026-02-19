@@ -73,13 +73,11 @@ def _issuer():
 def _plan_price(conn: Connection) -> Decimal:
     """
     Obtiene el precio del plan para una conexión.
-    Busca primero por plan_id (FK), luego por profile name como fallback.
+    Busca por profile name en la tabla de planes.
     Retorna el precio con IVA incluido.
     """
     plan = None
-    if conn.plan_id:
-        plan = Plan.query.get(conn.plan_id)
-    if not plan:
+    if conn.plan_profile:
         plan = Plan.query.filter_by(profile=conn.plan_profile).first()
     if not plan:
         # Fallback a settings legacy

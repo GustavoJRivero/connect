@@ -18,6 +18,7 @@ from .queue import (
     JOB_MT_SET_PPP_PROFILE,
     JOB_MT_SET_PPP_CREDENTIALS,
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
+    JOB_BILLING_UPDATE_CLIENT_SERVICES,
 )
 
 
@@ -59,6 +60,14 @@ def _require_keys(payload: dict, keys: list, job_type: str) -> None:
 
 def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
     payload = json.loads(j.payload_json or "{}")
+
+    # Jobs de billing: actualización de estado de servicios
+    if j.job_type == JOB_BILLING_UPDATE_CLIENT_SERVICES:
+        _require_keys(payload, ["client_id"], j.job_type)
+        from ..billing.service_status import update_client_services
+        result = update_client_services(int(payload["client_id"]))
+        return result
+
     mt = _get_mt_from_job(j)
     if not mt:
         raise RuntimeError("mikrotik_server_not_configured")

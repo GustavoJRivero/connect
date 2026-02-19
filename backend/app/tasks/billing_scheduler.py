@@ -60,6 +60,18 @@ def _run_daily(app: Flask):
             result.get("duration_ms", 0),
         )
 
+        # Actualizar estado de servicios después de facturar
+        try:
+            from ..billing.service_status import update_all_services
+            svc_result = update_all_services()
+            logger.info(
+                "Billing scheduler: actualización de servicios: cut=%d restored=%d",
+                len(svc_result.get("cut", [])),
+                len(svc_result.get("restored", [])),
+            )
+        except Exception:
+            logger.exception("Billing scheduler: error en actualización de servicios")
+
 
 def _run_catchup(app: Flask):
     """Ejecuta catch-up al arrancar para recuperar días perdidos."""
