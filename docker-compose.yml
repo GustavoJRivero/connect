@@ -40,6 +40,9 @@ services:
       MIKROTIK_PORT: ${MIKROTIK_PORT:-8728}
       MIKROTIK_USER: ${MIKROTIK_USER:-}
       MIKROTIK_PASS: ${MIKROTIK_PASS:-}
+      # Mercado Pago
+      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
+      MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
     volumes:
       - ./backend/secrets:/app/secrets:ro
 

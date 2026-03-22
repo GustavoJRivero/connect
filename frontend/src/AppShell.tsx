@@ -29,6 +29,7 @@ import NetworkPage from "./pages/NetworkPage";
 import PlansPage from "./pages/PlansPage";
 import LogsPage from "./pages/LogsPage";
 import JobsPage from "./pages/JobsPage";
+import MercadoPagoReturnPage from "./pages/MercadoPagoReturnPage";
 
 const NAV_ITEMS: { to: string; id: string; label: string; icon: string }[] = [
   { to: "/dashboard", id: "dashboard", label: "Dashboard", icon: "📊" },
@@ -211,6 +212,9 @@ export default function AppShell(props: { onLogout: () => void }) {
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/logs" element={<LogsPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/payment/success" element={<MercadoPagoReturnPage status="success" />} />
+          <Route path="/payment/pending" element={<MercadoPagoReturnPage status="pending" />} />
+          <Route path="/payment/failure" element={<MercadoPagoReturnPage status="failure" />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </MantineAppShell.Main>

@@ -344,5 +344,35 @@ export const api = {
   getBillingStatus() {
     return request("/api/billing/status")
   },
+
+  // mercado pago (admin)
+  createMpPreference(payload: { client_id: number; invoice_ids: number[] }) {
+    return request("/api/mercadopago/create_preference", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  // portal de clientes
+  getPortalMe() {
+    return request("/api/portal/me");
+  },
+  getPortalInvoices() {
+    return request("/api/portal/invoices");
+  },
+  portalPay(invoice_ids: number[]) {
+    return request("/api/portal/pay", {
+      method: "POST",
+      body: JSON.stringify({ invoice_ids }),
+    });
+  },
+
+  // admin: crear usuario portal para un cliente
+  createPortalUser(client_id: number, payload: { username: string; password: string }) {
+    return request(`/api/clients/${client_id}/portal_user`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
 };
 

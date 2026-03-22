@@ -13,8 +13,9 @@ class User(db.Model):
 
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
-    role = db.Column(db.String(32), nullable=False, default="ADMIN")  # ADMIN / OPERATOR
+    role = db.Column(db.String(32), nullable=False, default="ADMIN")  # ADMIN / OPERATOR / CLIENT
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+    client_id = db.Column(db.BigInteger, db.ForeignKey("clients.id"), nullable=True, index=True)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)

@@ -9,7 +9,7 @@ import { ConnectionDetailsModal } from "../components/ConnectionDetailsModal";
 import { ClientEditModal } from "../components/ClientEditModal";
 import { ConnectionCreateModal } from "../components/ConnectionCreateModal";
 import { ConnectionEditModal } from "../components/ConnectionEditModal";
-import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Skeleton, Tabs, ActionIcon, Tooltip } from "@mantine/core";
+import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Skeleton, Tabs, ActionIcon, Tooltip, Modal, PasswordInput } from "@mantine/core";
 
 type SortCol = "id" | "full_name" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count";
 
@@ -327,6 +327,29 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
   const [tab, setTab] = useState<"connections" | "billing" | "complaints">("connections");
   const [sendingEmail, setSendingEmail] = useState<number | null>(null);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [showPortalModal, setShowPortalModal] = useState(false);
+  const [portalUsername, setPortalUsername] = useState("");
+  const [portalPassword, setPortalPassword] = useState("");
+  const [portalSaving, setPortalSaving] = useState(false);
+  const [portalSuccess, setPortalSuccess] = useState<string | null>(null);
+
+  async function savePortalUser() {
+    setError(null);
+    setPortalSuccess(null);
+    setPortalSaving(true);
+    try {
+      const res = (await api.createPortalUser(props.clientId, {
+        username: portalUsername,
+        password: portalPassword,
+      })) as { username: string; updated: boolean };
+      setPortalSuccess(res.updated ? `Acceso actualizado para "${res.username}"` : `Usuario "${res.username}" creado correctamente`);
+      setShowPortalModal(false);
+    } catch (e: any) {
+      setError(e?.body?.error === "username_taken" ? "Ese nombre de usuario ya existe" : (e?.body?.error ?? "Error al crear usuario"));
+    } finally {
+      setPortalSaving(false);
+    }
+  }
 
   function openPdf(id: number) {
     const url = api.getInvoicePdfUrl(id);
@@ -424,6 +447,35 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
       <ConnectionCreateModal open={showNewConnection} clientId={props.clientId} servers={props.servers} planOptions={props.planOptions} onClose={() => setShowNewConnection(false)} onSaved={async () => { setShowNewConnection(false); await reloadDetail(); }} />
       <ConnectionEditModal open={!!editingConn} connection={editingConn as { id: number } | null} servers={props.servers} planOptions={props.planOptions} onClose={() => setEditingConn(null)} onSaved={async () => { setEditingConn(null); await reloadDetail(); }} />
 
+      <Modal opened={showPortalModal} onClose={() => setShowPortalModal(false)} title="Acceso al Portal del Cliente" size="sm">
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed">Creá o actualizá las credenciales de acceso al portal para este cliente.</Text>
+          <TextInput
+            label="Usuario"
+            placeholder="ej: juan.garcia"
+            value={portalUsername}
+            onChange={(e) => setPortalUsername(e.currentTarget.value)}
+          />
+          <PasswordInput
+            label="Contraseña (mínimo 6 caracteres)"
+            placeholder="••••••••"
+            value={portalPassword}
+            onChange={(e) => setPortalPassword(e.currentTarget.value)}
+          />
+          <Group justify="flex-end" mt="xs">
+            <Button variant="default" onClick={() => setShowPortalModal(false)}>Cancelar</Button>
+            <Button
+              variant="primary"
+              loading={portalSaving}
+              disabled={!portalUsername || portalPassword.length < 6}
+              onClick={savePortalUser}
+            >
+              Guardar acceso
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <Card
           title={`Cliente #${props.clientId}`}
@@ -432,11 +484,13 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
               <Button variant="default" onClick={props.onBack}>Volver</Button>
               <Button variant="primary" onClick={props.onEdit}>Editar</Button>
               <Button variant="warning" onClick={suspendAllServices}>Suspender</Button>
+              <Button variant="default" onClick={() => { setPortalUsername(String(client?.email ?? "")); setPortalPassword(""); setShowPortalModal(true); }}>Acceso Portal</Button>
               <Button variant="default" onClick={reloadDetail}>Recargar</Button>
             </Group>
           }
         >
-          {error ? <Alert color="red" className="sc-error" title="Error">{error}</Alert> : null}
+          {error ? <Alert color="red" className="sc-error" title="Error" withCloseButton onClose={() => setError(null)}>{error}</Alert> : null}
+          {portalSuccess ? <Alert color="green" title="Portal" withCloseButton onClose={() => setPortalSuccess(null)}>{portalSuccess}</Alert> : null}
           {client ? (
             <Grid>
               <Grid.Col span={6}>

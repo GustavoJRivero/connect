@@ -42,6 +42,7 @@ export default function InvoicesPage() {
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [sendingEmail, setSendingEmail] = useState<number | null>(null);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [mpLoading, setMpLoading] = useState<number | null>(null);
 
   async function reload() {
     setError(null);
@@ -88,6 +89,24 @@ export default function InvoicesPage() {
   function openPdf(id: number) {
     const url = api.getInvoicePdfUrl(id);
     window.open(url, "_blank");
+  }
+
+  async function payWithMp(inv: InvoiceRow) {
+    setError(null);
+    setMpLoading(inv.id);
+    try {
+      const res = (await api.createMpPreference({
+        client_id: inv.client_id,
+        invoice_ids: [inv.id],
+      })) as { init_point?: string; sandbox_init_point?: string };
+      const url = res.init_point || res.sandbox_init_point;
+      if (url) window.open(url, "_blank");
+    } catch (e: unknown) {
+      const err = e as { status?: number; body?: any };
+      setError(err?.body?.detail || err?.body?.error || "Error al generar link de pago");
+    } finally {
+      setMpLoading(null);
+    }
   }
 
   async function sendEmail(id: number) {
@@ -252,6 +271,18 @@ export default function InvoicesPage() {
                           <Button variant="primary" onClick={() => setPaying(x)}>
                             Pagar
                           </Button>
+                        ) : null}
+                        {(x.status === "ISSUED" || x.status === "DRAFT") ? (
+                          <Tooltip label="Generar link de pago con Mercado Pago">
+                            <ActionIcon
+                              variant="light"
+                              color="cyan"
+                              loading={mpLoading === x.id}
+                              onClick={() => payWithMp(x)}
+                            >
+                              MP
+                            </ActionIcon>
+                          </Tooltip>
                         ) : null}
                         <Button variant="danger" onClick={() => removeInvoice(x.id)}>
                           Eliminar

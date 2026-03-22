@@ -52,5 +52,10 @@ def me():
     user = User.query.get(int(user_id))
     if not user:
         return jsonify({"error": "not_found"}), 404
-    return jsonify({"id": user.id, "username": user.username, "role": user.role})
+    return jsonify({
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "client_id": getattr(user, "client_id", None),
+    })
 

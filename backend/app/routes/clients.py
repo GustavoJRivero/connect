@@ -521,3 +521,69 @@ def suspend_services(client_id: int):
 
     return jsonify({"status": "suspended", "client_id": int(c.id), "cut_profile": cut_profile, "jobs": jobs})
 
+
+@bp.post("/<int:client_id>/portal_user")
+@jwt_required(optional=True)
+def create_portal_user(client_id: int):
+    """
+    Crea o actualiza el usuario de acceso al portal para un cliente.
+
+    Body:
+    {
+      "username": "juan.garcia",
+      "password": "contraseña123"
+    }
+
+    Si el cliente ya tiene un usuario portal, actualiza la contraseña.
+    """
+    from ..models.user import User
+
+    c = Client.query.get_or_404(client_id)
+    data = request.get_json(force=True) or {}
+
+    username = (data.get("username") or "").strip()
+    password = (data.get("password") or "").strip()
+
+    if not username:
+        return jsonify({"error": "username_required"}), 400
+    if not password or len(password) < 6:
+        return jsonify({"error": "password_min_6_chars"}), 400
+
+    # Verificar si ya existe un usuario portal para este cliente
+    existing = User.query.filter_by(client_id=int(c.id), role="CLIENT").first()
+
+    if existing:
+        # Actualizar contraseña (y username si cambió)
+        if existing.username != username:
+            conflict = User.query.filter_by(username=username).first()
+            if conflict and conflict.id != existing.id:
+                return jsonify({"error": "username_taken"}), 409
+            existing.username = username
+        existing.set_password(password)
+        existing.is_active = True
+        db.session.commit()
+        return jsonify({
+            "id": existing.id,
+            "username": existing.username,
+            "role": existing.role,
+            "client_id": existing.client_id,
+            "updated": True,
+        })
+
+    # Verificar que el username no esté tomado
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "username_taken"}), 409
+
+    user = User(username=username, role="CLIENT", is_active=True, client_id=int(c.id))
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({
+        "id": user.id,
+        "username": user.username,
+        "role": user.role,
+        "client_id": user.client_id,
+        "updated": False,
+    }), 201
+

@@ -87,6 +87,7 @@ export function Button(props: {
   type?: "button" | "submit";
   variant?: "primary" | "danger" | "default" | "secondary" | "ghost" | "info" | "warning";
   disabled?: boolean;
+  loading?: boolean;
 }) {
   const variant = variantMap[props.variant ?? "default"];
   const color = colorMap[props.variant ?? "default"];
@@ -94,6 +95,7 @@ export function Button(props: {
     <MantineButton
       type={props.type ?? "button"}
       disabled={props.disabled}
+      loading={props.loading}
       onClick={props.onClick}
       variant={variant}
       color={color}

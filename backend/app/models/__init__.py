@@ -7,4 +7,5 @@ from .payment import Payment, PaymentAllocation  # noqa: F401
 from .complaint import Complaint  # noqa: F401
 from .job import Job  # noqa: F401
 from .mikrotik_server import MikrotikServer  # noqa: F401
+from .mp_preference import MpPreference  # noqa: F401
 

@@ -10,3 +10,4 @@ marshmallow==3.21.3
 requests==2.31.0
 routeros-api==0.21.0
 reportlab==4.1.0
+mercadopago==2.3.0
