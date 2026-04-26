@@ -40,9 +40,13 @@ services:
       MIKROTIK_PORT: ${MIKROTIK_PORT:-8728}
       MIKROTIK_USER: ${MIKROTIK_USER:-}
       MIKROTIK_PASS: ${MIKROTIK_PASS:-}
+      # URLs públicas
+      BACKEND_URL: ${BACKEND_URL:-http://localhost:5001}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
       # Mercado Pago
       MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN:-}
       MERCADOPAGO_WEBHOOK_SECRET: ${MERCADOPAGO_WEBHOOK_SECRET:-}
+      MERCADOPAGO_SANDBOX: ${MERCADOPAGO_SANDBOX:-false}
     volumes:
       - ./backend/secrets:/app/secrets:ro
 

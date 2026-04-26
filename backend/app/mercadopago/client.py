@@ -81,3 +81,13 @@ class MpClient:
                 f"response={response.get('response')}"
             )
         return response["response"]
+
+    def get_merchant_order(self, order_id: str) -> dict:
+        """Consulta una merchant_order por su ID (formato IPN)."""
+        response = self._sdk.merchant_order().get(order_id)
+        if response["status"] != 200:
+            raise RuntimeError(
+                f"MP get_merchant_order falló: status={response['status']} "
+                f"response={response.get('response')}"
+            )
+        return response["response"]

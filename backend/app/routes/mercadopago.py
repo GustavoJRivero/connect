@@ -43,7 +43,7 @@ def _allocate_payment(payment: Payment, invoice_ids: list[int]) -> None:
         .filter(Invoice.id.in_(invoice_ids))
         .filter(Invoice.client_id == payment.client_id)
         .filter(Invoice.is_deleted.is_(False))
-        .filter(Invoice.status == "ISSUED")
+        .filter(Invoice.status.in_(["ISSUED", "DRAFT"]))
         .order_by(Invoice.issue_date.asc(), Invoice.id.asc())
         .all()
     )
@@ -63,13 +63,19 @@ def _allocate_payment(payment: Payment, invoice_ids: list[int]) -> None:
 
 
 def _base_url() -> str:
-    """URL base del frontend para los back_urls de MP."""
     return os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
 
 def _backend_url() -> str:
-    """URL base del backend para el webhook de MP."""
     return os.environ.get("BACKEND_URL", "http://localhost:5001")
+
+
+def _checkout_url(mp_response: dict) -> str:
+    """Devuelve sandbox_init_point en modo sandbox, init_point en producción."""
+    sandbox = os.environ.get("MERCADOPAGO_SANDBOX", "false").lower() == "true"
+    if sandbox:
+        return mp_response.get("sandbox_init_point") or mp_response.get("init_point", "")
+    return mp_response.get("init_point") or mp_response.get("sandbox_init_point", "")
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +199,7 @@ def create_preference():
 
     return jsonify({
         "preference_id": mp_response["id"],
-        "init_point": mp_response.get("init_point"),
-        "sandbox_init_point": mp_response.get("sandbox_init_point"),
+        "checkout_url": _checkout_url(mp_response),
         "mp_preference_id": pref_record.id,
     }), 201
 
@@ -214,7 +219,6 @@ def mp_webhook():
     # Validar firma si el secret está configurado
     webhook_secret = os.environ.get("MERCADOPAGO_WEBHOOK_SECRET", "")
     if webhook_secret:
-        ts = request.headers.get("x-signature", "")
         x_request_id = request.headers.get("x-request-id", "")
         sig_header = request.headers.get("x-signature", "")
         # Formato: "ts=<timestamp>,v1=<hmac>"
@@ -231,22 +235,48 @@ def mp_webhook():
 
     payload = request.get_json(force=True, silent=True) or {}
     event_type = payload.get("type")
-    data_id = (payload.get("data") or {}).get("id") or request.args.get("data.id")
+    topic = payload.get("topic") or request.args.get("topic")
+    data_id = (payload.get("data") or {}).get("id") or request.args.get("data.id") or request.args.get("id")
+    resource = payload.get("resource")
 
-    logger.info("MP webhook recibido: type=%s data.id=%s", event_type, data_id)
-
-    # Solo procesamos eventos de tipo "payment"
-    if event_type != "payment" or not data_id:
-        return jsonify({"status": "ignored"}), 200
+    logger.info("MP webhook recibido: type=%s topic=%s data.id=%s", event_type, topic, data_id)
 
     try:
-        _process_mp_payment(str(data_id))
+        if event_type == "payment" and data_id:
+            _process_mp_payment(str(data_id))
+        elif topic == "merchant_order" and (data_id or resource):
+            _process_merchant_order(str(data_id or ""), resource or "")
+        elif topic == "payment" and data_id:
+            _process_mp_payment(str(data_id))
+        else:
+            logger.info("MP webhook ignorado: type=%s topic=%s", event_type, topic)
     except Exception:
-        logger.exception("Error procesando pago MP #%s", data_id)
-        # Igualmente retornamos 200 para que MP no reintente indefinidamente
-        # El error queda en los logs del sistema
+        logger.exception("Error procesando webhook MP type=%s topic=%s id=%s", event_type, topic, data_id)
 
     return jsonify({"status": "ok"}), 200
+
+
+def _process_merchant_order(order_id: str, resource: str) -> None:
+    """
+    Procesa una notificación IPN de tipo merchant_order.
+    Extrae los pagos aprobados de la orden y los procesa.
+    """
+    mp = get_mp_client()
+
+    # El resource es la URL completa: extraemos el ID si no vino directo
+    if not order_id and resource:
+        order_id = resource.rstrip("/").split("/")[-1]
+
+    if not order_id:
+        logger.warning("merchant_order sin ID, resource=%s", resource)
+        return
+
+    order = mp.get_merchant_order(order_id)
+    logger.info("merchant_order #%s status=%s payments=%d", order_id, order.get("status"), len(order.get("payments", [])))
+
+    for payment in order.get("payments", []):
+        if payment.get("status") == "approved":
+            _process_mp_payment(str(payment["id"]))
 
 
 def _process_mp_payment(mp_payment_id: str) -> None:

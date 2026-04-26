@@ -69,12 +69,8 @@ export default function ClientInvoicesPage() {
     setError(null);
     setPayingId(inv.id);
     try {
-      const res = (await api.portalPay([inv.id])) as {
-        init_point?: string;
-        sandbox_init_point?: string;
-      };
-      const url = res.init_point || res.sandbox_init_point;
-      if (url) window.location.href = url;
+      const res = (await api.portalPay([inv.id])) as { checkout_url?: string };
+      if (res.checkout_url) window.location.href = res.checkout_url;
     } catch (e: any) {
       setError(e?.body?.detail ?? e?.body?.error ?? "Error al generar el link de pago");
     } finally {

@@ -12,6 +12,7 @@ from functools import wraps
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from .mercadopago import _checkout_url
 
 from ..extensions import db
 from ..models.client import Client
@@ -242,8 +243,7 @@ def portal_pay():
         db.session.commit()
 
         return jsonify({
-            "init_point": mp_response.get("init_point"),
-            "sandbox_init_point": mp_response.get("sandbox_init_point"),
+            "checkout_url": _checkout_url(mp_response),
             "preference_id": mp_response["id"],
             "mp_preference_id": pref_record.id,
         }), 201

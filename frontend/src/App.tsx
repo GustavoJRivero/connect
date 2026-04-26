@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import AppShell from "./AppShell";
 import ClientPortalShell from "./ClientPortalShell";
 import Login from "./Login";
+import MercadoPagoReturnPage from "./pages/MercadoPagoReturnPage";
 import { api, setToken } from "./api";
 
 type UserRole = "ADMIN" | "OPERATOR" | "CLIENT" | null;
@@ -38,21 +39,27 @@ export default function App() {
     setRole(null);
   };
 
-  if (!authed) {
-    return <Login onLoggedIn={() => setAuthed(true)} />;
-  }
-
-  // Mientras carga el rol mostramos nada (evita flash)
-  if (!role) return null;
-
   return (
     <BrowserRouter>
-      {role === "CLIENT" ? (
-        <ClientPortalShell onLogout={handleLogout} />
-      ) : (
-        <AppShell onLogout={handleLogout} />
-      )}
+      <Routes>
+        <Route path="/payment/success" element={<MercadoPagoReturnPage status="success" />} />
+        <Route path="/payment/pending" element={<MercadoPagoReturnPage status="pending" />} />
+        <Route path="/payment/failure" element={<MercadoPagoReturnPage status="failure" />} />
+        <Route path="*" element={<AuthenticatedApp authed={authed} role={role} onLogout={handleLogout} onLoggedIn={() => setAuthed(true)} />} />
+      </Routes>
     </BrowserRouter>
   );
 }
 
+function AuthenticatedApp({ authed, role, onLogout, onLoggedIn }: {
+  authed: boolean;
+  role: string | null;
+  onLogout: () => void;
+  onLoggedIn: () => void;
+}) {
+  if (!authed) return <Login onLoggedIn={onLoggedIn} />;
+  if (!role) return null;
+  return role === "CLIENT"
+    ? <ClientPortalShell onLogout={onLogout} />
+    : <AppShell onLogout={onLogout} />;
+}

@@ -98,9 +98,8 @@ export default function InvoicesPage() {
       const res = (await api.createMpPreference({
         client_id: inv.client_id,
         invoice_ids: [inv.id],
-      })) as { init_point?: string; sandbox_init_point?: string };
-      const url = res.init_point || res.sandbox_init_point;
-      if (url) window.open(url, "_blank");
+      })) as { checkout_url?: string };
+      if (res.checkout_url) window.open(res.checkout_url, "_blank");
     } catch (e: unknown) {
       const err = e as { status?: number; body?: any };
       setError(err?.body?.detail || err?.body?.error || "Error al generar link de pago");
