@@ -74,13 +74,13 @@ def _plan_price(conn: Connection) -> Decimal:
     """
     Obtiene el precio del plan para una conexión.
     Busca por profile name en la tabla de planes.
-    Retorna el precio con IVA incluido.
+    Retorna el precio final (IVA incluido) que se factura al cliente.
     """
     plan = None
     if conn.plan_profile:
         plan = Plan.query.filter_by(profile=conn.plan_profile).first()
     if not plan:
-        # Fallback a settings legacy
+        # Fallback a settings legacy (monto total con IVA / precio final).
         v = _get_setting(f"plan.price.{conn.plan_profile}", None)
         if v is None:
             raise KeyError(f"No existe plan '{conn.plan_profile}'. Crealo en Configuración > Planes.")

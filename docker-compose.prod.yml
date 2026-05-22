@@ -1,0 +1,77 @@
+services:
+
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-sistemaconnect}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    networks:
+      - internal
+
+  backend:
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    pull_policy: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      FLASK_ENV: ${FLASK_ENV:-production}
+      FLASK_DEBUG: "0"
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_ROOT_PASSWORD}@db:3306/${MYSQL_DATABASE:-sistemaconnect}
+      AFIP_ENV: ${AFIP_ENV:-HOMOLOGACION}
+      AFIP_CUIT: ${AFIP_CUIT:-}
+      AFIP_CERT_PATH: ${AFIP_CERT_PATH:-}
+      AFIP_KEY_PATH: ${AFIP_KEY_PATH:-}
+      MIKROTIK_HOST: ${MIKROTIK_HOST:-}
+      MIKROTIK_PORT: ${MIKROTIK_PORT:-8728}
+      MIKROTIK_USER: ${MIKROTIK_USER:-}
+      MIKROTIK_PASS: ${MIKROTIK_PASS:-}
+    volumes:
+      - ./secrets:/app/secrets:ro
+    networks:
+      - internal
+
+  frontend:
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    pull_policy: always
+    depends_on:
+      - backend
+    networks:
+      - internal
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "${PROXY_HTTP_PORT:-8088}:80"
+      - "${PROXY_HTTPS_PORT:-44333}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - internal
+
+volumes:
+  mysql_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    driver: bridge

@@ -24,9 +24,11 @@ La forma más rápida de levantar todo el sistema. Solo se necesita **Docker** y
 
 ### 1. Requisitos previos
 
-| Componente         | Versión / Notas                              |
-|--------------------|----------------------------------------------|
-| **Docker**         | 20.10+ con Docker Compose V2 integrado.      |
+
+| Componente | Versión / Notas                         |
+| ---------- | --------------------------------------- |
+| **Docker** | 20.10+ con Docker Compose V2 integrado. |
+
 
 > Si tenés MySQL corriendo en el host en el puerto 3306, no hay conflicto: el contenedor de MySQL expone el puerto **3307** en el host.
 
@@ -61,17 +63,19 @@ docker compose up -d --build
 
 Esto levanta tres servicios:
 
-| Servicio     | Puerto en host | Descripción                        |
-|--------------|----------------|------------------------------------|
-| **db**       | 3307           | MySQL 8.0 (interno: 3306)          |
-| **backend**  | 5001           | API Flask + Gunicorn               |
-| **frontend** | 80             | React compilado + Nginx            |
+
+| Servicio     | Puerto en host | Descripción               |
+| ------------ | -------------- | ------------------------- |
+| **db**       | 3307           | MySQL 8.0 (interno: 3306) |
+| **backend**  | 5001           | API Flask + Gunicorn      |
+| **frontend** | 80             | React compilado + Nginx   |
+
 
 El backend espera a que MySQL esté listo, aplica las migraciones automáticamente y luego inicia Gunicorn.
 
 ### 4. Acceder al sistema
 
-1. Abrir **http://localhost** (puerto 80) en el navegador.
+1. Abrir **[http://localhost](http://localhost)** (puerto 80) en el navegador.
 2. En la pantalla de login, hacer clic en **"Cambiar a Bootstrap"**.
 3. Elegir un usuario y contraseña para el primer admin, luego **"Crear admin + Entrar"**.
 
@@ -112,13 +116,15 @@ docker compose logs -f
 
 Para conectarse desde herramientas como DBeaver o MySQL Workbench:
 
-| Parámetro  | Valor           |
-|------------|-----------------|
-| Host       | `127.0.0.1`     |
-| Puerto     | `3307`          |
-| Base       | `sistemaconnect` |
-| Usuario    | `root`          |
+
+| Parámetro  | Valor                   |
+| ---------- | ----------------------- |
+| Host       | `127.0.0.1`             |
+| Puerto     | `3307`                  |
+| Base       | `sistemaconnect`        |
+| Usuario    | `root`                  |
 | Contraseña | (la definida en `.env`) |
+
 
 ---
 
@@ -128,11 +134,13 @@ Para desarrollo con hot-reload en frontend y backend.
 
 ### 1. Requisitos previos
 
-| Componente | Versión / Notas                                    |
-|------------|----------------------------------------------------|
-| **MySQL**  | 5.7+ o 8.x. Servicio corriendo (puerto 3306).     |
-| **Python** | 3.8+ (recomendado 3.10+). Para el backend.        |
-| **Node.js**| 14+ (recomendado 18+). Para el frontend. `npm` incluido. |
+
+| Componente  | Versión / Notas                                          |
+| ----------- | -------------------------------------------------------- |
+| **MySQL**   | 5.7+ o 8.x. Servicio corriendo (puerto 3306).            |
+| **Python**  | 3.8+ (recomendado 3.10+). Para el backend.               |
+| **Node.js** | 14+ (recomendado 18+). Para el frontend. `npm` incluido. |
+
 
 ### 2. MySQL
 
@@ -140,7 +148,6 @@ Para desarrollo con hot-reload en frontend y backend.
   - Windows: [MySQL Installer](https://dev.mysql.com/downloads/installer/) o Chocolatey: `choco install mysql`.
   - Linux: `sudo apt install mysql-server` (Debian/Ubuntu) o equivalente.
   - macOS: `brew install mysql`.
-
 - **Crear la base de datos**:
 
 ```sql
@@ -191,7 +198,7 @@ flask db upgrade
 python run.py
 ```
 
-La API queda en **http://localhost:5001**. Healthcheck: `GET /api/health` → `{"status":"ok"}`.
+La API queda en **[http://localhost:5001](http://localhost:5001)**. Healthcheck: `GET /api/health` → `{"status":"ok"}`.
 
 ### 4. Frontend (React)
 
@@ -201,7 +208,7 @@ npm install
 npm start
 ```
 
-Abre **http://localhost:3000**. Por defecto se conecta al backend en `http://localhost:5001`.
+Abre **[http://localhost:3000](http://localhost:3000)**. Por defecto se conecta al backend en `http://localhost:5001`.
 
 Para otra URL de backend, crear `frontend/.env`:
 
@@ -218,4 +225,5 @@ En la pantalla de login, usar **"Cambiar a Bootstrap"** para crear el primer adm
 ## Configuración opcional
 
 - **AFIP** (facturación electrónica): En `.env`, configurar `AFIP_CUIT`, `AFIP_CERT_PATH`, `AFIP_KEY_PATH`, `AFIP_ENV` (HOMOLOGACION/PRODUCCION). Sin certificados la app funciona; la integración AFIP queda preparada.
-- **Mikrotik** (PPPoE): Se configuran los servidores desde la app (Red → Servidores). Las variables `MIKROTIK_*` en `.env` son legacy; los equipos se gestionan desde la base de datos.
+- **Mikrotik** (PPPoE): Se configuran los servidores desde la app (Red → Servidores). Las variables `MIKROTIK_`* en `.env` son legacy; los equipos se gestionan desde la base de datos.
+

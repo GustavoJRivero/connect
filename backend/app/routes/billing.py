@@ -29,7 +29,7 @@ def _issuer():
 
 
 def _plan_price(profile: str) -> Decimal:
-    """Lee el precio del plan desde la tabla plans (no desde settings)."""
+    """Precio final del plan (IVA incluido), desde la tabla `plans`."""
     plan = Plan.query.filter_by(profile=profile).first()
     if not plan:
         raise KeyError(f"Plan no encontrado para profile '{profile}'")

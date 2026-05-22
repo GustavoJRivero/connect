@@ -20,3 +20,12 @@ logs/
 *.tmp
 *.swp
 
+# DB dumps / backups (no subir al repo)
+*.sql
+*.sql.gz
+*.sql.bz2
+*.sql.zip
+*.dump
+Backup_*.sql
+backup_*.sql
+

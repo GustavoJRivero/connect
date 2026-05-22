@@ -28,10 +28,22 @@ interface Plan {
   upload_mbps: number;
   price: string;
   iva_percent: string;
+  price_net: string;
   price_with_iva: string;
   iva_amount: string;
   is_active: boolean;
   connections_count: number;
+}
+
+/** Vista previa alineada al backend: neto = final / (1+IVA%), IVA = final − neto. */
+function netAndIvaFromGross(gross: number, ivaPct: number): { net: number; iva: number } {
+  const g = Number.isFinite(gross) ? gross : 0;
+  const iv = Number.isFinite(ivaPct) ? ivaPct : 0;
+  if (iv <= 0) return { net: Math.round(g * 100) / 100, iva: 0 };
+  const divisor = 1 + iv / 100;
+  const net = Math.round((g / divisor) * 100) / 100;
+  const ivaAmt = Math.round((g - net) * 100) / 100;
+  return { net, iva: ivaAmt };
 }
 
 const EMPTY_FORM = {
@@ -170,9 +182,10 @@ export default function PlansPage() {
                   <Table.Th>Profile MK</Table.Th>
                   <Table.Th ta="center">Bajada</Table.Th>
                   <Table.Th ta="center">Subida</Table.Th>
-                  <Table.Th ta="right">Precio</Table.Th>
-                  <Table.Th ta="right">IVA</Table.Th>
-                  <Table.Th ta="right">Total</Table.Th>
+                  <Table.Th ta="right">Precio final</Table.Th>
+                  <Table.Th ta="right">IVA %</Table.Th>
+                  <Table.Th ta="right">Neto</Table.Th>
+                  <Table.Th ta="right">IVA $</Table.Th>
                   <Table.Th ta="center">Estado</Table.Th>
                   <Table.Th ta="center">Conexiones</Table.Th>
                   <Table.Th ta="center">Acciones</Table.Th>
@@ -189,11 +202,12 @@ export default function PlansPage() {
                     </Table.Td>
                     <Table.Td ta="center">{plan.download_mbps} Mbps</Table.Td>
                     <Table.Td ta="center">{plan.upload_mbps} Mbps</Table.Td>
-                    <Table.Td ta="right">${Number(plan.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</Table.Td>
-                    <Table.Td ta="right">{plan.iva_percent}%</Table.Td>
                     <Table.Td ta="right" fw={600}>
-                      ${Number(plan.price_with_iva).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
+                      ${Number(plan.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                     </Table.Td>
+                    <Table.Td ta="right">{plan.iva_percent}%</Table.Td>
+                    <Table.Td ta="right">${Number(plan.price_net).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</Table.Td>
+                    <Table.Td ta="right">${Number(plan.iva_amount).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</Table.Td>
                     <Table.Td ta="center">
                       <Badge color={plan.is_active ? "green" : "red"} variant="filled" size="sm">
                         {plan.is_active ? "Activo" : "Inactivo"}
@@ -269,7 +283,8 @@ export default function PlansPage() {
           </Group>
           <Group grow>
             <NumberInput
-              label="Precio (sin IVA)"
+              label="Precio final (IVA incluido)"
+              description="Lo que paga el cliente; el neto y el IVA se calculan abajo."
               value={form.price}
               onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
               min={0}
@@ -288,6 +303,14 @@ export default function PlansPage() {
               suffix="%"
             />
           </Group>
+          <Text size="xs" c="dimmed">
+            {(() => {
+              const { net, iva } = netAndIvaFromGross(form.price, form.iva_percent);
+              const fmt = (n: number) =>
+                `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+              return `Desglose: neto gravado ${fmt(net)} + IVA ${fmt(iva)} = ${fmt(form.price)}`;
+            })()}
+          </Text>
           <Switch
             label="Plan activo"
             checked={form.is_active}

@@ -284,7 +284,7 @@ export const api = {
 
   // plans
   listPlans(activeOnly = false) {
-    const qs = activeOnly ? "?active=1" : "";
+    const qs = activeOnly ? "?active_only=1" : "";
     return request(`/api/plans${qs}`);
   },
   createPlan(payload: any) {
@@ -295,6 +295,9 @@ export const api = {
   },
   deletePlan(id: number) {
     return request(`/api/plans/${id}`, { method: "DELETE" });
+  },
+  getAfipStatus() {
+    return request("/api/invoices/afip/status");
   },
 
   // logs

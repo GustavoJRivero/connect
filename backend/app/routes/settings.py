@@ -45,10 +45,12 @@ def put_kv():
     Body:
     {
       "values": {
-        "plan.price.50M": "15000",
+        "plan.price.50M": "18150",
         "billing.due_days": "10"
       }
     }
+
+    Nota: claves `plan.price.*` (fallback legacy) = monto total con IVA (precio final).
     """
     data = request.get_json(force=True) or {}
     values = data.get("values") or {}

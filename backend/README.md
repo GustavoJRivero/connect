@@ -15,13 +15,13 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2. Configurar variables:
+1. Configurar variables:
 
 - Copiar `backend/.env.example` a `backend/.env`
 - En `.env` usar MySQL, por ejemplo:  
-  `DATABASE_URL=mysql+pymysql://root:root@127.0.0.1:3306/sistemaconnect`
+`DATABASE_URL=mysql+pymysql://root:root@127.0.0.1:3306/sistemaconnect`
 
-3. MySQL: crear la base `sistemaconnect` y aplicar migraciones:
+1. MySQL: crear la base `sistemaconnect` y aplicar migraciones:
 
 ```bash
 cd backend
@@ -30,7 +30,7 @@ set FLASK_APP=wsgi.py
 .\.venv\Scripts\flask db upgrade
 ```
 
-4. Ejecutar:
+1. Ejecutar:
 
 ```bash
 python run.py

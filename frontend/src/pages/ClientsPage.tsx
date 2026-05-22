@@ -111,12 +111,30 @@ export default function ClientsPage() {
   }
 
   useEffect(() => {
-    api.getSettings("plan.price.").then((kv: unknown) => {
-      const k = (kv || {}) as Record<string, string>;
-      const keys = Object.keys(k).filter((key) => key.startsWith("plan.price.")).map((key) => key.replace("plan.price.", ""));
-      const unique = Array.from(new Set(keys)).sort();
-      if (unique.length) setPlanOptions(unique);
-    }).catch(() => {});
+    const fallbackProfiles = ["25M", "50M", "100M", "300M"];
+    (async () => {
+      try {
+        const plans = await api.listPlans(true);
+        const arr = Array.isArray(plans) ? plans : [];
+        const profiles = arr.map((p: { profile?: string }) => p.profile).filter(Boolean) as string[];
+        if (profiles.length) {
+          setPlanOptions(Array.from(new Set(profiles)).sort());
+          return;
+        }
+      } catch {
+        /* intentar fallback legacy */
+      }
+      try {
+        const kv = (await api.getSettings("plan.price.")) as Record<string, string>;
+        const keys = Object.keys(kv)
+          .filter((key) => key.startsWith("plan.price."))
+          .map((key) => key.replace("plan.price.", ""));
+        const unique = Array.from(new Set(keys)).sort();
+        setPlanOptions(unique.length ? unique : fallbackProfiles);
+      } catch {
+        setPlanOptions(fallbackProfiles);
+      }
+    })();
     api.listServers().then((xs: unknown) => setServers((xs as { id: number; name: string; host: string; port: number }[]) || [])).catch(() => {});
   }, []);
 

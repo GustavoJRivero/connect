@@ -1,6 +1,6 @@
 import logging
 import smtplib
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import date, datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
@@ -16,6 +16,7 @@ from ..models.client import Client
 from ..models.payment import PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
+from ..afip.wsfe import AfipWsfeClient, AfipIntegrationError
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,52 @@ def _issuer():
         "cuit": _get_setting("issuer.cuit", "30716906333"),
         "point_of_sale": int(_get_setting("issuer.point_of_sale", "2")),
     }
+
+
+def _as_bool(v, default: bool = False) -> bool:
+    if v is None:
+        return default
+    return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _afip_config() -> dict:
+    """
+    Config AFIP preferentemente desde settings (solapa Configuración),
+    con fallback a variables de entorno para no romper instalaciones previas.
+    """
+    from flask import current_app
+
+    return {
+        "enabled": _as_bool(_get_setting("afip.enabled", "false")),
+        "env": (_get_setting("afip.env", None) or current_app.config.get("AFIP_ENV") or "HOMOLOGACION"),
+        "cuit": (_get_setting("afip.cuit", None) or current_app.config.get("AFIP_CUIT") or ""),
+        "cert_path": (_get_setting("afip.cert_path", None) or current_app.config.get("AFIP_CERT_PATH") or ""),
+        "key_path": (_get_setting("afip.key_path", None) or current_app.config.get("AFIP_KEY_PATH") or ""),
+        "iva_percent_default": (_get_setting("afip.iva_percent_default", "21") or "21"),
+    }
+
+
+def _client_doc_for_afip(client: Client | None) -> tuple[int, int]:
+    """
+    Devuelve (doc_tipo, doc_nro) para AFIP.
+    - CUIT empresa/persona: tipo 80
+    - DNI persona: tipo 96
+    - sin datos: consumidor final (99, 0)
+    """
+    if not client:
+        return 99, 0
+    try:
+        if client.cuit:
+            raw = "".join(ch for ch in str(client.cuit) if ch.isdigit())
+            if raw:
+                return 80, int(raw)
+        if client.dni:
+            raw = "".join(ch for ch in str(client.dni) if ch.isdigit())
+            if raw:
+                return 96, int(raw)
+    except Exception:
+        pass
+    return 99, 0
 
 
 def _next_cbte_number(*, point_of_sale: int, invoice_type: str) -> int:
@@ -156,10 +203,8 @@ def create_invoice_draft():
 def issue_invoice(invoice_id: int):
     """
     Emite la factura:
-    - asigna numeración (cbte_number)
-    - marca ISSUED
-
-    Por ahora NO llama a AFIP: queda la estructura lista para luego.
+    - A/B: intenta AFIP (CAE real) si está habilitado
+    - X o AFIP deshabilitado: usa numeración interna
     """
     x = Invoice.query.get_or_404(invoice_id)
     if getattr(x, "is_deleted", False):
@@ -167,12 +212,58 @@ def issue_invoice(invoice_id: int):
     if x.status != "DRAFT":
         return jsonify({"error": "invalid_status"}), 409
 
-    cbte = _next_cbte_number(point_of_sale=x.point_of_sale, invoice_type=x.invoice_type)
-    x.cbte_number = cbte
-    x.status = "ISSUED"
     if not x.due_date:
         due_days = int(_get_setting("billing.due_days", "10"))
         x.due_date = date.today() + timedelta(days=due_days)
+
+    afip_cfg = _afip_config()
+    should_use_afip = bool(afip_cfg["enabled"]) and x.invoice_type in ("A", "B")
+
+    if should_use_afip:
+        client = Client.query.get(x.client_id) if x.client_id else None
+        doc_type, doc_number = _client_doc_for_afip(client)
+        try:
+            iva_percent_default = Decimal(str(afip_cfg["iva_percent_default"]))
+        except InvalidOperation:
+            iva_percent_default = Decimal("21")
+
+        try:
+            afip = AfipWsfeClient(
+                env=str(afip_cfg["env"]),
+                cuit=str(afip_cfg["cuit"]),
+                cert_path=str(afip_cfg["cert_path"]),
+                key_path=str(afip_cfg["key_path"]),
+            )
+            issued = afip.issue_invoice(
+                point_of_sale=int(x.point_of_sale),
+                invoice_type=str(x.invoice_type),
+                total=Decimal(str(x.total or 0)),
+                iva_percent=iva_percent_default,
+                issue_date=(x.issue_date or date.today()),
+                due_date=x.due_date,
+                concept=2,
+                doc_type=doc_type,
+                doc_number=doc_number,
+            )
+            x.cbte_number = int(issued.cbte_number)
+            x.cae = str(issued.cae)
+            x.cae_due_date = issued.cae_due_date
+            x.status = "ISSUED"
+        except AfipIntegrationError as e:
+            return jsonify({
+                "error": "afip_issue_failed",
+                "message": str(e),
+            }), 400
+        except Exception as e:
+            logger.exception("Error inesperado emitiendo factura #%s en AFIP", invoice_id)
+            return jsonify({
+                "error": "afip_issue_failed",
+                "message": str(e),
+            }), 500
+    else:
+        cbte = _next_cbte_number(point_of_sale=x.point_of_sale, invoice_type=x.invoice_type)
+        x.cbte_number = cbte
+        x.status = "ISSUED"
 
     db.session.commit()
     return jsonify(_invoice_to_dict(x))
@@ -190,6 +281,41 @@ def list_invoices():
         q = q.filter(Invoice.is_deleted.is_(False))
     items = q.order_by(Invoice.id.desc()).limit(500).all()
     return jsonify([_invoice_to_dict(x) for x in items])
+
+
+@bp.get("/afip/status")
+@jwt_required(optional=True)
+def afip_status():
+    cfg = _afip_config()
+    masked = {
+        "enabled": bool(cfg["enabled"]),
+        "env": str(cfg["env"]),
+        "cuit": str(cfg["cuit"]),
+        "cert_path": str(cfg["cert_path"]),
+        "key_path": str(cfg["key_path"]),
+        "iva_percent_default": str(cfg["iva_percent_default"]),
+    }
+    if not cfg["enabled"]:
+        return jsonify({
+            "status": "disabled",
+            "config": masked,
+            "message": "AFIP deshabilitado en configuración (afip.enabled=false).",
+        })
+    try:
+        afip = AfipWsfeClient(
+            env=str(cfg["env"]),
+            cuit=str(cfg["cuit"]),
+            cert_path=str(cfg["cert_path"]),
+            key_path=str(cfg["key_path"]),
+        )
+        ping = afip.ping()
+        return jsonify({"status": "ok", "config": masked, "ping": ping})
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "config": masked,
+            "message": str(e),
+        }), 400
 
 
 @bp.delete("/<int:invoice_id>")

@@ -18,6 +18,11 @@ from ..logging_utils import slog
 bp = Blueprint("plans", __name__, url_prefix="/api/plans")
 
 
+def _connections_count_for_plan(p: Plan) -> int:
+    """Las conexiones referencian el plan por `plan_profile` (nombre profile Mikrotik), no por FK."""
+    return Connection.query.filter(Connection.plan_profile == p.profile).count()
+
+
 def _plan_to_dict(p: Plan) -> dict:
     return {
         "id": p.id,
@@ -27,10 +32,11 @@ def _plan_to_dict(p: Plan) -> dict:
         "upload_mbps": p.upload_mbps,
         "price": str(p.price),
         "iva_percent": str(p.iva_percent),
+        "price_net": str(p.price_net),
         "price_with_iva": str(p.price_with_iva),
         "iva_amount": str(p.iva_amount),
         "is_active": p.is_active,
-        "connections_count": Connection.query.filter_by(plan_id=p.id).count(),
+        "connections_count": _connections_count_for_plan(p),
     }
 
 
@@ -58,9 +64,11 @@ def create_plan():
       "profile": "50M",
       "download_mbps": 50,
       "upload_mbps": 10,
-      "price": 15000,
+      "price": 18150,
       "iva_percent": 21
     }
+
+    `price` es el monto final (IVA incluido) que paga el cliente.
     """
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
@@ -153,7 +161,7 @@ def update_plan(plan_id: int):
 def delete_plan(plan_id: int):
     """Eliminar plan (solo si no tiene conexiones asignadas)."""
     p = Plan.query.get_or_404(plan_id)
-    conn_count = Connection.query.filter_by(plan_id=p.id).count()
+    conn_count = _connections_count_for_plan(p)
     if conn_count > 0:
         return jsonify({
             "error": "plan_has_connections",
