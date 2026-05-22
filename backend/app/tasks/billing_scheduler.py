@@ -1,12 +1,14 @@
 """
 Scheduler de facturación automática.
 
-Estrategia de robustez:
-1. Al iniciar, ejecuta catch-up para los últimos 7 días (recupera caídas)
-2. Cada día a la hora configurada, ejecuta la facturación del día
-3. Usa BillingRun como registro → idempotente (no duplica)
-4. Errores por conexión se aíslan (no frenan el lote)
-5. Commits por lote de 50 (no se pierde todo si falla a mitad)
+La activación y la hora se configuran en Configuración (settings en BD):
+  billing.scheduler.enabled  — "true" / "false"
+  billing.scheduler.run_hour — 0-23 (hora UTC del servidor al disparar el día)
+
+Estrategia:
+1. Si está habilitado al arrancar, ejecuta catch-up para los últimos 7 días
+2. Cada minuto relee la configuración; si está habilitado y ya pasó la hora UTC del día, ejecuta facturación
+3. Usa BillingRun como registro → idempotente
 """
 import threading
 import time
@@ -18,6 +20,26 @@ from flask import Flask
 logger = logging.getLogger(__name__)
 
 _scheduler_started = False
+
+
+def _scheduler_config_from_db() -> tuple[bool, int]:
+    """Lee billing.scheduler.* desde la tabla settings."""
+    from ..models.setting import Setting
+
+    def _get(key: str, default: str) -> str:
+        s = Setting.query.get(key)
+        if s is None or s.value is None:
+            return default
+        return str(s.value).strip() or default
+
+    raw = _get("billing.scheduler.enabled", "false").lower()
+    enabled = raw in ("1", "true", "yes", "on")
+    try:
+        hour = int(_get("billing.scheduler.run_hour", "6"))
+    except ValueError:
+        hour = 6
+    hour = max(0, min(23, hour))
+    return enabled, hour
 
 
 def _run_daily(app: Flask):
@@ -60,7 +82,6 @@ def _run_daily(app: Flask):
             result.get("duration_ms", 0),
         )
 
-        # Actualizar estado de servicios después de facturar
         try:
             from ..billing.service_status import update_all_services
             svc_result = update_all_services()
@@ -97,47 +118,68 @@ def _run_catchup(app: Flask):
         )
 
 
-def _scheduler_loop(app: Flask, run_hour: int):
-    """
-    Loop principal. Espera hasta la hora configurada y ejecuta.
-    """
+def _maybe_run_catchup(app: Flask):
+    """Catch-up solo si el scheduler está habilitado en configuración."""
+    with app.app_context():
+        enabled, run_hour = _scheduler_config_from_db()
+        if not enabled:
+            logger.info(
+                "Billing scheduler: catch-up omitido (activá el scheduler en Configuración > Cobranza)"
+            )
+            return
+    logger.info(
+        "Billing scheduler: ejecutando catch-up (hora UTC configurada: %02d:00)",
+        run_hour,
+    )
+    _run_catchup(app)
+
+
+def _scheduler_loop(app: Flask):
+    """Loop principal: cada minuto relee BD; si está habilitado y corresponde, factura una vez por día."""
     last_run_date = None
 
     while True:
-        now = datetime.utcnow()
-        today = now.date()
-
-        if now.hour >= run_hour and last_run_date != today:
-            try:
-                _run_daily(app)
-                last_run_date = today
-            except Exception:
-                logger.exception("Billing scheduler: error en ejecución diaria")
-                time.sleep(300)
+        try:
+            with app.app_context():
+                enabled, run_hour = _scheduler_config_from_db()
+            if not enabled:
+                time.sleep(60)
                 continue
+
+            now = datetime.utcnow()
+            today = now.date()
+            if now.hour >= run_hour and last_run_date != today:
+                try:
+                    _run_daily(app)
+                    last_run_date = today
+                except Exception:
+                    logger.exception("Billing scheduler: error en ejecución diaria")
+                    time.sleep(300)
+                    continue
+        except Exception:
+            logger.exception("Billing scheduler: error en loop")
+            time.sleep(60)
+            continue
 
         time.sleep(60)
 
 
 def start_billing_scheduler(app: Flask):
-    """Inicia el scheduler de facturación en un thread daemon."""
+    """
+    Inicia el scheduler en hilos daemon (mismo proceso que Gunicorn).
+    Siempre arranca el loop: habilitar/deshabilitar se controla solo con settings en BD.
+    """
     global _scheduler_started
     if _scheduler_started:
         return
-    if str(app.config.get("BILLING_SCHEDULER_ENABLED", "true")).lower() in ("0", "false", "no"):
-        return
 
-    run_hour = int(app.config.get("BILLING_SCHEDULER_HOUR", 6))
-
-    # 1. Catch-up al arrancar
     catchup_thread = threading.Thread(
-        target=_run_catchup, args=(app,), daemon=True, name="billing-catchup"
+        target=_maybe_run_catchup, args=(app,), daemon=True, name="billing-catchup"
     )
     catchup_thread.start()
 
-    # 2. Scheduler diario
     t = threading.Thread(
-        target=_scheduler_loop, args=(app, run_hour), daemon=True, name="billing-scheduler"
+        target=_scheduler_loop, args=(app,), daemon=True, name="billing-scheduler"
     )
     t.start()
 
@@ -145,9 +187,17 @@ def start_billing_scheduler(app: Flask):
 
     with app.app_context():
         from ..logging_utils import slog
+        enabled, run_hour = _scheduler_config_from_db()
         slog(
             module="SYSTEM",
             action="SCHEDULER_STARTED",
-            message=f"Scheduler de facturación iniciado (hora UTC: {run_hour:02d}:00)",
-            details={"run_hour_utc": run_hour, "catchup_days": 7},
+            message=(
+                "Hilo de scheduler de facturación iniciado "
+                f"({'habilitado' if enabled else 'deshabilitado'} en BD; hora UTC si aplica: {run_hour:02d}:00)"
+            ),
+            details={
+                "enabled_in_db": enabled,
+                "run_hour_utc": run_hour,
+                "catchup_days": 7 if enabled else 0,
+            },
         )

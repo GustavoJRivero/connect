@@ -225,15 +225,15 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
         ])
     elif plan:
         desc = f"Servicio de internet - Plan {plan.name} ({plan.download_mbps}/{plan.upload_mbps} Mbps)"
-        price_base = plan.price
+        price_net = plan.price_net
         iva_pct = plan.iva_percent
         iva_amount = plan.iva_amount
 
         detail_rows.append([
             desc,
             "1",
-            _format_money(price_base),
-            _format_money(price_base),
+            _format_money(price_net),
+            _format_money(price_net),
         ])
 
         if iva_pct and iva_pct > 0:

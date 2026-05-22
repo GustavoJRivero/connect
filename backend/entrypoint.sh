@@ -29,6 +29,9 @@ echo "Aplicando migraciones..."
 export FLASK_APP=wsgi.py
 flask db upgrade
 
+echo "Datos iniciales (seed, idempotente)..."
+python seed.py
+
 echo "Iniciando servidor (1 worker de Gunicorn + hilo de cola de jobs en el mismo proceso)..."
 exec gunicorn wsgi:app \
     --config gunicorn_config.py \

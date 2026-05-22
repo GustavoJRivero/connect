@@ -45,6 +45,6 @@ def create_app() -> Flask:
     app.register_blueprint(plans_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(health_bp)
-    # Cola de jobs: se arranca en gunicorn_config.post_worker_init (hilo en el mismo proceso).
+    # Jobs + scheduler de facturación: gunicorn_config.post_worker_init (hilos en el mismo proceso).
     return app
 

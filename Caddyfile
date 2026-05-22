@@ -1,0 +1,44 @@
+# Caddy reverse proxy for SistemaConnect
+#
+# Acceso por IP/puertos sin dominio:
+# - HTTP en el puerto publicado por compose (por defecto 8088:80).
+# - Sin TLS automático: con IP cruda Let's Encrypt no puede emitir cert.
+#
+# Cuando exista dominio real apuntando a esta IP, reemplazar el bloque ":80"
+# por el nombre de dominio. Si los puertos públicos pasan a ser 80/443,
+# Caddy puede emitir TLS automáticamente:
+#
+#   app.midominio.com {
+#       encode zstd gzip
+#       handle /api/* {
+#           reverse_proxy backend:5001
+#       }
+#       handle {
+#           reverse_proxy frontend:80
+#       }
+#   }
+
+{
+	# Sin TLS automático mientras se usa solo IP.
+	auto_https off
+	admin off
+}
+
+:80 {
+	encode zstd gzip
+
+	# API del backend (Flask + Gunicorn).
+	handle /api/* {
+		reverse_proxy backend:5001
+	}
+
+	# SPA del frontend (nginx).
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}
