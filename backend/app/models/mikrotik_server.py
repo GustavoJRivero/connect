@@ -17,3 +17,7 @@ class MikrotikServer(db.Model):
     password = db.Column(db.String(255), nullable=False)
     use_ssl = db.Column(db.Boolean, nullable=False, default=False)
 
+    # IP del router que se inyecta como `local-address` en /ppp/profile (gateway PPPoE).
+    # Si está vacío no se setea y RouterOS toma su default.
+    local_address = db.Column(db.String(64), nullable=True)
+

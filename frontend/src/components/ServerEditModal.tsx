@@ -19,6 +19,7 @@ export function ServerEditModal(props: {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [useSsl, setUseSsl] = useState(false);
+  const [localAddress, setLocalAddress] = useState("");
 
   useEffect(() => {
     if (!props.open) return;
@@ -31,6 +32,7 @@ export function ServerEditModal(props: {
       setUsername("");
       setPassword("");
       setUseSsl(false);
+      setLocalAddress("");
       setLoading(false);
       return;
     }
@@ -38,13 +40,21 @@ export function ServerEditModal(props: {
     api
       .getServer(Number(props.serverId))
       .then((s: unknown) => {
-        const x = s as { name?: string; host?: string; port?: number; username?: string; use_ssl?: boolean };
+        const x = s as {
+          name?: string;
+          host?: string;
+          port?: number;
+          username?: string;
+          use_ssl?: boolean;
+          local_address?: string;
+        };
         setName(String(x?.name ?? ""));
         setHost(String(x?.host ?? ""));
         setPort(String(x?.port ?? "8728"));
         setUsername(String(x?.username ?? ""));
         setPassword("");
         setUseSsl(Boolean(x?.use_ssl ?? false));
+        setLocalAddress(String(x?.local_address ?? ""));
       })
       .catch((e: unknown) => {
         const err = e as { status?: number; body?: unknown };
@@ -105,12 +115,21 @@ export function ServerEditModal(props: {
       setError("Contraseña es requerida al crear.");
       return;
     }
-    const payload: { name: string; host: string; port: number; username: string; use_ssl: boolean; password?: string } = {
+    const payload: {
+      name: string;
+      host: string;
+      port: number;
+      username: string;
+      use_ssl: boolean;
+      local_address: string;
+      password?: string;
+    } = {
       name: name.trim(),
       host: host.trim(),
       port: Number(port) || 8728,
       username: username.trim(),
       use_ssl: useSsl,
+      local_address: localAddress.trim(),
     };
     if (password.trim()) payload.password = password.trim();
     try {
@@ -169,6 +188,12 @@ export function ServerEditModal(props: {
               <Field label="Contraseña" value={password} onChange={setPassword} type="password" placeholder="Dejar vacío para no cambiar" />
             </Grid.Col>
           </Grid>
+          <Field
+            label="Local address"
+            value={localAddress}
+            onChange={setLocalAddress}
+            placeholder="ej: 10.10.0.1"
+          />
           <Checkbox label="Usar SSL" checked={useSsl} onChange={(e) => setUseSsl(e.currentTarget.checked)} mt="sm" />
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={props.onClose}>Cerrar</Button>
