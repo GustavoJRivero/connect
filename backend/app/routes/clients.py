@@ -11,7 +11,19 @@ from ..models.complaint import Complaint
 from ..models.invoice import Invoice
 from ..models.payment import Payment, PaymentAllocation
 from ..network.ip_pool import PoolError, resolve_ip_for_connection
-from ..tasks.queue import JOB_MT_CREATE_PPP_SECRET, JOB_MT_DELETE_PPP_SECRET, JOB_MT_SET_PPP_PROFILE, enqueue_job
+from ..timezone import iso_utc
+from ..tasks.queue import (
+    JOB_MT_CREATE_PPP_SECRET,
+    JOB_MT_DELETE_PPP_SECRET,
+    JOB_MT_SET_PPP_PROFILE,
+    JOB_MT_SET_PPP_COMMENT,
+    enqueue_job,
+)
+
+
+def _client_comment_for_mt(c: Client) -> str:
+    """Comment que se envía a Mikrotik para identificar al cliente en `/ppp/secret`."""
+    return (c.full_name or "").strip()
 
 bp = Blueprint("clients", __name__, url_prefix="/api/clients")
 
@@ -65,9 +77,9 @@ def _client_to_dict(c: Client) -> dict:
                 "ip": getattr(x, "ip", None),
                 "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
                 "last_uptime": getattr(x, "last_uptime", None),
-                "last_connected_at": x.last_connected_at.isoformat() if getattr(x, "last_connected_at", None) else None,
-                "last_disconnected_at": x.last_disconnected_at.isoformat() if getattr(x, "last_disconnected_at", None) else None,
-                "last_seen_at": x.last_seen_at.isoformat() if getattr(x, "last_seen_at", None) else None,
+                "last_connected_at": iso_utc(getattr(x, "last_connected_at", None)),
+                "last_disconnected_at": iso_utc(getattr(x, "last_disconnected_at", None)),
+                "last_seen_at": iso_utc(getattr(x, "last_seen_at", None)),
             }
         )
 
@@ -82,6 +94,7 @@ def _client_to_dict(c: Client) -> dict:
         "phone": c.phone,
         "email": c.email,
         "address": c.address,
+        "pon_sn": c.pon_sn,
         "is_active": c.is_active,
         "first_service_address": first_conn.service_address if first_conn else None,
         "debt_total": None,  # se completa en list_clients/get_client
@@ -334,6 +347,7 @@ def create_client():
         phone=(data.get("phone") or None),
         email=(data.get("email") or None),
         address=(data.get("address") or None),
+        pon_sn=((str(data.get("pon_sn")).strip() or None) if data.get("pon_sn") is not None else None),
         is_active=True,
     )
     if not c.full_name:
@@ -390,6 +404,7 @@ def create_client():
 
     jobs = []
     if provision_mikrotik:
+        comment = _client_comment_for_mt(c)
         for x in c.connections:
             j = enqueue_job(
                 job_type=JOB_MT_CREATE_PPP_SECRET,
@@ -398,6 +413,7 @@ def create_client():
                     "password": x.pppoe_password(),
                     "profile": x.plan_profile,
                     "remote_address": (x.ip or None),
+                    "comment": comment,
                 },
                 server_id=(int(x.server_id) if x.server_id else None),
             )
@@ -418,10 +434,13 @@ def update_client(client_id: int):
             return jsonify({"error": "invalid_kind"}), 400
         c.kind = kind
 
+    full_name_changed = False
     if "full_name" in data:
-        c.full_name = (data.get("full_name") or "").strip()
-        if not c.full_name:
+        new_full_name = (data.get("full_name") or "").strip()
+        if not new_full_name:
             return jsonify({"error": "full_name_required"}), 400
+        full_name_changed = (new_full_name != (c.full_name or ""))
+        c.full_name = new_full_name
 
     if "dni" in data:
         new_dni = data.get("dni") or None
@@ -443,11 +462,32 @@ def update_client(client_id: int):
         c.email = data.get("email") or None
     if "address" in data:
         c.address = data.get("address") or None
+    if "pon_sn" in data:
+        raw = data.get("pon_sn")
+        c.pon_sn = (str(raw).strip() or None) if raw is not None else None
     if "is_active" in data:
         c.is_active = bool(data.get("is_active"))
 
     db.session.commit()
-    return jsonify(_client_to_dict(c))
+
+    jobs = []
+    sync_mikrotik = bool(data.get("sync_mikrotik", True))
+    if full_name_changed and sync_mikrotik:
+        comment = _client_comment_for_mt(c)
+        for x in (c.connections or []):
+            if not x.server_id:
+                continue
+            j = enqueue_job(
+                job_type=JOB_MT_SET_PPP_COMMENT,
+                payload={"name": x.pppoe_name(), "comment": comment},
+                server_id=int(x.server_id),
+            )
+            jobs.append({"job_id": int(j.id), "connection_id": int(x.id), "type": j.job_type})
+
+    out = _client_to_dict(c)
+    if jobs:
+        out["jobs"] = jobs
+    return jsonify(out)
 
 
 @bp.delete("/<int:client_id>")

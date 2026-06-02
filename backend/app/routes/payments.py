@@ -10,6 +10,7 @@ from ..models.invoice import Invoice
 from ..models.payment import Payment, PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
+from ..timezone import iso_utc, today_local
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,7 @@ def _payment_to_dict(p: Payment) -> dict:
         "note": p.note,
         "created_by_user_id": getattr(p, "created_by_user_id", None),
         "created_by": {"id": u.id, "username": u.username} if u else None,
-        "created_at": p.created_at.isoformat(),
+        "created_at": iso_utc(p.created_at),
         "allocations": [{"invoice_id": a.invoice_id, "amount": str(a.amount)} for a in allocs],
     }
 
@@ -105,7 +106,7 @@ def create_payment():
         if not method_norm:
             return jsonify({"error": "invalid_method"}), 400
 
-    paid_at = date.today()
+    paid_at = today_local()
     if data.get("paid_at"):
         try:
             paid_at = date.fromisoformat(str(data.get("paid_at")))
@@ -178,7 +179,7 @@ def create_payment():
             inv.status = "ISSUED"
             if not inv.due_date:
                 due_days = int(_get_setting("billing.due_days", "10"))
-                inv.due_date = date.today() + timedelta(days=due_days)
+                inv.due_date = today_local() + timedelta(days=due_days)
 
         if inv.status != "ISSUED":
             continue

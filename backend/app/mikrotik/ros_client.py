@@ -50,6 +50,7 @@ class MikrotikRosClient:
         profile: str,
         service: str = "pppoe",
         remote_address: Optional[str] = None,
+        comment: Optional[str] = None,
     ) -> dict:
         if not self._api:
             raise RuntimeError("Not connected")
@@ -57,6 +58,8 @@ class MikrotikRosClient:
         kwargs = {}
         if remote_address is not None:
             kwargs["remote-address"] = remote_address
+        if comment is not None:
+            kwargs["comment"] = comment
         return res.add(name=name, password=password, profile=profile, service=service, **kwargs)
 
     def remove_pppoe_secret(self, *, name: str) -> None:
@@ -94,6 +97,17 @@ class MikrotikRosClient:
             rid = _item_id(item)
             if rid:
                 res.set(**{".id": rid, "remote-address": remote_address})
+
+    def set_pppoe_secret_comment(self, *, name: str, comment: str) -> None:
+        """Setea el `comment` del PPP secret. Si `comment` es vacío lo limpia."""
+        if not self._api:
+            raise RuntimeError("Not connected")
+        res = self._api.get_resource("/ppp/secret")
+        items = res.get(name=name)
+        for item in items:
+            rid = _item_id(item)
+            if rid:
+                res.set(**{".id": rid, "comment": comment or ""})
 
     def set_pppoe_secret_credentials(self, *, old_name: str, new_name: str, new_password: str) -> None:
         """

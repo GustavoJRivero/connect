@@ -23,6 +23,7 @@ from ..models.connection import Connection
 from ..models.invoice import Invoice
 from ..models.mikrotik_server import MikrotikServer
 from ..models.setting import Setting
+from ..timezone import today_local
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +134,7 @@ def update_all_services(cut_profile: str | None = None) -> dict:
     """
     Recorre TODAS las conexiones y aplica corte/restauración según deuda.
     """
-    today = date.today()
+    today = today_local()
     if not cut_profile:
         cut_profile = _get_setting("mikrotik.cut_profile", "suspended")
 
@@ -174,7 +175,7 @@ def update_client_services(client_id: int, cut_profile: str | None = None) -> di
     """
     Actualiza estado de servicios para un cliente específico.
     """
-    today = date.today()
+    today = today_local()
     if not cut_profile:
         cut_profile = _get_setting("mikrotik.cut_profile", "suspended")
 

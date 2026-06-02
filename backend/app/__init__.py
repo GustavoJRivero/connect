@@ -1,9 +1,13 @@
+import os
+import time as _time
+
 from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
 
 from .config import get_config
 from .extensions import db, jwt, migrate
+from .timezone import get_app_tz_name
 from .routes.auth import bp as auth_bp
 from .routes.billing import bp as billing_bp
 from .routes.clients import bp as clients_bp
@@ -20,6 +24,16 @@ from .routes.plans import bp as plans_bp
 from .routes.settings import bp as settings_bp
 def create_app() -> Flask:
     load_dotenv()
+
+    # Aplicamos la TZ configurada al proceso para que `date.today()` / `datetime.now()`
+    # también respeten APP_TIMEZONE (por defecto America/Argentina/Buenos_Aires).
+    tz_name = get_app_tz_name()
+    os.environ.setdefault("TZ", tz_name)
+    if hasattr(_time, "tzset"):
+        try:
+            _time.tzset()
+        except Exception:
+            pass
 
     app = Flask(__name__)
     app.config.from_mapping(get_config())

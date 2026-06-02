@@ -4,6 +4,11 @@ import { MantineProvider, createTheme } from "@mantine/core";
 import "@mantine/core/styles.css";
 import App from "./App";
 import "./styles.css";
+import { API_BASE_URL } from "./api";
+import { loadAppTimezone } from "./datetime";
+
+// Cargamos la TZ configurada en el backend antes de pintar la UI; si falla queda el cache.
+void loadAppTimezone(API_BASE_URL);
 
 const theme = createTheme({});
 

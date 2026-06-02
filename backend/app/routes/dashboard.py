@@ -12,6 +12,7 @@ from ..models.invoice import Invoice
 from ..models.job import Job
 from ..models.payment import Payment
 from ..models.user import User
+from ..timezone import iso_utc, today_local
 
 bp = Blueprint("dashboard", __name__, url_prefix="/api/dashboard")
 
@@ -19,7 +20,7 @@ bp = Blueprint("dashboard", __name__, url_prefix="/api/dashboard")
 @bp.get("/summary")
 @jwt_required()
 def summary():
-    today = date.today()
+    today = today_local()
 
     # Month range (inclusive)
     month_start = date(today.year, today.month, 1)
@@ -106,7 +107,7 @@ def summary():
                 "client_name": (c.full_name if c else None),
                 "amount": str(p.amount),
                 "method": p.method,
-                "created_at": p.created_at.isoformat() if getattr(p, "created_at", None) else None,
+                "created_at": iso_utc(getattr(p, "created_at", None)),
                 "paid_at": p.paid_at.isoformat() if getattr(p, "paid_at", None) else None,
                 "created_by": (
                     {"id": int(u.id), "username": u.username} if u else {"id": None, "username": None}

@@ -18,6 +18,7 @@ from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 from ..models.invoice import Invoice
 from ..models.client import Client
+from ..timezone import today_local
 from ..models.connection import Connection
 from ..models.plan import Plan
 from ..models.setting import Setting
@@ -336,7 +337,7 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
     elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#dddddd")))
     elements.append(Spacer(1, 2 * mm))
     elements.append(Paragraph(
-        f"Documento generado el {_format_date(date.today())} — {issuer_name}",
+        f"Documento generado el {_format_date(today_local())} — {issuer_name}",
         style_small,
     ))
 

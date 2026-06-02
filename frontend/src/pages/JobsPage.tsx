@@ -44,17 +44,11 @@ const STATUS_COLORS: Record<string, string> = {
 
 const PAGE_SIZE = 30;
 
+import { fmtDateTime } from "../datetime";
+
 function fmtDate(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return d.toLocaleString("es-AR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
+  return fmtDateTime(iso) || "—";
 }
 
 function duration(created: string | null, finished: string | null): string {

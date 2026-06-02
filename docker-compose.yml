@@ -29,6 +29,10 @@ services:
       FLASK_DEBUG: "0"
       SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-60}
+      # Zona horaria de la app (lógica de negocio + serialización para el frontend).
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Argentina/Buenos_Aires}
+      TZ: ${APP_TIMEZONE:-America/Argentina/Buenos_Aires}
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-root}:${MYSQL_ROOT_PASSWORD:-root}@db:3306/sistemaconnect
       # AFIP (opcional)
       AFIP_ENV: ${AFIP_ENV:-HOMOLOGACION}

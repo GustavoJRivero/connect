@@ -19,6 +19,7 @@ import {
   Paper,
 } from "@mantine/core";
 import { api } from "../api";
+import { fmtDateTime as _fmtDateTime } from "../datetime";
 
 type DashboardData = {
   clients?: { total?: number };
@@ -96,9 +97,7 @@ export default function DashboardPage() {
 
   const fmtDateTime = (iso: unknown) => {
     if (!iso) return "—";
-    const date = new Date(String(iso));
-    if (Number.isNaN(date.getTime())) return String(iso);
-    return date.toLocaleString("es-AR");
+    return _fmtDateTime(String(iso)) || "—";
   };
 
   const recentPayments: PaymentRow[] = d?.recent_payments ?? [];

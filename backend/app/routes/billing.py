@@ -12,6 +12,7 @@ from ..models.invoice import Invoice
 from ..models.plan import Plan
 from ..models.setting import Setting
 from ..models.billing_run import BillingRun
+from ..timezone import iso_utc, today_local
 
 bp = Blueprint("billing", __name__, url_prefix="/api/billing")
 
@@ -51,7 +52,7 @@ def billing_status():
         global_day = 1
     due_days = int(_get_setting("billing.due_days", "10") or "10")
 
-    today = date.today()
+    today = today_local()
     active_connections = Connection.query.filter_by(status="ACTIVE").count()
     cut_connections = Connection.query.filter_by(status="CUT").count()
     overdue_invoices = (
@@ -75,7 +76,7 @@ def billing_status():
             "invoices_created": last_run.invoices_created,
             "invoices_skipped": last_run.invoices_skipped,
             "errors_count": last_run.errors_count,
-            "created_at": last_run.created_at.isoformat() if last_run.created_at else None,
+            "created_at": iso_utc(last_run.created_at),
         }
 
     return jsonify({
@@ -104,7 +105,7 @@ def generate_monthly_invoices():
     """
     data = request.get_json(silent=True) or {}
     issue = bool(data.get("issue", False))
-    issue_date = date.fromisoformat(data["issue_date"]) if data.get("issue_date") else date.today()
+    issue_date = date.fromisoformat(data["issue_date"]) if data.get("issue_date") else today_local()
     due_days = int(_get_setting("billing.due_days", "10") or "10")
     due_date = issue_date + timedelta(days=due_days)
 

@@ -17,6 +17,7 @@ from ..models.payment import PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
 from ..afip.wsfe import AfipWsfeClient, AfipIntegrationError
+from ..timezone import iso_utc, today_local
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,7 @@ def _payment_status(x: Invoice) -> str:
             paid = Decimal("0")
         if paid >= total and total > 0:
             return "PAID"
-        if x.due_date and x.due_date < date.today():
+        if x.due_date and x.due_date < today_local():
             return "OVERDUE"
         return "UNPAID"
     return x.status
@@ -139,7 +140,7 @@ def _invoice_to_dict(x: Invoice) -> dict:
         "description": getattr(x, "description", None),
         "notes": getattr(x, "notes", None),
         "is_deleted": bool(getattr(x, "is_deleted", False)),
-        "deleted_at": x.deleted_at.isoformat() if getattr(x, "deleted_at", None) else None,
+        "deleted_at": iso_utc(getattr(x, "deleted_at", None)),
         "deleted_by_user_id": getattr(x, "deleted_by_user_id", None),
         "deleted_by": {"id": u.id, "username": u.username} if u else None,
         "cae": x.cae,
@@ -214,7 +215,7 @@ def issue_invoice(invoice_id: int):
 
     if not x.due_date:
         due_days = int(_get_setting("billing.due_days", "10"))
-        x.due_date = date.today() + timedelta(days=due_days)
+        x.due_date = today_local() + timedelta(days=due_days)
 
     afip_cfg = _afip_config()
     should_use_afip = bool(afip_cfg["enabled"]) and x.invoice_type in ("A", "B")
@@ -239,7 +240,7 @@ def issue_invoice(invoice_id: int):
                 invoice_type=str(x.invoice_type),
                 total=Decimal(str(x.total or 0)),
                 iva_percent=iva_percent_default,
-                issue_date=(x.issue_date or date.today()),
+                issue_date=(x.issue_date or today_local()),
                 due_date=x.due_date,
                 concept=2,
                 doc_type=doc_type,
