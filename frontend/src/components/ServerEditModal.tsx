@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Grid, Alert, Group, Checkbox, Stack, Skeleton } from "@mantine/core";
+import { Modal, Grid, Alert, Group, Checkbox, Stack, Skeleton, NumberInput, Text } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
+
+const MAX_POOLS = 5;
 
 export function ServerEditModal(props: {
   open: boolean;
@@ -20,6 +22,8 @@ export function ServerEditModal(props: {
   const [password, setPassword] = useState("");
   const [useSsl, setUseSsl] = useState(false);
   const [localAddress, setLocalAddress] = useState("");
+  const [ipPoolCidrs, setIpPoolCidrs] = useState<string[]>([""]);
+  const [poolsCount, setPoolsCount] = useState<number>(1);
 
   useEffect(() => {
     if (!props.open) return;
@@ -33,6 +37,8 @@ export function ServerEditModal(props: {
       setPassword("");
       setUseSsl(false);
       setLocalAddress("");
+      setIpPoolCidrs([""]);
+      setPoolsCount(1);
       setLoading(false);
       return;
     }
@@ -47,6 +53,7 @@ export function ServerEditModal(props: {
           username?: string;
           use_ssl?: boolean;
           local_address?: string;
+          ip_pool_cidrs?: string[];
         };
         setName(String(x?.name ?? ""));
         setHost(String(x?.host ?? ""));
@@ -55,6 +62,12 @@ export function ServerEditModal(props: {
         setPassword("");
         setUseSsl(Boolean(x?.use_ssl ?? false));
         setLocalAddress(String(x?.local_address ?? ""));
+        const cidrs = Array.isArray(x?.ip_pool_cidrs) ? (x?.ip_pool_cidrs as string[]) : [];
+        const count = Math.max(1, Math.min(MAX_POOLS, cidrs.length || 1));
+        setPoolsCount(count);
+        const padded = [...cidrs];
+        while (padded.length < count) padded.push("");
+        setIpPoolCidrs(padded.slice(0, count));
       })
       .catch((e: unknown) => {
         const err = e as { status?: number; body?: unknown };
@@ -115,6 +128,10 @@ export function ServerEditModal(props: {
       setError("Contraseña es requerida al crear.");
       return;
     }
+    const cleanedCidrs = ipPoolCidrs
+      .slice(0, poolsCount)
+      .map((c) => c.trim())
+      .filter((c) => !!c);
     const payload: {
       name: string;
       host: string;
@@ -122,6 +139,7 @@ export function ServerEditModal(props: {
       username: string;
       use_ssl: boolean;
       local_address: string;
+      ip_pool_cidrs: string[];
       password?: string;
     } = {
       name: name.trim(),
@@ -130,6 +148,7 @@ export function ServerEditModal(props: {
       username: username.trim(),
       use_ssl: useSsl,
       local_address: localAddress.trim(),
+      ip_pool_cidrs: cleanedCidrs,
     };
     if (password.trim()) payload.password = password.trim();
     try {
@@ -141,14 +160,31 @@ export function ServerEditModal(props: {
       props.onSaved();
       props.onClose();
     } catch (e: unknown) {
-      const body = (e as { status?: number; body?: { error?: string; id?: number } })?.body ?? e;
-      const err = e as { status?: number; body?: { error?: string; id?: number } };
-      if (err?.status === 409 && (body as { error?: string })?.error === "name_already_exists") {
+      const body = (e as { status?: number; body?: { error?: string; id?: number; value?: string; max?: number; received?: number } })?.body ?? e;
+      const err = e as { status?: number; body?: { error?: string; id?: number; value?: string; max?: number; received?: number } };
+      const errCode = (body as { error?: string })?.error;
+      if (err?.status === 409 && errCode === "name_already_exists") {
         setError(`El nombre ya existe (servidor #${(body as { id?: number })?.id}).`);
+        return;
+      }
+      if (err?.status === 400 && errCode === "ip_pool_cidr_invalid") {
+        setError(`CIDR inválido: ${(body as { value?: string })?.value || ""}. Ej: 10.0.0.0/24`);
+        return;
+      }
+      if (err?.status === 400 && errCode === "ip_pool_cidrs_too_many") {
+        setError(`Máximo ${(body as { max?: number })?.max ?? MAX_POOLS} pools por server.`);
         return;
       }
       setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
     }
+  }
+
+  function changePoolsCount(n: number) {
+    const next = Math.max(1, Math.min(MAX_POOLS, n));
+    setPoolsCount(next);
+    const padded = [...ipPoolCidrs];
+    while (padded.length < next) padded.push("");
+    setIpPoolCidrs(padded.slice(0, next));
   }
 
   return (
@@ -194,6 +230,38 @@ export function ServerEditModal(props: {
             onChange={setLocalAddress}
             placeholder="ej: 10.10.0.1"
           />
+          <Stack gap="xs" mt="sm">
+            <Group justify="space-between" align="flex-end">
+              <Text size="sm" fw={500}>Pools de IPs</Text>
+              <NumberInput
+                label="Cantidad"
+                value={poolsCount}
+                onChange={(v) => changePoolsCount(Number(v) || 1)}
+                min={1}
+                max={MAX_POOLS}
+                w={120}
+              />
+            </Group>
+            <Text size="xs" c="dimmed">
+              Cargá uno o más rangos en formato CIDR. Las IPs se autoasignan recorriendo los pools en el orden listado.
+            </Text>
+            {Array.from({ length: poolsCount }).map((_, i) => (
+              <Field
+                key={i}
+                label={`Pool ${i + 1} (CIDR)`}
+                value={ipPoolCidrs[i] ?? ""}
+                onChange={(v) =>
+                  setIpPoolCidrs((prev) => {
+                    const next = [...prev];
+                    while (next.length <= i) next.push("");
+                    next[i] = v;
+                    return next.slice(0, poolsCount);
+                  })
+                }
+                placeholder={i === 0 ? "ej: 10.0.0.0/24" : "ej: 10.0.1.0/24"}
+              />
+            ))}
+          </Stack>
           <Checkbox label="Usar SSL" checked={useSsl} onChange={(e) => setUseSsl(e.currentTarget.checked)} mt="sm" />
           <Group justify="flex-end" mt="md">
             <Button variant="default" onClick={props.onClose}>Cerrar</Button>

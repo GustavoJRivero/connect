@@ -22,6 +22,13 @@ type ServerRow = {
   port: number;
   username: string;
   pending_jobs?: number;
+  local_address?: string;
+  ip_pool_cidrs?: string[];
+  pools_count?: number;
+  pool_total?: number;
+  pool_assigned?: number;
+  pool_reserved?: number;
+  pool_available?: number;
 };
 
 type JobRow = {
@@ -187,6 +194,7 @@ export default function NetworkPage() {
                     <Table.Th>Nombre</Table.Th>
                     <Table.Th>Host</Table.Th>
                     <Table.Th>Usuario</Table.Th>
+                    <Table.Th>Pool</Table.Th>
                     <Table.Th>Pendientes</Table.Th>
                     <Table.Th>Acciones</Table.Th>
                   </Table.Tr>
@@ -195,9 +203,9 @@ export default function NetworkPage() {
                   {loading ? (
                     Array.from({ length: 4 }).map((_, i) => (
                       <Table.Tr key={i}>
-                        {Array.from({ length: 6 }).map((_, j) => (
+                        {Array.from({ length: 7 }).map((_, j) => (
                           <Table.Td key={j}>
-                            <Skeleton height={20} width={j === 5 ? 140 : "80%"} />
+                            <Skeleton height={20} width={j === 6 ? 140 : "80%"} />
                           </Table.Td>
                         ))}
                       </Table.Tr>
@@ -209,6 +217,26 @@ export default function NetworkPage() {
                         <Table.Td>{s.name}</Table.Td>
                         <Table.Td>{s.host}:{s.port}</Table.Td>
                         <Table.Td>{s.username}</Table.Td>
+                        <Table.Td>
+                          {s.ip_pool_cidrs && s.ip_pool_cidrs.length > 0 ? (
+                            <Stack gap={2}>
+                              <Group gap={4} wrap="wrap">
+                                {(s.ip_pool_cidrs ?? []).map((c) => (
+                                  <Badge key={c} variant="light" color="gray" size="sm">{c}</Badge>
+                                ))}
+                              </Group>
+                              <Badge
+                                variant="light"
+                                color={Number(s.pool_available) > 0 ? "blue" : "red"}
+                                size="sm"
+                              >
+                                {Number(s.pool_assigned ?? 0)}/{Number(s.pool_total ?? 0)} usadas
+                              </Badge>
+                            </Stack>
+                          ) : (
+                            <Text size="xs" c="dimmed">sin pool</Text>
+                          )}
+                        </Table.Td>
                         <Table.Td>{Number(s.pending_jobs) ?? 0}</Table.Td>
                         <Table.Td>
                           <Group gap="xs">
@@ -299,6 +327,30 @@ export default function NetworkPage() {
               <Text size="sm" c="dimmed">
                 Usuario: {selected?.username ?? "-"}
               </Text>
+              <Text size="sm" c="dimmed">
+                Local address: {selected?.local_address || "-"}
+              </Text>
+              <Group gap="xs" wrap="wrap">
+                <Text size="sm" c="dimmed">Pools:</Text>
+                {selected?.ip_pool_cidrs && selected.ip_pool_cidrs.length > 0 ? (
+                  <>
+                    {selected.ip_pool_cidrs.map((c) => (
+                      <Badge key={c} variant="light" color="gray" size="sm">{c}</Badge>
+                    ))}
+                    <Badge variant="light" color="blue" size="sm">
+                      Asignadas: {Number(selected?.pool_assigned ?? 0)}
+                    </Badge>
+                    <Badge variant="light" color="green" size="sm">
+                      Libres: {Number(selected?.pool_available ?? 0)}
+                    </Badge>
+                    <Badge variant="light" color="gray" size="sm">
+                      Total: {Number(selected?.pool_total ?? 0)}
+                    </Badge>
+                  </>
+                ) : (
+                  <Text size="sm" c="dimmed">sin pool configurado</Text>
+                )}
+              </Group>
             </Stack>
           </Card>
 
