@@ -152,10 +152,17 @@ class MikrotikRosClient:
             raise RuntimeError("Not connected")
         return self._api.get_resource("/ppp/profile").get()
 
-    def add_ppp_profile(self, *, name: str, rate_limit: str = "") -> dict:
+    def add_ppp_profile(
+        self,
+        *,
+        name: str,
+        rate_limit: str = "",
+        local_address: str = "",
+    ) -> dict:
         """
         Crea un /ppp/profile. Si ya existe uno con ese nombre, hace update.
-        rate_limit con formato RouterOS: "rxRate/txRate" (ej. "10M/50M").
+        - rate_limit: string con formato RouterOS, ej. "500M/500M 550M/550M 255M/255M 40/40 0 20M/20M".
+        - local_address: IP del gateway PPP (campo `local-address`). Si vacío no se setea.
         """
         if not self._api:
             raise RuntimeError("Not connected")
@@ -167,11 +174,15 @@ class MikrotikRosClient:
                 kwargs = {".id": rid, "name": name}
                 if rate_limit:
                     kwargs["rate-limit"] = rate_limit
+                if local_address:
+                    kwargs["local-address"] = local_address
                 res.set(**kwargs)
                 return {"status": "updated", "id": rid}
         kwargs = {"name": name}
         if rate_limit:
             kwargs["rate-limit"] = rate_limit
+        if local_address:
+            kwargs["local-address"] = local_address
         return res.add(**kwargs)
 
     def update_ppp_profile(
@@ -180,9 +191,10 @@ class MikrotikRosClient:
         old_name: str,
         new_name: str = "",
         rate_limit: str = "",
+        local_address: str = "",
     ) -> None:
         """
-        Renombra (si new_name != old_name) y/o actualiza el rate-limit del profile.
+        Renombra (si new_name != old_name) y/o actualiza rate-limit y local-address.
         Si no encuentra el profile por old_name pero sí por new_name, opera sobre ese.
         Si no existe en el router, lo crea con el new_name (o old_name si new_name vacío).
         """
@@ -197,6 +209,8 @@ class MikrotikRosClient:
             kwargs = {"name": target}
             if rate_limit:
                 kwargs["rate-limit"] = rate_limit
+            if local_address:
+                kwargs["local-address"] = local_address
             res.add(**kwargs)
             return
         for item in items:
@@ -208,6 +222,8 @@ class MikrotikRosClient:
                 kwargs["name"] = new_name
             if rate_limit:
                 kwargs["rate-limit"] = rate_limit
+            if local_address:
+                kwargs["local-address"] = local_address
             if len(kwargs) > 1:
                 res.set(**kwargs)
 

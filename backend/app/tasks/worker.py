@@ -25,12 +25,13 @@ from .queue import (
 )
 
 
-def _get_mt_from_job(j: Job):
+def _get_server_from_job(j: Job):
     if not j.server_id:
         return None
-    s = MikrotikServer.query.get(int(j.server_id))
-    if not s:
-        return None
+    return MikrotikServer.query.get(int(j.server_id))
+
+
+def _build_mt_client(s: MikrotikServer) -> MikrotikRosClient:
     return MikrotikRosClient(
         host=str(s.host),
         user=str(s.username),
@@ -38,6 +39,14 @@ def _get_mt_from_job(j: Job):
         port=int(s.port or 8728),
         use_ssl=bool(s.use_ssl),
     )
+
+
+def _get_mt_from_job(j: Job):
+    """Compatibilidad: devuelve solo el cliente. Para acceder al server usar _get_server_from_job."""
+    s = _get_server_from_job(j)
+    if not s:
+        return None
+    return _build_mt_client(s)
 
 
 def _now() -> datetime:
@@ -71,9 +80,11 @@ def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
         result = update_client_services(int(payload["client_id"]))
         return result
 
-    mt = _get_mt_from_job(j)
-    if not mt:
+    server = _get_server_from_job(j)
+    if not server:
         raise RuntimeError("mikrotik_server_not_configured")
+    mt = _build_mt_client(server)
+    server_local_address = (server.local_address or "").strip()
 
     try:
         mt.connect()
@@ -119,8 +130,13 @@ def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
             mt.add_ppp_profile(
                 name=str(payload["name"]),
                 rate_limit=str(payload.get("rate_limit") or ""),
+                local_address=server_local_address,
             )
-            return {"status": "created", "profile": str(payload["name"])}
+            return {
+                "status": "created",
+                "profile": str(payload["name"]),
+                "local_address": server_local_address,
+            }
 
         if j.job_type == JOB_MT_UPDATE_PPP_PROFILE:
             if not payload.get("old_name") and not payload.get("name"):
@@ -129,10 +145,12 @@ def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
                 old_name=str(payload.get("old_name") or payload.get("name") or ""),
                 new_name=str(payload.get("name") or ""),
                 rate_limit=str(payload.get("rate_limit") or ""),
+                local_address=server_local_address,
             )
             return {
                 "status": "updated",
                 "profile": str(payload.get("name") or payload.get("old_name") or ""),
+                "local_address": server_local_address,
             }
 
         if j.job_type == JOB_MT_DELETE_PPP_PROFILE:

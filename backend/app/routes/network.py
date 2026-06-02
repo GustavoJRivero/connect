@@ -24,6 +24,7 @@ def _server_to_dict(s: MikrotikServer) -> dict:
         "username": s.username,
         # password no se devuelve por seguridad
         "use_ssl": bool(s.use_ssl),
+        "local_address": s.local_address or "",
     }
 
 
@@ -71,6 +72,8 @@ def create_server():
     password = (data.get("password") or "").strip()
     port = int(data.get("port") or 8728)
     use_ssl = bool(data.get("use_ssl", False))
+    local_address_raw = data.get("local_address")
+    local_address = (local_address_raw or "").strip() if isinstance(local_address_raw, str) else ""
 
     if not name:
         return jsonify({"error": "name_required"}), 400
@@ -92,6 +95,7 @@ def create_server():
         username=username,
         password=password,
         use_ssl=use_ssl,
+        local_address=local_address or None,
         created_at=datetime.utcnow(),
     )
     db.session.add(s)
@@ -144,6 +148,11 @@ def update_server(server_id: int):
 
     if "use_ssl" in data:
         s.use_ssl = bool(data.get("use_ssl"))
+
+    if "local_address" in data:
+        la_raw = data.get("local_address")
+        la = (la_raw or "").strip() if isinstance(la_raw, str) else ""
+        s.local_address = la or None
 
     db.session.commit()
     return jsonify(_server_to_dict(s))

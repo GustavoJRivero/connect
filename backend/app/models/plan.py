@@ -7,7 +7,7 @@ Cada plan tiene:
 - download_mbps: velocidad de descarga en Mbps
 - upload_mbps: velocidad de carga en Mbps
 - rate_limit: string libre que se envía tal cual al `/ppp/profile` de RouterOS.
-              Si está vacío se arma simple "{upload_mbps}M/{download_mbps}M".
+              Si está vacío se arma con la fórmula automática (ver computed_rate_limit).
               Formato completo Mikrotik:
                 "<rxRate>/<txRate> <rxBurst>/<txBurst> <rxThr>/<txThr> <rxBurstTime>/<txBurstTime> <prio> <rxMin>/<txMin>"
               Ej: "500M/500M 550M/550M 255M/255M 40/40 0 20M/20M"
@@ -19,6 +19,17 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 
 from ..extensions import db
+
+
+# ----------------------------------------------------------------------
+# Fórmula automática de rate-limit (para planes sin rate_limit manual)
+# Componentes en función de download/upload Mbps. round() corta decimales.
+# ----------------------------------------------------------------------
+RATE_BURST_FACTOR = 1.1     # burst-limit  = base * 1.1
+RATE_THRESHOLD_FACTOR = 0.51  # burst-threshold = base * 0.51
+RATE_LIMIT_AT_FACTOR = 0.04   # limit-at       = base * 0.04
+RATE_BURST_TIME = "40/40"
+RATE_PRIORITY = "0"
 
 
 class Plan(db.Model):
@@ -76,12 +87,34 @@ class Plan(db.Model):
         return (gross - net).quantize(Decimal("0.01"))
 
     def computed_rate_limit(self) -> str:
-        """rate-limit que se envía a RouterOS.
-        Si `rate_limit` está cargado se usa tal cual.
-        Si no, se arma simple "{upload}M/{download}M" con los Mbps del plan.
+        """rate-limit que se envía a RouterOS para este plan.
+
+        - Si `self.rate_limit` está cargado se usa tal cual (manual override).
+        - Si no, se arma el string completo con la fórmula:
+              "{down}M/{up}M
+               {down*1.1}M/{up*1.1}M
+               {down*0.51}M/{up*0.51}M
+               40/40
+               0
+               {down*0.04}M/{up*0.04}M"
+          Ej. plan 500/500 → "500M/500M 550M/550M 255M/255M 40/40 0 20M/20M"
+              plan 700/700 → "700M/700M 770M/770M 357M/357M 40/40 0 28M/28M"
+        - Si download y upload son 0 (plan recién creado o sin definir) se devuelve
+          "0M/0M" para no ensuciar el router con el resto en cero.
         """
         if self.rate_limit and str(self.rate_limit).strip():
             return str(self.rate_limit).strip()
-        up = int(self.upload_mbps or 0)
+
         down = int(self.download_mbps or 0)
-        return f"{up}M/{down}M"
+        up = int(self.upload_mbps or 0)
+        if down <= 0 and up <= 0:
+            return "0M/0M"
+
+        def _scale(value: int, factor: float) -> int:
+            return int(round(value * factor))
+
+        max_limit = f"{down}M/{up}M"
+        burst_limit = f"{_scale(down, RATE_BURST_FACTOR)}M/{_scale(up, RATE_BURST_FACTOR)}M"
+        threshold = f"{_scale(down, RATE_THRESHOLD_FACTOR)}M/{_scale(up, RATE_THRESHOLD_FACTOR)}M"
+        limit_at = f"{_scale(down, RATE_LIMIT_AT_FACTOR)}M/{_scale(up, RATE_LIMIT_AT_FACTOR)}M"
+        return f"{max_limit} {burst_limit} {threshold} {RATE_BURST_TIME} {RATE_PRIORITY} {limit_at}"
