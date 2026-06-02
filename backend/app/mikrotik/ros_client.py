@@ -144,3 +144,87 @@ class MikrotikRosClient:
         items = res.get(name=name)
         return items[0] if items else None
 
+    # ------------------------------------------------------------------
+    # PPP Profiles (planes de servicio)
+    # ------------------------------------------------------------------
+    def list_ppp_profiles(self):
+        if not self._api:
+            raise RuntimeError("Not connected")
+        return self._api.get_resource("/ppp/profile").get()
+
+    def add_ppp_profile(self, *, name: str, rate_limit: str = "") -> dict:
+        """
+        Crea un /ppp/profile. Si ya existe uno con ese nombre, hace update.
+        rate_limit con formato RouterOS: "rxRate/txRate" (ej. "10M/50M").
+        """
+        if not self._api:
+            raise RuntimeError("Not connected")
+        res = self._api.get_resource("/ppp/profile")
+        existing = res.get(name=name)
+        if existing:
+            rid = _item_id(existing[0])
+            if rid:
+                kwargs = {".id": rid, "name": name}
+                if rate_limit:
+                    kwargs["rate-limit"] = rate_limit
+                res.set(**kwargs)
+                return {"status": "updated", "id": rid}
+        kwargs = {"name": name}
+        if rate_limit:
+            kwargs["rate-limit"] = rate_limit
+        return res.add(**kwargs)
+
+    def update_ppp_profile(
+        self,
+        *,
+        old_name: str,
+        new_name: str = "",
+        rate_limit: str = "",
+    ) -> None:
+        """
+        Renombra (si new_name != old_name) y/o actualiza el rate-limit del profile.
+        Si no encuentra el profile por old_name pero sí por new_name, opera sobre ese.
+        Si no existe en el router, lo crea con el new_name (o old_name si new_name vacío).
+        """
+        if not self._api:
+            raise RuntimeError("Not connected")
+        res = self._api.get_resource("/ppp/profile")
+        items = res.get(name=old_name)
+        if not items and new_name and new_name != old_name:
+            items = res.get(name=new_name)
+        if not items:
+            target = new_name or old_name
+            kwargs = {"name": target}
+            if rate_limit:
+                kwargs["rate-limit"] = rate_limit
+            res.add(**kwargs)
+            return
+        for item in items:
+            rid = _item_id(item)
+            if not rid:
+                continue
+            kwargs = {".id": rid}
+            if new_name and new_name != old_name:
+                kwargs["name"] = new_name
+            if rate_limit:
+                kwargs["rate-limit"] = rate_limit
+            if len(kwargs) > 1:
+                res.set(**kwargs)
+
+    def remove_ppp_profile(self, *, name: str) -> bool:
+        """
+        Elimina el /ppp/profile por nombre. Idempotente: si no existe, no falla.
+        Retorna True si efectivamente borró algo.
+        """
+        if not self._api:
+            raise RuntimeError("Not connected")
+        res = self._api.get_resource("/ppp/profile")
+        items = res.get(name=name)
+        removed = False
+        for item in items or []:
+            rid = _item_id(item)
+            if rid:
+                res.remove(**{".id": rid})
+                removed = True
+        return removed
+

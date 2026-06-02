@@ -6,6 +6,11 @@ Cada plan tiene:
 - profile: nombre del profile en Mikrotik (ej: "50M") — clave única
 - download_mbps: velocidad de descarga en Mbps
 - upload_mbps: velocidad de carga en Mbps
+- rate_limit: string libre que se envía tal cual al `/ppp/profile` de RouterOS.
+              Si está vacío se arma simple "{upload_mbps}M/{download_mbps}M".
+              Formato completo Mikrotik:
+                "<rxRate>/<txRate> <rxBurst>/<txBurst> <rxThr>/<txThr> <rxBurstTime>/<txBurstTime> <prio> <rxMin>/<txMin>"
+              Ej: "500M/500M 550M/550M 255M/255M 40/40 0 20M/20M"
 - price: precio final que paga el cliente (IVA incluido)
 - iva_percent: alícuota (ej: 21.00) — el neto y el IVA se deducen de `price`
 - is_active: si el plan está disponible para nuevas contrataciones
@@ -31,6 +36,10 @@ class Plan(db.Model):
     # Velocidades
     download_mbps = db.Column(db.Integer, nullable=False, default=0)
     upload_mbps = db.Column(db.Integer, nullable=False, default=0)
+
+    # rate-limit completo de RouterOS (opcional). Si está vacío se arma simple
+    # "{upload_mbps}M/{download_mbps}M" al pushearlo al router.
+    rate_limit = db.Column(db.String(255), nullable=True)
 
     # Precio final (IVA incluido): lo que ingresa el usuario y lo que se factura.
     price = db.Column(db.Numeric(12, 2), nullable=False, default=0)
@@ -65,3 +74,14 @@ class Plan(db.Model):
         gross = Decimal(str(self.price or 0)).quantize(Decimal("0.01"))
         net = self.price_net
         return (gross - net).quantize(Decimal("0.01"))
+
+    def computed_rate_limit(self) -> str:
+        """rate-limit que se envía a RouterOS.
+        Si `rate_limit` está cargado se usa tal cual.
+        Si no, se arma simple "{upload}M/{download}M" con los Mbps del plan.
+        """
+        if self.rate_limit and str(self.rate_limit).strip():
+            return str(self.rate_limit).strip()
+        up = int(self.upload_mbps or 0)
+        down = int(self.download_mbps or 0)
+        return f"{up}M/{down}M"

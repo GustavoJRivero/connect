@@ -26,6 +26,8 @@ interface Plan {
   profile: string;
   download_mbps: number;
   upload_mbps: number;
+  rate_limit: string;
+  computed_rate_limit: string;
   price: string;
   iva_percent: string;
   price_net: string;
@@ -51,6 +53,7 @@ const EMPTY_FORM = {
   profile: "",
   download_mbps: 0,
   upload_mbps: 0,
+  rate_limit: "",
   price: 0,
   iva_percent: 21,
   is_active: true,
@@ -100,6 +103,7 @@ export default function PlansPage() {
       profile: plan.profile,
       download_mbps: plan.download_mbps,
       upload_mbps: plan.upload_mbps,
+      rate_limit: plan.rate_limit ?? "",
       price: Number(plan.price),
       iva_percent: Number(plan.iva_percent),
       is_active: plan.is_active,
@@ -182,6 +186,7 @@ export default function PlansPage() {
                   <Table.Th>Profile MK</Table.Th>
                   <Table.Th ta="center">Bajada</Table.Th>
                   <Table.Th ta="center">Subida</Table.Th>
+                  <Table.Th>Rate-limit MK</Table.Th>
                   <Table.Th ta="right">Precio final</Table.Th>
                   <Table.Th ta="right">IVA %</Table.Th>
                   <Table.Th ta="right">Neto</Table.Th>
@@ -202,6 +207,13 @@ export default function PlansPage() {
                     </Table.Td>
                     <Table.Td ta="center">{plan.download_mbps} Mbps</Table.Td>
                     <Table.Td ta="center">{plan.upload_mbps} Mbps</Table.Td>
+                    <Table.Td>
+                      <Tooltip label={plan.rate_limit ? "rate-limit personalizado" : "auto: upload/download"}>
+                        <Text size="xs" ff="monospace" c={plan.rate_limit ? undefined : "dimmed"}>
+                          {plan.computed_rate_limit}
+                        </Text>
+                      </Tooltip>
+                    </Table.Td>
                     <Table.Td ta="right" fw={600}>
                       ${Number(plan.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
                     </Table.Td>
@@ -281,6 +293,13 @@ export default function PlansPage() {
               min={0}
             />
           </Group>
+          <TextInput
+            label="Rate-limit Mikrotik (opcional)"
+            description='Se manda tal cual a /ppp/profile. Si lo dejás vacío se usa "{upload}M/{download}M". Formato: "rxR/txR rxBurst/txBurst rxThr/txThr rxTime/txTime prio rxMin/txMin".'
+            placeholder="ej: 500M/500M 550M/550M 255M/255M 40/40 0 20M/20M"
+            value={form.rate_limit}
+            onChange={(e) => setForm({ ...form, rate_limit: e.currentTarget.value })}
+          />
           <Group grow>
             <NumberInput
               label="Precio final (IVA incluido)"
