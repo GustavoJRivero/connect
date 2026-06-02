@@ -5,7 +5,7 @@ import { Button, Field } from "../ui";
 
 export function ConnectionDetailsModal(props: {
   open: boolean;
-  connection: { id: number; pppoe_name?: string; plan_profile?: string; status?: string; server_name?: string; server_id?: number; ip?: string; last_uptime?: string; last_connected_at?: string; last_disconnected_at?: string } | null;
+  connection: { id: number; pppoe_name?: string; plan_profile?: string; status?: string; server_name?: string; server_id?: number; ip?: string; pon_sn?: string; last_uptime?: string; last_connected_at?: string; last_disconnected_at?: string } | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -57,6 +57,7 @@ export function ConnectionDetailsModal(props: {
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Text size="sm" c="dimmed">IP: {conn?.ip ?? "-"}</Text>
+          <Text size="sm" c="dimmed">PON SN: {conn?.pon_sn ?? "-"}</Text>
           <Text size="sm" c="dimmed">Uptime (último): {conn?.last_uptime ?? "-"}</Text>
           <Text size="sm" c="dimmed">Última conexión: {conn?.last_connected_at ? String(conn.last_connected_at).replace("T", " ").slice(0, 19) : "-"}</Text>
           <Text size="sm" c="dimmed">Última desconexión: {conn?.last_disconnected_at ? String(conn.last_disconnected_at).replace("T", " ").slice(0, 19) : "-"}</Text>

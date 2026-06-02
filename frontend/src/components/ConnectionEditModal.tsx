@@ -6,7 +6,7 @@ import { IpPoolPicker } from "./IpPoolPicker";
 
 export function ConnectionEditModal(props: {
   open: boolean;
-  connection: { id: number; server_id?: number; plan_profile?: string; service_address?: string; location?: string; ip?: string; pppoe_username?: string; pppoe_name?: string; pppoe_password?: string; billing_day?: number; prorate_first_month?: boolean } | null;
+  connection: { id: number; server_id?: number; plan_profile?: string; service_address?: string; location?: string; ip?: string; pppoe_username?: string; pppoe_name?: string; pppoe_password?: string; pon_sn?: string; billing_day?: number; prorate_first_month?: boolean } | null;
   servers: { id: number; name: string; host: string; port: number }[];
   planOptions: string[];
   onClose: () => void;
@@ -22,6 +22,7 @@ export function ConnectionEditModal(props: {
   const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
   const [pppoeUsername, setPppoeUsername] = useState("");
   const [pppoePassword, setPppoePassword] = useState("");
+  const [ponSn, setPonSn] = useState("");
   const [billingDay, setBillingDay] = useState<number>(1);
   const [prorateFirstMonth, setProrateFirstMonth] = useState(true);
 
@@ -37,9 +38,10 @@ export function ConnectionEditModal(props: {
     setIpMode(initialIp ? "manual" : "auto");
     setPppoeUsername(String(conn?.pppoe_username ?? conn?.pppoe_name ?? ""));
     setPppoePassword(String(conn?.pppoe_password ?? ""));
+    setPonSn(String(conn?.pon_sn ?? ""));
     setBillingDay(conn?.billing_day ?? 1);
     setProrateFirstMonth(conn?.prorate_first_month ?? true);
-  }, [props.open, conn?.id, conn?.server_id, conn?.plan_profile, conn?.service_address, conn?.location, conn?.ip, conn?.pppoe_username, conn?.pppoe_name, conn?.pppoe_password, conn?.billing_day, conn?.prorate_first_month]);
+  }, [props.open, conn?.id, conn?.server_id, conn?.plan_profile, conn?.service_address, conn?.location, conn?.ip, conn?.pppoe_username, conn?.pppoe_name, conn?.pppoe_password, conn?.pon_sn, conn?.billing_day, conn?.prorate_first_month]);
 
   async function save() {
     setError(null);
@@ -58,6 +60,7 @@ export function ConnectionEditModal(props: {
         ip: ipMode === "manual" ? (ip || null) : "",
         pppoe_username: pppoeUsername.trim() || null,
         pppoe_password: pppoePassword || null,
+        pon_sn: ponSn.trim() || null,
         billing_day: billingDay,
         prorate_first_month: prorateFirstMonth,
         sync_mikrotik: true,
@@ -116,6 +119,7 @@ export function ConnectionEditModal(props: {
         <Grid.Col span={6}><Field label="Usuario PPPoE" value={pppoeUsername} onChange={setPppoeUsername} /></Grid.Col>
         <Grid.Col span={6}><Field label="Contraseña PPPoE" value={pppoePassword} onChange={setPppoePassword} type="password" /></Grid.Col>
       </Grid>
+      <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" />
       <Text size="sm" fw={500} mt="md" mb={4}>Facturación</Text>
       <Grid>
         <Grid.Col span={6}>

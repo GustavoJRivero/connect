@@ -84,6 +84,7 @@ def _conn_to_dict(x: Connection) -> dict:
         "pppoe_password": x.pppoe_password(),
         "ip": getattr(x, "ip", None),
         "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
+        "pon_sn": getattr(x, "pon_sn", None),
         "last_uptime": getattr(x, "last_uptime", None),
         "last_connected_at": _iso(getattr(x, "last_connected_at", None)),
         "last_disconnected_at": _iso(getattr(x, "last_disconnected_at", None)),
@@ -156,6 +157,7 @@ def create_connection():
         ip_is_fixed=bool(ip) and not ip_autoassigned,
         pppoe_username=pppoe_username,
         pppoe_password_value=pppoe_password,
+        pon_sn=((str(data.get("pon_sn")).strip() or None) if data.get("pon_sn") is not None else None),
     )
     db.session.add(x)
     db.session.commit()  # asigna x.id (pppoe)
@@ -230,6 +232,10 @@ def update_connection(connection_id: int):
         raw = (data.get("pppoe_password") or "").strip()
         x.pppoe_password_value = raw or str(x.id)
         creds_changed = True
+
+    if "pon_sn" in data:
+        raw = data.get("pon_sn")
+        x.pon_sn = (str(raw).strip() or None) if raw is not None else None
 
     if "plan_profile" in data:
         plan_profile = (data.get("plan_profile") or "").strip()
