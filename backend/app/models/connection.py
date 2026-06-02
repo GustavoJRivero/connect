@@ -45,6 +45,9 @@ class Connection(db.Model):
     pppoe_username = db.Column(db.String(128), nullable=True, index=True)
     pppoe_password_value = db.Column("pppoe_password", db.String(128), nullable=True)
 
+    # Serial number de la ONU/módulo PON asignado a este servicio (opcional, sólo informativo).
+    pon_sn = db.Column(db.String(64), nullable=True)
+
     def pppoe_name(self) -> str:
         return str(self.pppoe_username or self.id)
 

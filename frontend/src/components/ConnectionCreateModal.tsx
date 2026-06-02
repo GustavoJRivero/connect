@@ -22,6 +22,7 @@ export function ConnectionCreateModal(props: {
   const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
   const [pppoeUsername, setPppoeUsername] = useState("");
   const [pppoePassword, setPppoePassword] = useState("");
+  const [ponSn, setPonSn] = useState("");
   const [billingDay, setBillingDay] = useState<number>(1);
   const [prorateFirstMonth, setProrateFirstMonth] = useState(true);
 
@@ -34,6 +35,7 @@ export function ConnectionCreateModal(props: {
     setIpMode("auto");
     setPppoeUsername("");
     setPppoePassword("");
+    setPonSn("");
     setPlanProfile(props.planOptions?.[0] ?? "50M");
     setServerId(props.defaultServerId ? String(props.defaultServerId) : "");
     setBillingDay(1);
@@ -57,6 +59,7 @@ export function ConnectionCreateModal(props: {
         ip: ipMode === "manual" ? (ip || null) : null,
         pppoe_username: pppoeUsername.trim() || null,
         pppoe_password: pppoePassword || null,
+        pon_sn: ponSn.trim() || null,
         billing_day: billingDay,
         prorate_first_month: prorateFirstMonth,
         provision_mikrotik: true,
@@ -113,6 +116,7 @@ export function ConnectionCreateModal(props: {
         <Grid.Col span={6}><Field label="Usuario PPPoE (opcional)" value={pppoeUsername} onChange={setPppoeUsername} placeholder="(vacío = auto)" /></Grid.Col>
         <Grid.Col span={6}><Field label="Contraseña PPPoE (opcional)" value={pppoePassword} onChange={setPppoePassword} type="password" placeholder="(vacío = auto)" /></Grid.Col>
       </Grid>
+      <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" />
       <Text size="sm" fw={500} mt="md" mb={4}>Facturación</Text>
       <Grid>
         <Grid.Col span={6}>

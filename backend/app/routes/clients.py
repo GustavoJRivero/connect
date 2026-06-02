@@ -76,6 +76,7 @@ def _client_to_dict(c: Client) -> dict:
                 "pppoe_password": x.pppoe_password(),
                 "ip": getattr(x, "ip", None),
                 "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
+                "pon_sn": getattr(x, "pon_sn", None),
                 "last_uptime": getattr(x, "last_uptime", None),
                 "last_connected_at": iso_utc(getattr(x, "last_connected_at", None)),
                 "last_disconnected_at": iso_utc(getattr(x, "last_disconnected_at", None)),
@@ -94,7 +95,6 @@ def _client_to_dict(c: Client) -> dict:
         "phone": c.phone,
         "email": c.email,
         "address": c.address,
-        "pon_sn": c.pon_sn,
         "is_active": c.is_active,
         "first_service_address": first_conn.service_address if first_conn else None,
         "debt_total": None,  # se completa en list_clients/get_client
@@ -347,7 +347,6 @@ def create_client():
         phone=(data.get("phone") or None),
         email=(data.get("email") or None),
         address=(data.get("address") or None),
-        pon_sn=((str(data.get("pon_sn")).strip() or None) if data.get("pon_sn") is not None else None),
         is_active=True,
     )
     if not c.full_name:
@@ -388,6 +387,7 @@ def create_client():
                 plan_profile=plan_profile,
                 status="ACTIVE",
                 mikrotik_profile=plan_profile,
+                pon_sn=((str(conn.get("pon_sn")).strip() or None) if conn.get("pon_sn") is not None else None),
             )
         )
 
@@ -462,9 +462,6 @@ def update_client(client_id: int):
         c.email = data.get("email") or None
     if "address" in data:
         c.address = data.get("address") or None
-    if "pon_sn" in data:
-        raw = data.get("pon_sn")
-        c.pon_sn = (str(raw).strip() or None) if raw is not None else None
     if "is_active" in data:
         c.is_active = bool(data.get("is_active"))
 

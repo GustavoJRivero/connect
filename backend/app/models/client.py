@@ -20,9 +20,6 @@ class Client(db.Model):
     email = db.Column(db.String(200), nullable=True)
     address = db.Column(db.String(255), nullable=True)
 
-    # Serial number de la ONU/módulo PON del cliente (opcional, sólo informativo).
-    pon_sn = db.Column(db.String(64), nullable=True)
-
     # Estado del cliente
     status = db.Column(db.String(32), nullable=False, default="ACTIVE", index=True)  # ACTIVE / RETIRED
     is_active = db.Column(db.Boolean, default=True, nullable=False)
