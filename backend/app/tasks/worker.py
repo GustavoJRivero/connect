@@ -18,6 +18,9 @@ from .queue import (
     JOB_MT_SET_PPP_PROFILE,
     JOB_MT_SET_PPP_CREDENTIALS,
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
+    JOB_MT_CREATE_PPP_PROFILE,
+    JOB_MT_UPDATE_PPP_PROFILE,
+    JOB_MT_DELETE_PPP_PROFILE,
     JOB_BILLING_UPDATE_CLIENT_SERVICES,
 )
 
@@ -110,6 +113,32 @@ def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
                 new_password=str(payload.get("password") or ""),
             )
             return {"status": "updated", "name": str(payload.get("name") or "")}
+
+        if j.job_type == JOB_MT_CREATE_PPP_PROFILE:
+            _require_keys(payload, ["name"], j.job_type)
+            mt.add_ppp_profile(
+                name=str(payload["name"]),
+                rate_limit=str(payload.get("rate_limit") or ""),
+            )
+            return {"status": "created", "profile": str(payload["name"])}
+
+        if j.job_type == JOB_MT_UPDATE_PPP_PROFILE:
+            if not payload.get("old_name") and not payload.get("name"):
+                raise RuntimeError("payload_faltan_campos job=UPDATE_PPP_PROFILE necesita old_name o name")
+            mt.update_ppp_profile(
+                old_name=str(payload.get("old_name") or payload.get("name") or ""),
+                new_name=str(payload.get("name") or ""),
+                rate_limit=str(payload.get("rate_limit") or ""),
+            )
+            return {
+                "status": "updated",
+                "profile": str(payload.get("name") or payload.get("old_name") or ""),
+            }
+
+        if j.job_type == JOB_MT_DELETE_PPP_PROFILE:
+            _require_keys(payload, ["name"], j.job_type)
+            removed = mt.remove_ppp_profile(name=str(payload["name"]))
+            return {"status": "deleted" if removed else "noop", "profile": str(payload["name"])}
 
         raise RuntimeError(f"unknown_job_type:{j.job_type}")
     finally:
