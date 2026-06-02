@@ -1,4 +1,3 @@
-import ipaddress
 from datetime import datetime
 from typing import Optional
 
@@ -9,6 +8,7 @@ from ..extensions import db
 from ..models.client import Client
 from ..models.connection import Connection
 from ..models.mikrotik_server import MikrotikServer
+from ..network.ip_pool import PoolError, resolve_ip_for_connection
 from ..tasks.queue import (
     JOB_MT_CREATE_PPP_SECRET,
     JOB_MT_DELETE_PPP_SECRET,
@@ -17,6 +17,14 @@ from ..tasks.queue import (
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
     enqueue_job,
 )
+
+
+def _pool_error_response(e: PoolError):
+    """Mapea PoolError a respuesta HTTP."""
+    payload = {"error": e.code}
+    payload.update(e.extra or {})
+    status = 400 if e.code in ("ip_invalid", "ip_already_taken") else 409
+    return jsonify(payload), status
 
 bp = Blueprint("connections", __name__, url_prefix="/api/connections")
 
@@ -100,20 +108,22 @@ def create_connection():
     client_id = data.get("client_id")
     server_id = data.get("server_id")
     plan_profile = (data.get("plan_profile") or "").strip()
-    ip = (data.get("ip") or "").strip() or None
+    requested_ip = (data.get("ip") or "").strip() or None
     pppoe_username = (data.get("pppoe_username") or "").strip() or None
     pppoe_password = (data.get("pppoe_password") or "").strip() or None
-
-    if ip:
-        try:
-            ipaddress.ip_address(ip)
-        except Exception:
-            return jsonify({"error": "ip_invalid"}), 400
 
     if not client_id:
         return jsonify({"error": "client_id_required"}), 400
     if not plan_profile:
         return jsonify({"error": "plan_profile_required"}), 400
+
+    try:
+        ip, ip_autoassigned = resolve_ip_for_connection(
+            server_id=int(server_id) if server_id else None,
+            requested_ip=requested_ip,
+        )
+    except PoolError as e:
+        return _pool_error_response(e)
 
     client = Client.query.get_or_404(int(client_id))
     # Si estaba retirado, al crear una nueva conexión vuelve a ACTIVE
@@ -139,7 +149,9 @@ def create_connection():
         status="ACTIVE",
         mikrotik_profile=plan_profile,
         ip=ip,
-        ip_is_fixed=bool(ip),
+        # ip_is_fixed solo si la IP fue puesta a mano por el usuario; las autoasignadas
+        # quedan como "del pool" (no fijas) para poder reasignarse libremente.
+        ip_is_fixed=bool(ip) and not ip_autoassigned,
         pppoe_username=pppoe_username,
         pppoe_password_value=pppoe_password,
     )
@@ -161,7 +173,7 @@ def create_connection():
                 "name": x.pppoe_name(),
                 "password": x.pppoe_password(),
                 "profile": x.plan_profile,
-                "remote_address": (x.ip if x.ip_is_fixed else None),
+                "remote_address": (x.ip or None),
             },
             server_id=(int(x.server_id) if x.server_id else None),
         )
@@ -192,16 +204,18 @@ def update_connection(connection_id: int):
     ip_changed = False
     if "ip" in data:
         raw = (data.get("ip") or "").strip()
-        if raw:
-            try:
-                ipaddress.ip_address(raw)
-            except Exception:
-                return jsonify({"error": "ip_invalid"}), 400
-            x.ip = raw
-            x.ip_is_fixed = True
-        else:
-            x.ip = None
-            x.ip_is_fixed = False
+        try:
+            new_ip, ip_autoassigned = resolve_ip_for_connection(
+                server_id=int(x.server_id) if x.server_id else None,
+                requested_ip=raw,
+                excluding_connection_id=int(x.id),
+            )
+        except PoolError as e:
+            db.session.rollback()
+            return _pool_error_response(e)
+        x.ip = new_ip
+        # Solo se considera "fija" si la IP la puso el usuario explícitamente
+        x.ip_is_fixed = bool(new_ip) and not ip_autoassigned
         ip_changed = True
 
     creds_changed = False
@@ -245,7 +259,7 @@ def update_connection(connection_id: int):
                     "name": x.pppoe_name(),
                     "password": x.pppoe_password(),
                     "profile": x.plan_profile,
-                    "remote_address": (x.ip if x.ip_is_fixed else None),
+                    "remote_address": (x.ip or None),
                 },
                 server_id=new_server_id,
             )

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Modal, Select, Grid, Alert, Group, NumberInput, Switch, Text } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
+import { IpPoolPicker } from "./IpPoolPicker";
 
 export function ConnectionCreateModal(props: {
   open: boolean;
@@ -18,6 +19,7 @@ export function ConnectionCreateModal(props: {
   const [serviceAddress, setServiceAddress] = useState("");
   const [location, setLocation] = useState("");
   const [ip, setIp] = useState("");
+  const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
   const [pppoeUsername, setPppoeUsername] = useState("");
   const [pppoePassword, setPppoePassword] = useState("");
   const [billingDay, setBillingDay] = useState<number>(1);
@@ -29,6 +31,7 @@ export function ConnectionCreateModal(props: {
     setServiceAddress("");
     setLocation("");
     setIp("");
+    setIpMode("auto");
     setPppoeUsername("");
     setPppoePassword("");
     setPlanProfile(props.planOptions?.[0] ?? "50M");
@@ -51,7 +54,7 @@ export function ConnectionCreateModal(props: {
         plan_profile: planProfile,
         service_address: serviceAddress || null,
         location: location || null,
-        ip: ip || null,
+        ip: ipMode === "manual" ? (ip || null) : null,
         pppoe_username: pppoeUsername.trim() || null,
         pppoe_password: pppoePassword || null,
         billing_day: billingDay,
@@ -60,8 +63,22 @@ export function ConnectionCreateModal(props: {
       });
       props.onSaved();
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      const body = (e as { body?: { error?: string; value?: string; cidr?: string } })?.body ?? e;
+      const err = e as { status?: number; body?: { error?: string; value?: string; cidr?: string } };
+      const code = (body as { error?: string })?.error;
+      if (code === "pool_exhausted") {
+        setError(`No hay IPs libres en el pool ${(body as { cidr?: string })?.cidr || ""}.`);
+        return;
+      }
+      if (code === "ip_already_taken") {
+        setError(`La IP ${(body as { value?: string })?.value} ya está asignada en este server.`);
+        return;
+      }
+      if (code === "ip_invalid") {
+        setError(`IP inválida${(body as { value?: string })?.value ? `: ${(body as { value?: string })?.value}` : ""}.`);
+        return;
+      }
+      setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
     }
   }
 
@@ -85,7 +102,13 @@ export function ConnectionCreateModal(props: {
       </Grid>
       <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} />
       <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} />
-      <Field label="IP (opcional)" value={ip} onChange={setIp} placeholder="ej: 192.168.1.50" />
+      <IpPoolPicker
+        serverId={serverId ? Number(serverId) : null}
+        ip={ip}
+        onChange={setIp}
+        mode={ipMode}
+        onModeChange={setIpMode}
+      />
       <Grid>
         <Grid.Col span={6}><Field label="Usuario PPPoE (opcional)" value={pppoeUsername} onChange={setPppoeUsername} placeholder="(vacío = auto)" /></Grid.Col>
         <Grid.Col span={6}><Field label="Contraseña PPPoE (opcional)" value={pppoePassword} onChange={setPppoePassword} type="password" placeholder="(vacío = auto)" /></Grid.Col>

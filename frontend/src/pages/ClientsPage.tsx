@@ -9,6 +9,7 @@ import { ConnectionDetailsModal } from "../components/ConnectionDetailsModal";
 import { ClientEditModal } from "../components/ClientEditModal";
 import { ConnectionCreateModal } from "../components/ConnectionCreateModal";
 import { ConnectionEditModal } from "../components/ConnectionEditModal";
+import { IpPoolPicker } from "../components/IpPoolPicker";
 import { Grid, Table, Alert, Badge, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Skeleton, Tabs, ActionIcon, Tooltip } from "@mantine/core";
 
 type SortCol = "id" | "full_name" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count";
@@ -70,6 +71,7 @@ export default function ClientsPage() {
   const [location, setLocation] = useState("");
   const [serverId, setServerId] = useState("");
   const [ip, setIp] = useState("");
+  const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
   const [servers, setServers] = useState<{ id: number; name: string; host: string; port: number }[]>([]);
   const [planOptions, setPlanOptions] = useState<string[]>(["25M", "50M", "100M", "300M"]);
 
@@ -156,7 +158,13 @@ export default function ClientsPage() {
         phone: phone || null,
         email: email || null,
         address: address || null,
-        connections: [{ server_id: serverId ? Number(serverId) : null, ip: ip || null, plan_profile: planProfile, service_address: serviceAddress || null, location: location || null }],
+        connections: [{
+          server_id: serverId ? Number(serverId) : null,
+          ip: ipMode === "manual" ? (ip || null) : null,
+          plan_profile: planProfile,
+          service_address: serviceAddress || null,
+          location: location || null,
+        }],
         provision_mikrotik: true,
       }) as { client?: { id?: number }; id?: number };
       const created = res?.client ?? res;
@@ -167,19 +175,32 @@ export default function ClientsPage() {
         return;
       }
       setFullName(""); setDni(""); setCuit(""); setPhone(""); setEmail(""); setAddress("");
-      setServiceAddress(""); setLocation(""); setServerId(""); setIp("");
+      setServiceAddress(""); setLocation(""); setServerId(""); setIp(""); setIpMode("auto");
       setSuccess(`Cliente #${newId} creado correctamente.`);
       setClientId(newId);
       navigate(`/clients/${newId}`);
     } catch (e: unknown) {
-      const body = (e as { body?: { error?: string; client_id?: number } })?.body ?? e;
-      const err = e as { status?: number; body?: { error?: string; client_id?: number } };
-      if (err?.status === 409 && (body as { error?: string })?.error === "dni_already_exists") {
+      const body = (e as { body?: { error?: string; client_id?: number; value?: string; cidr?: string } })?.body ?? e;
+      const err = e as { status?: number; body?: { error?: string; client_id?: number; value?: string; cidr?: string } };
+      const errCode = (body as { error?: string })?.error;
+      if (err?.status === 409 && errCode === "dni_already_exists") {
         setError(`DNI ya existe (cliente #${(body as { client_id?: number })?.client_id}).`);
         return;
       }
-      if (err?.status === 409 && (body as { error?: string })?.error === "cuit_already_exists") {
+      if (err?.status === 409 && errCode === "cuit_already_exists") {
         setError(`CUIT ya existe (cliente #${(body as { client_id?: number })?.client_id}).`);
+        return;
+      }
+      if (err?.status === 409 && errCode === "pool_exhausted") {
+        setError(`No hay IPs libres en el pool ${(body as { cidr?: string })?.cidr || ""} del server seleccionado.`);
+        return;
+      }
+      if (err?.status === 400 && errCode === "ip_already_taken") {
+        setError(`La IP ${(body as { value?: string })?.value} ya está asignada a otra conexión de este server.`);
+        return;
+      }
+      if (err?.status === 400 && errCode === "ip_invalid") {
+        setError(`IP inválida${(body as { value?: string })?.value ? `: ${(body as { value?: string })?.value}` : ""}.`);
         return;
       }
       setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
@@ -241,7 +262,13 @@ export default function ClientsPage() {
                 <Select label="Plan" value={planProfile} onChange={(v) => v && setPlanProfile(v)} data={planData} mt="sm" />
                 <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} />
                 <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} />
-                <Field label="IP (opcional)" value={ip} onChange={setIp} placeholder="ej: 192.168.1.50" />
+                <IpPoolPicker
+                  serverId={serverId ? Number(serverId) : null}
+                  ip={ip}
+                  onChange={setIp}
+                  mode={ipMode}
+                  onModeChange={setIpMode}
+                />
               </Card>
             </Grid.Col>
           </Grid>

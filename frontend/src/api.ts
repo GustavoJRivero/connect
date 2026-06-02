@@ -259,6 +259,10 @@ export const api = {
   listServerJobs(server_id: number) {
     return request(`/api/network/servers/${server_id}/jobs`);
   },
+  getServerPool(server_id: number, max_listed = 1024) {
+    const qs = `?max_listed=${encodeURIComponent(String(max_listed))}`;
+    return request(`/api/network/servers/${server_id}/pool${qs}`);
+  },
   retryJob(job_id: number) {
     return request(`/api/jobs/${job_id}/retry`, { method: "POST", body: JSON.stringify({}) });
   },

@@ -1,5 +1,3 @@
-import ipaddress
-
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 from sqlalchemy import case, func, or_
@@ -12,6 +10,7 @@ from ..models.mikrotik_server import MikrotikServer
 from ..models.complaint import Complaint
 from ..models.invoice import Invoice
 from ..models.payment import Payment, PaymentAllocation
+from ..network.ip_pool import PoolError, resolve_ip_for_connection
 from ..tasks.queue import JOB_MT_CREATE_PPP_SECRET, JOB_MT_DELETE_PPP_SECRET, JOB_MT_SET_PPP_PROFILE, enqueue_job
 
 bp = Blueprint("clients", __name__, url_prefix="/api/clients")
@@ -348,12 +347,17 @@ def create_client():
         plan_profile = (conn.get("plan_profile") or "").strip()
         if not plan_profile:
             return jsonify({"error": "plan_profile_required"}), 400
-        ip = ((conn.get("ip") or "").strip() or None)
-        if ip:
-            try:
-                ipaddress.ip_address(ip)
-            except Exception:
-                return jsonify({"error": "ip_invalid"}), 400
+        requested_ip = ((conn.get("ip") or "").strip() or None)
+        try:
+            ip, ip_autoassigned = resolve_ip_for_connection(
+                server_id=int(conn.get("server_id")) if conn.get("server_id") else None,
+                requested_ip=requested_ip,
+            )
+        except PoolError as e:
+            payload = {"error": e.code}
+            payload.update(e.extra or {})
+            status = 400 if e.code in ("ip_invalid", "ip_already_taken") else 409
+            return jsonify(payload), status
         pppoe_username = (conn.get("pppoe_username") or "").strip() or None
         pppoe_password = (conn.get("pppoe_password") or "").strip() or None
 
@@ -363,7 +367,8 @@ def create_client():
                 location=(conn.get("location") or None),
                 server_id=(int(conn.get("server_id")) if conn.get("server_id") else None),
                 ip=ip,
-                ip_is_fixed=bool(ip),
+                # ip_is_fixed = la IP la puso el usuario manualmente (no salió del pool).
+                ip_is_fixed=bool(ip) and not ip_autoassigned,
                 pppoe_username=pppoe_username,
                 pppoe_password_value=pppoe_password,
                 plan_profile=plan_profile,
@@ -392,7 +397,7 @@ def create_client():
                     "name": x.pppoe_name(),
                     "password": x.pppoe_password(),
                     "profile": x.plan_profile,
-                    "remote_address": (x.ip if x.ip_is_fixed else None),
+                    "remote_address": (x.ip or None),
                 },
                 server_id=(int(x.server_id) if x.server_id else None),
             )
