@@ -27,6 +27,7 @@ from ..models.connection import Connection
 from ..models.invoice import Invoice
 from ..models.plan import Plan
 from ..models.setting import Setting
+from ..timezone import today_local
 
 logger = logging.getLogger(__name__)
 
@@ -494,7 +495,7 @@ def run_catchup(max_days_back: int = 7):
     Revisa los últimos `max_days_back` días y ejecuta la facturación
     para cualquier día que no tenga un BillingRun COMPLETED.
     """
-    today = date.today()
+    today = today_local()
 
     slog(
         module="BILLING",

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
+import { fmtDateTime } from "../datetime";
 import { Button, Field } from "../ui";
 import {
   Grid,
@@ -164,7 +165,7 @@ export default function BillingPage() {
                       <Badge size="sm" variant="light">{status.last_run.trigger}</Badge>
                     </Group>
                     <Text size="xs" c="dimmed">
-                      {status.last_run.created_at ? new Date(status.last_run.created_at).toLocaleString("es-AR") : "-"}
+                      {status.last_run.created_at ? fmtDateTime(status.last_run.created_at) : "-"}
                     </Text>
                   </Group>
                   <Text size="xs" c="dimmed" mt={4}>

@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 
 def get_config() -> dict:
@@ -16,11 +17,20 @@ def get_config() -> dict:
         raise ValueError(
             "Este proyecto usa solo MySQL. Configurá DATABASE_URL con mysql+pymysql://..."
         )
+    # Duración del access token JWT (minutos). Default: 60.
+    try:
+        jwt_access_minutes = int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "60"))
+    except ValueError:
+        jwt_access_minutes = 60
+    if jwt_access_minutes <= 0:
+        jwt_access_minutes = 60
+
     return {
         "SECRET_KEY": os.getenv("SECRET_KEY", "change-me"),
         "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY", "change-me-too"),
         "JWT_TOKEN_LOCATION": ["headers", "query_string"],
         "JWT_QUERY_STRING_NAME": "jwt",
+        "JWT_ACCESS_TOKEN_EXPIRES": timedelta(minutes=jwt_access_minutes),
         "SQLALCHEMY_DATABASE_URI": database_url,
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         # AFIP

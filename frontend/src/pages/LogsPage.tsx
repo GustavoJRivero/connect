@@ -351,13 +351,9 @@ export default function LogsPage() {
   );
 }
 
+import { fmtDateTime as _fmtDateTime } from "../datetime";
+
 function formatDateTime(iso: string): string {
   if (!iso) return "-";
-  try {
-    const d = new Date(iso);
-    const pad = (n: number) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-  } catch {
-    return iso;
-  }
+  return _fmtDateTime(iso, { withSeconds: true }) || iso;
 }

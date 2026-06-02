@@ -1,7 +1,21 @@
 from flask import Blueprint, jsonify
 import time
 
+from ..timezone import get_app_tz_name, iso_utc, now_local, offset_minutes
+
 bp = Blueprint("health", __name__, url_prefix="/api")
+
+
+@bp.get("/timezone")
+def timezone_info():
+    """Expone la TZ configurada para que el frontend pueda formatear fechas en local."""
+    nl = now_local()
+    return jsonify({
+        "timezone": get_app_tz_name(),
+        "now_local": nl.isoformat(),
+        "now_utc": iso_utc(nl),
+        "offset_minutes": offset_minutes(),
+    })
 
 
 @bp.get("/health")

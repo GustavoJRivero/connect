@@ -25,6 +25,7 @@ type ClientDetailData = {
   phone?: string;
   email?: string;
   address?: string;
+  pon_sn?: string;
   is_active?: boolean;
   [key: string]: unknown;
 };
@@ -66,6 +67,7 @@ export default function ClientsPage() {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
+  const [ponSn, setPonSn] = useState("");
   const [planProfile, setPlanProfile] = useState("50M");
   const [serviceAddress, setServiceAddress] = useState("");
   const [location, setLocation] = useState("");
@@ -155,6 +157,7 @@ export default function ClientsPage() {
         full_name: fullName,
         dni: kind === "PERSON" ? dni || null : null,
         cuit: kind === "COMPANY" ? cuit || null : null,
+        pon_sn: ponSn || null,
         phone: phone || null,
         email: email || null,
         address: address || null,
@@ -253,6 +256,7 @@ export default function ClientsPage() {
                 {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} /> : <Field label="CUIT" value={cuit} onChange={setCuit} />}
                 <Grid><Grid.Col span={6}><Field label="Tel/Cel" value={phone} onChange={setPhone} /></Grid.Col><Grid.Col span={6}><Field label="Email" value={email} onChange={setEmail} /></Grid.Col></Grid>
                 <Field label="Dirección (facturación / principal)" value={address} onChange={setAddress} />
+                <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" />
               </Card>
             </Grid.Col>
             <Grid.Col span={{ base: 12, lg: 6 }}>
@@ -493,6 +497,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
               </Grid.Col>
               <Grid.Col span={6}>
                 <Text c="dimmed">Dirección: {String(client.address ?? "-")}</Text>
+                <Text c="dimmed">PON SN: {String(client.pon_sn ?? "-")}</Text>
                 <Text c="dimmed">Activo: {client.is_active ? "Sí" : "No"}</Text>
                 <Text c="dimmed">Conexiones: {(client.connections as unknown[])?.length ?? 0}</Text>
                 <Text c="dimmed">Facturas: {invoices.length}</Text>

@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 
 from ..extensions import db
 from ..models.job import Job
+from ..timezone import iso_utc
 
 bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 
@@ -13,14 +14,14 @@ bp = Blueprint("jobs", __name__, url_prefix="/api/jobs")
 def _job_to_dict(j: Job) -> dict:
     return {
         "id": j.id,
-        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "created_at": iso_utc(j.created_at),
         "status": j.status,
         "job_type": j.job_type,
         "server_id": j.server_id,
         "attempts": j.attempts,
-        "run_after": j.run_after.isoformat() if j.run_after else None,
-        "locked_at": j.locked_at.isoformat() if j.locked_at else None,
-        "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+        "run_after": iso_utc(j.run_after),
+        "locked_at": iso_utc(j.locked_at),
+        "finished_at": iso_utc(j.finished_at),
         "payload": json.loads(j.payload_json or "{}"),
         "result": json.loads(j.result_json or "null") if j.result_json else None,
         "last_error": j.last_error,

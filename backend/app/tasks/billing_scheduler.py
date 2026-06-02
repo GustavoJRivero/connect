@@ -3,11 +3,11 @@ Scheduler de facturación automática.
 
 La activación y la hora se configuran en Configuración (settings en BD):
   billing.scheduler.enabled  — "true" / "false"
-  billing.scheduler.run_hour — 0-23 (hora UTC del servidor al disparar el día)
+  billing.scheduler.run_hour — 0-23 (hora local de la app, según APP_TIMEZONE)
 
 Estrategia:
 1. Si está habilitado al arrancar, ejecuta catch-up para los últimos 7 días
-2. Cada minuto relee la configuración; si está habilitado y ya pasó la hora UTC del día, ejecuta facturación
+2. Cada minuto relee la configuración; si está habilitado y ya pasó la hora local del día, ejecuta facturación
 3. Usa BillingRun como registro → idempotente
 """
 import threading
@@ -16,6 +16,8 @@ import logging
 from datetime import date, datetime
 
 from flask import Flask
+
+from ..timezone import now_local, today_local
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +51,7 @@ def _run_daily(app: Flask):
         from ..logging_utils import slog
         from ..models.billing_run import BillingRun
 
-        today = date.today()
+        today = today_local()
 
         existing = (
             BillingRun.query
@@ -128,7 +130,7 @@ def _maybe_run_catchup(app: Flask):
             )
             return
     logger.info(
-        "Billing scheduler: ejecutando catch-up (hora UTC configurada: %02d:00)",
+        "Billing scheduler: ejecutando catch-up (hora local configurada: %02d:00)",
         run_hour,
     )
     _run_catchup(app)
@@ -146,7 +148,7 @@ def _scheduler_loop(app: Flask):
                 time.sleep(60)
                 continue
 
-            now = datetime.utcnow()
+            now = now_local()
             today = now.date()
             if now.hour >= run_hour and last_run_date != today:
                 try:

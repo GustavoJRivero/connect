@@ -6,6 +6,7 @@ from flask_jwt_extended import jwt_required
 from ..extensions import db
 from ..models.complaint import Complaint
 from ..models.connection import Connection
+from ..timezone import iso_utc
 
 bp = Blueprint("complaints", __name__, url_prefix="/api/complaints")
 
@@ -35,11 +36,11 @@ def _complaint_to_dict(x: Complaint) -> dict:
         "id": x.id,
         "client_id": x.client_id,
         "connection_id": x.connection_id,
-        "created_at": x.created_at.isoformat(),
+        "created_at": iso_utc(x.created_at),
         "kind": x.kind,
         "detail": x.detail,
         "status": x.status,
-        "solved_at": x.solved_at.isoformat() if x.solved_at else None,
+        "solved_at": iso_utc(x.solved_at),
         "solved_seconds": solved_seconds,
         "solved_human": solved_human,
     }

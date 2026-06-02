@@ -18,6 +18,7 @@ from .queue import (
     JOB_MT_SET_PPP_PROFILE,
     JOB_MT_SET_PPP_CREDENTIALS,
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
+    JOB_MT_SET_PPP_COMMENT,
     JOB_MT_CREATE_PPP_PROFILE,
     JOB_MT_UPDATE_PPP_PROFILE,
     JOB_MT_DELETE_PPP_PROFILE,
@@ -95,8 +96,14 @@ def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
                 password=str(payload["password"]),
                 profile=str(payload["profile"]),
                 remote_address=(str(payload.get("remote_address")) if payload.get("remote_address") is not None else None),
+                comment=(str(payload.get("comment")) if payload.get("comment") is not None else None),
             )
             return {"status": "created"}
+
+        if j.job_type == JOB_MT_SET_PPP_COMMENT:
+            _require_keys(payload, ["name"], j.job_type)
+            mt.set_pppoe_secret_comment(name=str(payload["name"]), comment=str(payload.get("comment") or ""))
+            return {"status": "updated", "comment": str(payload.get("comment") or "")}
 
         if j.job_type == JOB_MT_DELETE_PPP_SECRET:
             _require_keys(payload, ["name"], j.job_type)

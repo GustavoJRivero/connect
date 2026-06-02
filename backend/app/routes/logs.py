@@ -13,6 +13,7 @@ from flask_jwt_extended import jwt_required
 from ..extensions import db
 from ..models.system_log import SystemLog
 from ..models.setting import Setting
+from ..timezone import iso_utc
 from ..logging_utils import invalidate_cache
 
 bp = Blueprint("logs", __name__, url_prefix="/api/logs")
@@ -177,7 +178,7 @@ def _log_to_dict(log: SystemLog) -> dict:
 
     return {
         "id": log.id,
-        "created_at": log.created_at.isoformat() if log.created_at else None,
+        "created_at": iso_utc(log.created_at),
         "module": log.module,
         "action": log.action,
         "level": log.level,

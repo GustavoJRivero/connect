@@ -30,7 +30,9 @@ bp = Blueprint("connections", __name__, url_prefix="/api/connections")
 
 
 def _iso(dt: Optional[datetime]):
-    return dt.isoformat() if dt else None
+    """Serializa un datetime UTC naive como ISO con offset (`+00:00`)."""
+    from ..timezone import iso_utc
+    return iso_utc(dt)
 
 
 def _parse_mt_datetime(v: Optional[str]) -> Optional[datetime]:
@@ -174,6 +176,7 @@ def create_connection():
                 "password": x.pppoe_password(),
                 "profile": x.plan_profile,
                 "remote_address": (x.ip or None),
+                "comment": (client.full_name or "").strip(),
             },
             server_id=(int(x.server_id) if x.server_id else None),
         )
@@ -253,6 +256,8 @@ def update_connection(connection_id: int):
             )
             jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id), "server_id": old_server_id})
         if new_server_id:
+            client_for_comment = Client.query.get(int(x.client_id)) if x.client_id else None
+            comment = (client_for_comment.full_name if client_for_comment else "") or ""
             j = enqueue_job(
                 job_type=JOB_MT_CREATE_PPP_SECRET,
                 payload={
@@ -260,6 +265,7 @@ def update_connection(connection_id: int):
                     "password": x.pppoe_password(),
                     "profile": x.plan_profile,
                     "remote_address": (x.ip or None),
+                    "comment": comment.strip(),
                 },
                 server_id=new_server_id,
             )

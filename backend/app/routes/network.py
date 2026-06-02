@@ -12,6 +12,7 @@ from ..models.job import Job
 from ..models.mikrotik_server import MikrotikServer
 from ..network.ip_pool import parse_cidr, pool_summary
 from ..models.mikrotik_server import MAX_IP_POOLS_PER_SERVER
+from ..timezone import iso_utc
 
 bp = Blueprint("network", __name__, url_prefix="/api/network")
 
@@ -31,7 +32,7 @@ def _pool_counters(s: MikrotikServer) -> dict:
 def _server_to_dict(s: MikrotikServer) -> dict:
     base = {
         "id": s.id,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "created_at": iso_utc(s.created_at),
         "name": s.name,
         "host": s.host,
         "port": s.port,
@@ -89,14 +90,14 @@ def _validate_cidrs_or_400(value):
 def _job_to_dict(j: Job) -> dict:
     return {
         "id": j.id,
-        "created_at": j.created_at.isoformat() if j.created_at else None,
+        "created_at": iso_utc(j.created_at),
         "status": j.status,
         "job_type": j.job_type,
         "server_id": j.server_id,
         "attempts": j.attempts,
-        "run_after": j.run_after.isoformat() if j.run_after else None,
-        "locked_at": j.locked_at.isoformat() if j.locked_at else None,
-        "finished_at": j.finished_at.isoformat() if j.finished_at else None,
+        "run_after": iso_utc(j.run_after),
+        "locked_at": iso_utc(j.locked_at),
+        "finished_at": iso_utc(j.finished_at),
         "last_error": j.last_error,
         "payload_json": j.payload_json,
         "result_json": j.result_json,

@@ -19,6 +19,7 @@ export function ClientEditModal(props: {
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [address, setAddress] = useState("");
+  const [ponSn, setPonSn] = useState("");
   const [isActive, setIsActive] = useState(true);
 
   useEffect(() => {
@@ -30,7 +31,7 @@ export function ClientEditModal(props: {
     api
       .getClient(Number(props.clientId))
       .then((c: unknown) => {
-        const x = c as { kind?: string; full_name?: string; dni?: string; cuit?: string; phone?: string; email?: string; address?: string; is_active?: boolean };
+        const x = c as { kind?: string; full_name?: string; dni?: string; cuit?: string; phone?: string; email?: string; address?: string; pon_sn?: string; is_active?: boolean };
         setClient(c);
         setKind((x?.kind ?? "PERSON").toUpperCase() === "COMPANY" ? "COMPANY" : "PERSON");
         setFullName(String(x?.full_name ?? ""));
@@ -39,6 +40,7 @@ export function ClientEditModal(props: {
         setPhone(String(x?.phone ?? ""));
         setEmail(String(x?.email ?? ""));
         setAddress(String(x?.address ?? ""));
+        setPonSn(String(x?.pon_sn ?? ""));
         setIsActive(Boolean(x?.is_active ?? true));
       })
       .catch((e: unknown) => {
@@ -64,6 +66,7 @@ export function ClientEditModal(props: {
         phone: phone.trim() || null,
         email: email.trim() || null,
         address: address.trim() || null,
+        pon_sn: ponSn.trim() || null,
         is_active: Boolean(isActive),
       });
       props.onSaved();
@@ -122,6 +125,7 @@ export function ClientEditModal(props: {
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 6 }}>
               <Field label="Dirección" value={address} onChange={setAddress} />
+              <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" />
               <Checkbox label="Activo" checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} mt="sm" />
               <Text size="sm" c="dimmed" mt="md">
                 Solo se editan datos del titular. Las conexiones se gestionan en la solapa "Conexiones".
