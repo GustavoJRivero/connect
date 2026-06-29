@@ -17,6 +17,7 @@ from ..models.payment import PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
 from ..afip.wsfe import AfipWsfeClient, AfipIntegrationError
+from ..logging_utils import slog
 from ..timezone import iso_utc, today_local
 
 logger = logging.getLogger(__name__)
@@ -27,6 +28,16 @@ bp = Blueprint("invoices", __name__, url_prefix="/api/invoices")
 def _get_setting(key: str, default=None):
     s = Setting.query.get(key)
     return s.value if s else default
+
+
+def _set_setting(key: str, value: str) -> None:
+    s = Setting.query.get(key)
+    if s:
+        s.value = value
+    else:
+        s = Setting(key=key, value=value)
+        db.session.add(s)
+    db.session.commit()
 
 
 def _issuer():
@@ -228,12 +239,30 @@ def issue_invoice(invoice_id: int):
         except InvalidOperation:
             iva_percent_default = Decimal("21")
 
+        slog(
+            module="AFIP",
+            action="INVOICE_REQUEST",
+            message=f"Solicitando CAE para factura #{invoice_id} ({x.invoice_type}) — total={x.total}",
+            details={
+                "invoice_id": invoice_id,
+                "invoice_type": x.invoice_type,
+                "total": str(x.total),
+                "point_of_sale": x.point_of_sale,
+                "doc_type": doc_type,
+                "doc_number": doc_number,
+                "env": afip_cfg["env"],
+            },
+            ref_id=invoice_id,
+            ref_type="invoice",
+        )
         try:
             afip = AfipWsfeClient(
                 env=str(afip_cfg["env"]),
                 cuit=str(afip_cfg["cuit"]),
                 cert_path=str(afip_cfg["cert_path"]),
                 key_path=str(afip_cfg["key_path"]),
+                db_read=_get_setting,
+                db_write=_set_setting,
             )
             issued = afip.issue_invoice(
                 point_of_sale=int(x.point_of_sale),
@@ -250,13 +279,46 @@ def issue_invoice(invoice_id: int):
             x.cae = str(issued.cae)
             x.cae_due_date = issued.cae_due_date
             x.status = "ISSUED"
+            slog(
+                module="AFIP",
+                action="INVOICE_ISSUED",
+                message=f"CAE obtenido para factura #{invoice_id} — cbte={issued.cbte_number} CAE={issued.cae}",
+                details={
+                    "invoice_id": invoice_id,
+                    "cbte_number": issued.cbte_number,
+                    "cae": issued.cae,
+                    "cae_due_date": issued.cae_due_date.isoformat() if issued.cae_due_date else None,
+                    "result": issued.result,
+                    "obs": issued.obs,
+                },
+                ref_id=invoice_id,
+                ref_type="invoice",
+            )
         except AfipIntegrationError as e:
+            slog(
+                module="AFIP",
+                action="INVOICE_REJECTED",
+                level="ERROR",
+                message=f"AFIP rechazó factura #{invoice_id}: {e}",
+                details={"invoice_id": invoice_id, "error": str(e)},
+                ref_id=invoice_id,
+                ref_type="invoice",
+            )
             return jsonify({
                 "error": "afip_issue_failed",
                 "message": str(e),
             }), 400
         except Exception as e:
             logger.exception("Error inesperado emitiendo factura #%s en AFIP", invoice_id)
+            slog(
+                module="AFIP",
+                action="INVOICE_ERROR",
+                level="ERROR",
+                message=f"Error inesperado emitiendo factura #{invoice_id}: {e}",
+                details={"invoice_id": invoice_id, "error": str(e)},
+                ref_id=invoice_id,
+                ref_type="invoice",
+            )
             return jsonify({
                 "error": "afip_issue_failed",
                 "message": str(e),
@@ -308,6 +370,8 @@ def afip_status():
             cuit=str(cfg["cuit"]),
             cert_path=str(cfg["cert_path"]),
             key_path=str(cfg["key_path"]),
+            db_read=_get_setting,
+            db_write=_set_setting,
         )
         ping = afip.ping()
         return jsonify({"status": "ok", "config": masked, "ping": ping})

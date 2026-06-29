@@ -14,8 +14,10 @@ from decimal import Decimal, ROUND_HALF_UP
 import base64
 import html
 import os
-from typing import Any
+from typing import Any, Callable
 from xml.etree import ElementTree as ET
+
+import logging
 
 import requests
 from cryptography import x509
@@ -24,6 +26,8 @@ from cryptography.hazmat.primitives.serialization import pkcs7
 
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
+
+logger = logging.getLogger(__name__)
 
 
 class AfipIntegrationError(RuntimeError):
@@ -40,11 +44,22 @@ class AfipIssuedInvoice:
 
 
 class AfipWsfeClient:
-    def __init__(self, *, env: str, cuit: str, cert_path: str, key_path: str):
+    def __init__(
+        self,
+        *,
+        env: str,
+        cuit: str,
+        cert_path: str,
+        key_path: str,
+        db_read: Callable[[str], str | None] | None = None,
+        db_write: Callable[[str, str], None] | None = None,
+    ):
         self.env = (env or "HOMOLOGACION").strip().upper()
         self.cuit = str(cuit or "").strip()
         self.cert_path = str(cert_path or "").strip()
         self.key_path = str(key_path or "").strip()
+        self._db_read = db_read
+        self._db_write = db_write
 
     def _require_config(self) -> None:
         if not self.cuit:
@@ -138,17 +153,36 @@ class AfipWsfeClient:
 """
         return xml.encode("utf-8")
 
+    def _ta_valid(self, entry: dict) -> bool:
+        try:
+            exp = datetime.fromisoformat(entry["expires_at"])
+            return datetime.now(timezone.utc) < exp - timedelta(minutes=5)
+        except Exception:
+            return False
+
     def _wsaa_token_sign(self) -> tuple[str, str]:
+        # Base de datos: compartida entre todos los workers
+        if self._db_read:
+            db_token = self._db_read("afip.ta_token")
+            db_sign = self._db_read("afip.ta_sign")
+            db_expires = self._db_read("afip.ta_expires_at")
+            if db_token and db_sign and db_expires:
+                entry = {"token": db_token, "sign": db_sign, "expires_at": db_expires}
+                if self._ta_valid(entry):
+                    logger.debug("WSAA: token en DB, válido hasta %s", db_expires)
+                    return db_token, db_sign
+
         cert, key = self._load_cert_and_key()
         tra = self._build_tra()
         cms_der = pkcs7.PKCS7SignatureBuilder().set_data(tra).add_signer(
             cert, key, hashes.SHA256()
         ).sign(
             serialization.Encoding.DER,
-            [pkcs7.PKCS7Options.DetachedSignature],
+            [],
         )
         cms_b64 = base64.b64encode(cms_der).decode("ascii")
 
+        logger.info("WSAA: solicitando nuevo TA a AFIP (env=%s, cuit=%s)", self.env, self.cuit)
         wsaa_url, _ = self._service_urls()
         envelope = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <soapenv:Envelope xmlns:soapenv=\"{SOAP_ENV_NS}\" xmlns:wsaa=\"http://wsaa.view.sua.dvadac.desein.afip.gov\">
@@ -163,10 +197,12 @@ class AfipWsfeClient:
             r = requests.post(
                 wsaa_url,
                 data=envelope.encode("utf-8"),
-                headers={"Content-Type": "text/xml; charset=utf-8"},
+                headers={
+                    "Content-Type": "text/xml; charset=utf-8",
+                    "SOAPAction": '""',
+                },
                 timeout=30,
             )
-            r.raise_for_status()
         except Exception as e:
             raise AfipIntegrationError(f"wsaa_http_error:{e}") from e
 
@@ -175,9 +211,15 @@ class AfipWsfeClient:
         except Exception as e:
             raise AfipIntegrationError(f"wsaa_xml_parse_error:{e}") from e
 
-        fault = self._first_text(root, "faultstring")
-        if fault:
-            raise AfipIntegrationError(f"wsaa_fault:{fault}")
+        fault_code = self._first_text(root, "faultcode")
+        fault_str = self._first_text(root, "faultstring")
+        if fault_code or fault_str:
+            raise AfipIntegrationError(f"wsaa_fault:{fault_code} — {fault_str}")
+
+        if not r.ok:
+            raise AfipIntegrationError(
+                f"wsaa_http_error:{r.status_code} {r.reason} — body: {r.text[:800]}"
+            )
 
         ticket_response = self._first_text(root, "loginCmsReturn")
         if not ticket_response:
@@ -193,10 +235,20 @@ class AfipWsfeClient:
         sign = self._first_text(tra_root, "sign")
         if not token or not sign:
             raise AfipIntegrationError("wsaa_missing_token_or_sign")
+
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=11, minutes=55)).isoformat()
+        logger.info("WSAA: TA obtenido correctamente (expira %s)", expires_at)
+        if self._db_write:
+            self._db_write("afip.ta_token", token)
+            self._db_write("afip.ta_sign", sign)
+            self._db_write("afip.ta_expires_at", expires_at)
         return token, sign
 
     def _wsfe_post(self, body_xml: str) -> ET.Element:
         _, wsfe_url = self._service_urls()
+        # Extraer el nombre de la operación SOAP para el log (primera etiqueta sin namespace)
+        op_name = body_xml.strip().split()[0].lstrip("<").split(":")[-1] if body_xml.strip() else "unknown"
+        logger.debug("WSFE: POST %s → %s", op_name, wsfe_url)
         envelope = f"""<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <soapenv:Envelope xmlns:soapenv=\"{SOAP_ENV_NS}\" xmlns:ar=\"http://ar.gov.afip.dif.FEV1/\">
   <soapenv:Body>
@@ -212,6 +264,7 @@ class AfipWsfeClient:
             )
             r.raise_for_status()
         except Exception as e:
+            logger.error("WSFE: error HTTP en %s: %s", op_name, e)
             raise AfipIntegrationError(f"wsfe_http_error:{e}") from e
 
         try:
@@ -285,6 +338,16 @@ class AfipWsfeClient:
         imp_neto = self._to_2(total / divisor)
         imp_iva = self._to_2(total - imp_neto)
 
+        # RG 5616: CondicionIVAReceptorId obligatorio.
+        # A → solo Responsable Inscripto (1).
+        # B: consumidor final o DNI → 5; CUIT → 6 (Monotributista, caso más común).
+        if (invoice_type or "").upper() == "A":
+            iva_condition_receptor = 1
+        elif doc_type in (99, 96):
+            iva_condition_receptor = 5
+        else:
+            iva_condition_receptor = 6
+
         body_issue = f"""
 <ar:FECAESolicitar>
   <ar:Auth>
@@ -303,6 +366,7 @@ class AfipWsfeClient:
         <ar:Concepto>{int(concept)}</ar:Concepto>
         <ar:DocTipo>{int(doc_type)}</ar:DocTipo>
         <ar:DocNro>{int(doc_number)}</ar:DocNro>
+        <ar:CondicionIVAReceptorId>{iva_condition_receptor}</ar:CondicionIVAReceptorId>
         <ar:CbteDesde>{cbte_nro}</ar:CbteDesde>
         <ar:CbteHasta>{cbte_nro}</ar:CbteHasta>
         <ar:CbteFch>{self._fmt_date(issue_date)}</ar:CbteFch>
@@ -345,15 +409,19 @@ class AfipWsfeClient:
         cae = self._first_text(issue_root, "CAE")
         cae_vto_raw = self._first_text(issue_root, "CAEFchVto")
 
-        if not cae:
-            raise AfipIntegrationError("afip_missing_cae")
-
         obs: list[dict[str, str]] = []
         for node in issue_root.iter():
-            if self._local_name(node.tag) == "Obs":
+            if self._local_name(node.tag) in ("Obs", "Obb"):
                 code = self._first_text(node, "Code")
                 msg = self._first_text(node, "Msg")
-                obs.append({"code": code, "message": msg})
+                if code or msg:
+                    obs.append({"code": code, "message": msg})
+
+        if not cae:
+            obs_txt = " | ".join(f"{o['code']}:{o['message']}" for o in obs if o.get("message"))
+            raise AfipIntegrationError(
+                f"afip_rejected (Resultado={result}): {obs_txt or 'sin observaciones — ver XML'}"
+            )
 
         return AfipIssuedInvoice(
             cbte_number=int(cbte_nro),
