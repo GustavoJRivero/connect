@@ -35,7 +35,7 @@ export function CoverageCheck(props: {
       props.onCoverageChange(res);
     } catch (e: unknown) {
       const err = e as { status?: number };
-      if (err?.status === 503) props.onError("La API de mapas no está configurada (falta MAPS_API_KEY en el backend).");
+      if (err?.status === 503) props.onError("La API de mapas no está configurada (Configuración → Maps).");
       else props.onError(`Error consultando cobertura: ${formatApiError(e)}`);
     } finally {
       setChecking(false);

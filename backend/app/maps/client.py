@@ -25,7 +25,8 @@ import json
 from typing import Optional
 
 import requests
-from flask import current_app
+
+from .config import maps_api_base_url, maps_api_key
 
 
 DEFAULT_TIMEOUT = 45
@@ -62,8 +63,8 @@ def get_nap_columns() -> tuple[str, str]:
 
 class MapsClient:
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None):
-        self.base_url = (base_url or current_app.config.get("MAPS_API_BASE_URL") or "").strip().rstrip("/")
-        self.api_key = (api_key or current_app.config.get("MAPS_API_KEY") or "").strip()
+        self.base_url = (base_url or maps_api_base_url()).strip().rstrip("/")
+        self.api_key = (api_key or maps_api_key()).strip()
         if not self.base_url or not self.api_key:
             raise MapsNotConfigured()
 

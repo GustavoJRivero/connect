@@ -135,7 +135,7 @@ const ERROR_CODE_MESSAGES: Record<string, (b: ApiErrorBody) => string> = {
   ip_invalid: (b) => `IP inválida${b.value ? `: ${b.value}` : ""}.`,
   network_error: () => "No se pudo conectar con el servidor. Revisá la conexión.",
   not_found: () => "No se encontró el registro solicitado.",
-  maps_not_configured: () => "La API de mapas no está configurada (falta MAPS_API_KEY en el backend).",
+  maps_not_configured: () => "La API de mapas no está configurada (Configuración → Maps o MAPS_API_KEY).",
   invoice_has_payments: () => "La factura tiene pagos registrados y no se puede eliminar.",
   server_in_use: () => "El servidor tiene conexiones asociadas y no se puede eliminar.",
 };

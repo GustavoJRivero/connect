@@ -79,7 +79,7 @@ def run_coverage_check(order: InstallationOrder) -> InstallationOrder:
         mc = MapsClient()
     except MapsNotConfigured:
         order.status = STATUS_PENDIENTE
-        order.last_maps_error = "API de mapas no configurada (MAPS_API_BASE_URL / MAPS_API_KEY)"
+        order.last_maps_error = "API de mapas no configurada (Configuración → Maps o MAPS_API_KEY)"
         return order
 
     loc_kwargs = {}
