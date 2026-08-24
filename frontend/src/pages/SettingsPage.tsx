@@ -25,6 +25,7 @@ import {
   PasswordInput,
   Divider,
   Modal,
+  ThemeIcon,
 } from "@mantine/core";
 import {
   IconRefresh,
@@ -110,9 +111,9 @@ const SAVE_CONFIRM: Record<SaveKind, { title: string; message: string }> = {
     message: "Se guardarán el access token, la public key y la URL de webhook. ¿Seguís?",
   },
   maps: {
-    title: "¿Guardar reservas de instalación?",
+    title: "¿Guardar Maps?",
     message:
-      "Se guardará el vencimiento automático de reservas (liberación de puertos NAP, cron y plazo). ¿Seguís?",
+      "Se guardarán la URL, la API key, el webhook secret y los ajustes de reservas (cron y plazo). ¿Seguís?",
   },
 };
 
@@ -124,7 +125,7 @@ const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "fiscal", label: "ARCA", hint: "CUIT, certificados y CAE" },
   { id: "mp", label: "Mercado Pago", hint: "Cobro desde el portal del cliente" },
   { id: "smtp", label: "Correo", hint: "Envío de facturas por email" },
-  { id: "maps", label: "Reservas", hint: "Vencimiento de puertos NAP" },
+  { id: "maps", label: "Maps", hint: "API de cobertura y reservas NAP" },
   { id: "migration", label: "Migración", hint: "Backup del sistema anterior" },
 ];
 
@@ -278,6 +279,10 @@ export default function SettingsPage() {
   const [mapsEnabled, setMapsEnabled] = useState(true);
   const [mapsCron, setMapsCron] = useState("0 * * * *");
   const [mapsTtl, setMapsTtl] = useState(168);
+  const [mapsApi, setMapsApi] = useState({ api_base_url: "https://maps.connectsrl.ar", api_key: "", webhook_secret: "" });
+  const [mapsApiKeyReady, setMapsApiKeyReady] = useState(false);
+  const [mapsApiKeySource, setMapsApiKeySource] = useState("");
+  const [mapsWebhookReady, setMapsWebhookReady] = useState(false);
   const [arcaCertFile, setArcaCertFile] = useState<File | null>(null);
   const [arcaKeyFile, setArcaKeyFile] = useState<File | null>(null);
   const [arcaCertReady, setArcaCertReady] = useState(false);
@@ -365,6 +370,14 @@ export default function SettingsPage() {
       setMapsCron(mapsRes["maps.reservation.cron"] ?? "0 * * * *");
       const ttl = parseInt(String(mapsRes["maps.reservation.ttl_hours"] ?? "168"), 10);
       setMapsTtl(Number.isFinite(ttl) && ttl > 0 ? ttl : 168);
+      setMapsApi({
+        api_base_url: mapsRes["maps.api_base_url"] ?? "https://maps.connectsrl.ar",
+        api_key: "",
+        webhook_secret: "",
+      });
+      setMapsApiKeyReady(String(mapsRes["maps.api_key_ready"] ?? "").toLowerCase() === "true");
+      setMapsApiKeySource(mapsRes["maps.api_key_source"] ?? "");
+      setMapsWebhookReady(String(mapsRes["maps.webhook_secret_ready"] ?? "").toLowerCase() === "true");
 
       const afipFlag = String(afipRes["afip.enabled"] ?? "false").toLowerCase();
       setAfipEnabled(["1", "true", "yes", "on"].includes(afipFlag));
@@ -537,13 +550,17 @@ export default function SettingsPage() {
     setError(null);
     setSuccess(null);
     try {
-      await api.putSettings({
+      const values: Record<string, string> = {
+        "maps.api_base_url": mapsApi.api_base_url.trim() || "https://maps.connectsrl.ar",
         "maps.reservation.enabled": mapsEnabled ? "true" : "false",
         "maps.reservation.cron": mapsCron.trim() || "0 * * * *",
         "maps.reservation.ttl_hours": String(mapsTtl || 168),
-      });
-      setSuccess("Ajustes de reservas guardados.");
-      notifySuccess("Ajustes de reservas guardados.");
+      };
+      if (mapsApi.api_key.trim()) values["maps.api_key"] = mapsApi.api_key.trim();
+      if (mapsApi.webhook_secret.trim()) values["maps.webhook_secret"] = mapsApi.webhook_secret.trim();
+      await api.putSettings(values);
+      setSuccess("Maps guardado.");
+      notifySuccess("Maps guardado.");
       setSection(null);
       await reload();
     } catch (e: unknown) {
@@ -730,9 +747,11 @@ export default function SettingsPage() {
       badge: smtp.host?.trim() ? (smtp.use_tls === "false" ? "Sin TLS" : "TLS") : "No configurado",
     },
     maps: {
-      line: mapsEnabled ? `Vence a las ${mapsTtl} h` : "Liberación automática apagada",
-      tone: mapsEnabled ? "green" : "gray",
-      badge: mapsEnabled ? mapsCron : "Manual",
+      line: mapsApiKeyReady
+        ? (mapsApiKeySource === "env" ? "API key desde el entorno" : "API key cargada")
+        : "URL y API key de Connect Maps",
+      tone: mapsApiKeyReady ? "green" : "gray",
+      badge: mapsApiKeyReady ? (mapsEnabled ? `${mapsTtl}h` : "Manual") : "No configurado",
     },
     migration: {
       line: migrationStatus?.last_filename
@@ -1332,7 +1351,60 @@ export default function SettingsPage() {
           ) : null}
 
           {section === "maps" ? (
-            <Stack gap="md">
+            <Stack gap="lg">
+              <Paper withBorder p="sm" radius="md">
+                <Group gap="sm" wrap="nowrap" align="flex-start">
+                  <ThemeIcon variant="light" color="blue" size={42} radius="md">
+                    <IconMapPin size={22} stroke={1.5} />
+                  </ThemeIcon>
+                  <Box>
+                    <Group gap={8} mb={2}>
+                      <Text size="sm" fw={600}>
+                        {mapsApiKeyReady ? "Listo para cobertura e instalaciones" : "Faltan credenciales de Maps"}
+                      </Text>
+                      <MutedBadge tone={mapsApiKeyReady ? "green" : "gray"} size="sm">
+                        {mapsApiKeySource === "env" ? "Desde .env" : mapsApiKeyReady ? "Admin" : "Sin API key"}
+                      </MutedBadge>
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      Disponibilidad, cálculo de fibra y reserva de puertos NAP. La API key no se vuelve a mostrar.
+                    </Text>
+                  </Box>
+                </Group>
+              </Paper>
+
+              <Field
+                label="URL base de la API"
+                value={mapsApi.api_base_url}
+                onChange={(v) => setMapsApi((s) => ({ ...s, api_base_url: v }))}
+                placeholder="https://maps.connectsrl.ar"
+              />
+              <PasswordInput
+                label="API key"
+                description={
+                  mapsApiKeyReady
+                    ? "Ya hay una key cargada. Dejá vacío para conservarla, o pegá una nueva para reemplazarla."
+                    : "cmk_read_… o cmk_write_… (Write para reservar/liberar puertos)."
+                }
+                value={mapsApi.api_key}
+                onChange={(e) => setMapsApi((s) => ({ ...s, api_key: e.currentTarget.value }))}
+                placeholder={mapsApiKeyReady ? "••••••••  (cargada)" : "cmk_write_…"}
+              />
+              <PasswordInput
+                label="Webhook secret (opcional)"
+                description={
+                  mapsWebhookReady
+                    ? "Ya hay un secret cargado. Dejá vacío para conservarlo."
+                    : "Secret compartido para POST /api/webhooks/maps/install-confirmed."
+                }
+                value={mapsApi.webhook_secret}
+                onChange={(e) => setMapsApi((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
+                placeholder={mapsWebhookReady ? "••••••••  (cargado)" : "secret-largo"}
+              />
+
+              <Text size="sm" fw={600} mt="xs">
+                Reservas automáticas
+              </Text>
               <Switch
                 label="Liberar automáticamente las reservas vencidas"
                 description="Al vencer, el puerto se libera en el mapa (Reservados −1 / Disponibles +1) y la orden pasa a Vencida."
@@ -1362,7 +1434,7 @@ export default function SettingsPage() {
               </Text>
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("maps")}>Guardar reservas</Button>
+                <Button variant="primary" onClick={() => void confirmAndSave("maps")}>Guardar Maps</Button>
               </Group>
             </Stack>
           ) : null}

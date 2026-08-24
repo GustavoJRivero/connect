@@ -18,7 +18,7 @@ from ..migration.legacy import (
 )
 from ..validation import ValidationError, normalize_cuit
 
-_HIDDEN_KV = ("afip.cert_pem", "afip.key_pem", "mp.access_token")
+_HIDDEN_KV = ("afip.cert_pem", "afip.key_pem", "mp.access_token", "maps.api_key", "maps.webhook_secret")
 _MAX_CERT_BYTES = 80_000
 
 bp = Blueprint("settings", __name__, url_prefix="/api/settings")
@@ -78,6 +78,17 @@ def get_kv():
         out["mp.public_key_ready"] = "true" if public_key else "false"
         out.setdefault("mp.public_key", public_key)
         out.setdefault("mp.webhook_url", webhook)
+    if (not prefix) or prefix.startswith("maps"):
+        api_key, api_key_src = _effective("maps.api_key", "MAPS_API_KEY")
+        webhook_secret, wh_src = _effective("maps.webhook_secret", "MAPS_WEBHOOK_SECRET")
+        base_url, _bu_src = _effective("maps.api_base_url", "MAPS_API_BASE_URL")
+        out.pop("maps.api_key", None)
+        out.pop("maps.webhook_secret", None)
+        out["maps.api_key_ready"] = "true" if api_key else "false"
+        out["maps.api_key_source"] = api_key_src
+        out["maps.webhook_secret_ready"] = "true" if webhook_secret else "false"
+        out["maps.webhook_secret_source"] = wh_src
+        out.setdefault("maps.api_base_url", base_url or "https://maps.connectsrl.ar")
     return jsonify(out)
 
 

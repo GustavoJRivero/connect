@@ -12,6 +12,7 @@ from sqlalchemy import func
 from ..extensions import db
 from ..logging_utils import slog
 from ..maps.client import MapsClient, MapsError, MapsNotConfigured, parse_availability, parse_install_calc
+from ..maps.config import maps_webhook_secret
 from ..maps.service import cancel_order, confirm_order, create_order, run_coverage_check
 from ..models.client import Client
 from ..models.connection import Connection
@@ -296,7 +297,7 @@ def webhook_install_confirmed():
 
     Respuesta: { status: "ok", order: {...} }
     """
-    secret = (current_app.config.get("MAPS_WEBHOOK_SECRET") or "").strip()
+    secret = maps_webhook_secret()
     if not secret:
         return jsonify({"error": "webhook_not_configured"}), 503
     provided = (request.headers.get("X-Webhook-Secret") or "").strip()
