@@ -37,6 +37,6 @@ exec gunicorn wsgi:app \
     --config gunicorn_config.py \
     --bind 0.0.0.0:5001 \
     --workers 1 \
-    --timeout 120 \
+    --timeout 600 \
     --access-logfile - \
     --error-logfile -

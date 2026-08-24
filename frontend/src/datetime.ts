@@ -39,6 +39,8 @@ function asDate(iso: string | Date | null | undefined): Date | null {
   if (!iso) return null;
   const d = iso instanceof Date ? iso : new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
+  // MikroTik a veces reporta epoch (1970-01-01) cuando no hay evento real.
+  if (d.getUTCFullYear() < 1990) return null;
   return d;
 }
 

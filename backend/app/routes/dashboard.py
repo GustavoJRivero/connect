@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 
 from flask import Blueprint, jsonify
 from flask_jwt_extended import jwt_required
@@ -12,7 +12,7 @@ from ..models.invoice import Invoice
 from ..models.job import Job
 from ..models.payment import Payment
 from ..models.user import User
-from ..timezone import iso_utc, today_local
+from ..timezone import get_app_tz, iso_utc, today_local
 
 bp = Blueprint("dashboard", __name__, url_prefix="/api/dashboard")
 
@@ -82,9 +82,26 @@ def summary():
     jobs_running = db.session.query(func.count(Job.id)).filter(Job.status == "RUNNING").scalar() or 0
     jobs_failed = db.session.query(func.count(Job.id)).filter(Job.status == "FAILED").scalar() or 0
 
-    # Complaints
+    # Complaints: abiertos + generados/resueltos en el día local de la app.
     complaints_open = (
         db.session.query(func.count(Complaint.id)).filter(Complaint.status.in_(["TODO", "WIP"])).scalar() or 0
+    )
+    day_start_local = datetime.combine(today, time.min, tzinfo=get_app_tz())
+    day_end_local = day_start_local + timedelta(days=1)
+    day_start_utc = day_start_local.astimezone(timezone.utc).replace(tzinfo=None)
+    day_end_utc = day_end_local.astimezone(timezone.utc).replace(tzinfo=None)
+    complaints_created_today = (
+        db.session.query(func.count(Complaint.id))
+        .filter(Complaint.created_at >= day_start_utc, Complaint.created_at < day_end_utc)
+        .scalar()
+        or 0
+    )
+    complaints_solved_today = (
+        db.session.query(func.count(Complaint.id))
+        .filter(Complaint.solved_at.isnot(None))
+        .filter(Complaint.solved_at >= day_start_utc, Complaint.solved_at < day_end_utc)
+        .scalar()
+        or 0
     )
 
     # Recent payments (transactions)
@@ -144,7 +161,11 @@ def summary():
                 "running": int(jobs_running),
                 "failed": int(jobs_failed),
             },
-            "complaints": {"open": int(complaints_open)},
+            "complaints": {
+                "open": int(complaints_open),
+                "created_today": int(complaints_created_today),
+                "solved_today": int(complaints_solved_today),
+            },
             "recent_payments": recent_payments,
         }
     )

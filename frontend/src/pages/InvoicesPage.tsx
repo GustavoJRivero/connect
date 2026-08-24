@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
-import { Button } from "../ui";
+import { Button, InvoiceStatusBadge, MutedBadge } from "../ui";
 import { InvoiceModal } from "../components/InvoiceModal";
 import { PaymentModal } from "../components/PaymentModal";
+import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
+import { ClientSelect } from "../components/ClientSelect";
+import { formatApiError, fmtMoney } from "../format";
+import { fmtDate } from "../datetime";
+import { notifySuccess } from "../notify";
 import {
   Table,
   Alert,
@@ -12,11 +17,12 @@ import {
   Group,
   Anchor,
   Skeleton,
-  Badge,
   Stack,
   ActionIcon,
   Tooltip,
+  Grid,
 } from "@mantine/core";
+import { IconCash, IconFileCheck, IconFileTypePdf, IconMail, IconRefresh, IconTrash } from "@tabler/icons-react";
 
 type InvoiceRow = {
   id: number;
@@ -30,6 +36,7 @@ type InvoiceRow = {
   paid_total?: string;
   due_date?: string;
   status: string;
+  payment_status?: string;
   description?: string;
   notes?: string;
 };
@@ -41,17 +48,17 @@ export default function InvoicesPage() {
   const [paying, setPaying] = useState<InvoiceRow | null>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [sendingEmail, setSendingEmail] = useState<number | null>(null);
-  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState>(null);
+  const [filterClientId, setFilterClientId] = useState("");
 
   async function reload() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.listInvoices();
+      const res = await api.listInvoices(filterClientId ? Number(filterClientId) : undefined);
       setItems(Array.isArray(res) ? (res as InvoiceRow[]) : []);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setLoading(false);
     }
@@ -59,30 +66,38 @@ export default function InvoicesPage() {
 
   useEffect(() => {
     reload();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterClientId]);
 
   async function issue(id: number) {
     setError(null);
     try {
       await api.issueInvoice(id);
+      notifySuccess(`Factura #${id} emitida.`);
       await reload();
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     }
   }
 
-  async function removeInvoice(id: number) {
-    setError(null);
-    try {
-      if (!window.confirm("¿Eliminar factura? (baja lógica, solo si no tiene pagos)")) return;
-      await api.deleteInvoice(id);
-      if (paying?.id === id) setPaying(null);
-      await reload();
-    } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
-    }
+  function removeInvoice(id: number) {
+    setConfirm({
+      title: `Eliminar factura #${id}`,
+      message: "La factura se dará de baja (baja lógica). Solo es posible si no tiene pagos registrados.",
+      confirmLabel: "Eliminar factura",
+      danger: true,
+      onConfirm: async () => {
+        setError(null);
+        try {
+          await api.deleteInvoice(id);
+          if (paying?.id === id) setPaying(null);
+          notifySuccess(`Factura #${id} eliminada.`);
+          await reload();
+        } catch (e: unknown) {
+          setError(formatApiError(e));
+        }
+      },
+    });
   }
 
   function openPdf(id: number) {
@@ -92,25 +107,20 @@ export default function InvoicesPage() {
 
   async function sendEmail(id: number) {
     setError(null);
-    setEmailSuccess(null);
     setSendingEmail(id);
     try {
       const res = (await api.sendInvoiceEmail(id)) as { ok: boolean; to: string; message: string };
-      setEmailSuccess(res.message || `Enviada a ${res.to}`);
+      notifySuccess(res.message || `Enviada a ${res.to}`, "Email enviado");
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: any };
-      const msg = err?.body?.message || JSON.stringify(err?.body ?? e);
-      setError(`Error enviando email: ${msg}`);
+      setError(`Error enviando email: ${formatApiError(e)}`);
     } finally {
       setSendingEmail(null);
     }
   }
 
-  const statusColor = (status: string) =>
-    status === "ISSUED" ? "green" : status === "DRAFT" ? "gray" : status === "OVERDUE" ? "red" : "blue";
-
   return (
     <Stack gap="md">
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       <InvoiceModal
         open={showNewInvoice}
         onClose={() => setShowNewInvoice(false)}
@@ -126,19 +136,14 @@ export default function InvoicesPage() {
         onClose={() => setPaying(null)}
         onSaved={async () => {
           setPaying(null);
+          notifySuccess("Pago registrado correctamente.");
           await reload();
         }}
       />
 
       {error ? (
-        <Alert color="red" className="sc-error" title="Error" withCloseButton onClose={() => setError(null)}>
+        <Alert color="red" title="Error" withCloseButton onClose={() => setError(null)}>
           {error}
-        </Alert>
-      ) : null}
-
-      {emailSuccess ? (
-        <Alert color="green" title="Email enviado" withCloseButton onClose={() => setEmailSuccess(null)}>
-          {emailSuccess}
         </Alert>
       ) : null}
 
@@ -148,7 +153,7 @@ export default function InvoicesPage() {
             <Title order={5}>Facturas</Title>
             <Group gap="xs">
               <Button
-                variant="primary"
+                variant="primaryLight"
                 onClick={() => {
                   setShowNewInvoice(true);
                   setError(null);
@@ -156,12 +161,20 @@ export default function InvoicesPage() {
               >
                 Nueva factura
               </Button>
-              <Button variant="default" onClick={reload}>
-                Recargar
-              </Button>
+              <Tooltip label="Recargar">
+                <ActionIcon size="lg" variant="light" color="violet" onClick={reload} aria-label="Recargar">
+                  <IconRefresh size={20} />
+                </ActionIcon>
+              </Tooltip>
             </Group>
           </Group>
         </Card.Section>
+
+        <Grid mt="md">
+          <Grid.Col span={{ base: 12, md: 4 }}>
+            <ClientSelect label="Filtrar por cliente" clearable value={filterClientId} onChange={setFilterClientId} />
+          </Grid.Col>
+        </Grid>
 
         <Table.ScrollContainer minWidth={800} mt="md">
           <Table striped highlightOnHover>
@@ -195,9 +208,9 @@ export default function InvoicesPage() {
                   <Table.Tr key={x.id}>
                     <Table.Td>#{x.id}</Table.Td>
                     <Table.Td>
-                      <Badge variant="light" size="sm">
+                      <MutedBadge tone="gray" size="sm">
                         {x.invoice_type}
-                      </Badge>
+                      </MutedBadge>
                     </Table.Td>
                     <Table.Td>{x.cbte_number ? `${String(x.point_of_sale ?? 0).padStart(5, "0")}-${String(x.cbte_number).padStart(8, "0")}` : "-"}</Table.Td>
                     <Table.Td>
@@ -218,44 +231,49 @@ export default function InvoicesPage() {
                         </span>
                       )}
                     </Table.Td>
-                    <Table.Td fw={600}>${x.total}</Table.Td>
-                    <Table.Td>${x.paid_total ?? "0"}</Table.Td>
-                    <Table.Td>{x.due_date ?? "-"}</Table.Td>
+                    <Table.Td fw={600}>{fmtMoney(x.total)}</Table.Td>
+                    <Table.Td>{fmtMoney(x.paid_total ?? 0)}</Table.Td>
+                    <Table.Td>{fmtDate(x.due_date) || "-"}</Table.Td>
                     <Table.Td>
-                      <Badge size="sm" color={statusColor(x.status)} variant="light">
-                        {x.status}
-                      </Badge>
+                      <InvoiceStatusBadge status={x.payment_status ?? x.status} size="lg" />
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="nowrap">
+                        {x.status === "DRAFT" ? (
+                          <Tooltip label="Emitir">
+                            <ActionIcon variant="light" color="orange" onClick={() => issue(x.id)} aria-label="Emitir">
+                              <IconFileCheck size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        ) : null}
                         <Tooltip label="Ver PDF">
-                          <ActionIcon variant="light" color="blue" onClick={() => openPdf(x.id)}>
-                            📄
+                          <ActionIcon variant="light" color="violet" onClick={() => openPdf(x.id)} aria-label="Ver PDF">
+                            <IconFileTypePdf size={16} />
                           </ActionIcon>
                         </Tooltip>
-                        <Tooltip label="Enviar vía Mail">
+                        <Tooltip label="Enviar por email">
                           <ActionIcon
                             variant="light"
                             color="teal"
                             loading={sendingEmail === x.id}
                             onClick={() => sendEmail(x.id)}
+                            aria-label="Enviar por email"
                           >
-                            ✉️
+                            <IconMail size={16} />
                           </ActionIcon>
                         </Tooltip>
-                        {x.status === "DRAFT" ? (
-                          <Button variant="primary" onClick={() => issue(x.id)}>
-                            Emitir
-                          </Button>
-                        ) : null}
                         {(x.status === "ISSUED" || x.status === "DRAFT") ? (
-                          <Button variant="primary" onClick={() => setPaying(x)}>
-                            Pagar
-                          </Button>
+                          <Tooltip label="Registrar pago">
+                            <ActionIcon variant="light" color="green" onClick={() => setPaying(x)} aria-label="Registrar pago">
+                              <IconCash size={16} />
+                            </ActionIcon>
+                          </Tooltip>
                         ) : null}
-                        <Button variant="danger" onClick={() => removeInvoice(x.id)}>
-                          Eliminar
-                        </Button>
+                        <Tooltip label="Eliminar">
+                          <ActionIcon variant="light" color="red" onClick={() => removeInvoice(x.id)} aria-label="Eliminar">
+                            <IconTrash size={16} />
+                          </ActionIcon>
+                        </Tooltip>
                       </Group>
                     </Table.Td>
                   </Table.Tr>

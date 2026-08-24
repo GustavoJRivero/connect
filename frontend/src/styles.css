@@ -4,6 +4,111 @@ body,
   height: 100%;
 }
 
+.sc-wordmark-slot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.sc-wordmark-slot img {
+  height: 100%;
+  width: auto;
+  object-fit: contain;
+}
+
+.sc-wordmark {
+  display: none;
+}
+
+[data-mantine-color-scheme="light"] .sc-wordmark--on-light,
+[data-mantine-color-scheme="dark"] .sc-wordmark--on-dark {
+  display: block;
+}
+
+.sc-login {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+  background:
+    radial-gradient(900px 420px at 20% -10%, rgba(122, 79, 176, 0.28), transparent 55%),
+    radial-gradient(700px 360px at 100% 10%, rgba(79, 138, 104, 0.12), transparent 50%),
+    var(--mantine-color-body);
+}
+
+.sc-login-kicker {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: light-dark(var(--mantine-color-violet-7), var(--mantine-color-violet-3));
+}
+
+.sc-login-lead {
+  max-width: 280px;
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 450;
+  line-height: 1.45;
+  color: var(--mantine-color-dimmed);
+}
+
+.sc-login-card {
+  background: light-dark(#fff, #323234);
+  border-color: light-dark(rgba(122, 79, 176, 0.16), rgba(255, 255, 255, 0.12));
+}
+
+.sc-login-field .mantine-Input-input {
+  background: light-dark(#efeaf6, #1c1c1e) !important;
+  border: 1px solid light-dark(rgba(86, 55, 130, 0.14), rgba(255, 255, 255, 0.08));
+}
+
+.sc-login-field .mantine-Input-input:focus {
+  border-color: var(--mantine-color-violet-5);
+}
+
+.sc-login-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 48px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #8b61c1 0%, #563782 100%);
+  color: #fff;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.sc-login-go:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.sc-login-go:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.sc-login-alt {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 13px;
+  color: var(--mantine-color-dimmed);
+  background: none;
+  border: none;
+}
+
+.sc-login-alt:hover:not(:disabled) {
+  color: var(--mantine-color-violet-4);
+}
+
 body {
   font-size: 0.9rem;
   margin: 0;
@@ -26,7 +131,7 @@ body {
 .sc-progress-top-bar {
   height: 100%;
   width: 35%;
-  background: var(--mantine-color-blue-6);
+  background: var(--mantine-color-violet-6);
   animation: sc-progress-indeterminate 1s ease-in-out infinite;
 }
 

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Modal, Select, Alert, Group } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
+import { formatApiError } from "../format";
 
 type ComplaintKind = "BILLING" | "TECH";
 
@@ -13,6 +14,7 @@ export function ComplaintModal(props: {
   onSaved: (complaint: unknown) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [connectionId, setConnectionId] = useState("");
   const [kind, setKind] = useState<ComplaintKind>("TECH");
   const [detail, setDetail] = useState("");
@@ -41,6 +43,8 @@ export function ComplaintModal(props: {
       setError("Ingresá el detalle.");
       return;
     }
+    if (saving) return;
+    setSaving(true);
     try {
       const created = await api.createComplaint({
         client_id: clientId,
@@ -51,8 +55,9 @@ export function ComplaintModal(props: {
       });
       props.onSaved(created);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -76,10 +81,10 @@ export function ComplaintModal(props: {
         data={[{ value: "TECH", label: "Técnico" }, { value: "BILLING", label: "Facturación" }]}
         mt="sm"
       />
-      <Field label="Detalle" value={detail} onChange={setDetail} placeholder="Descripción del reclamo" />
+      <Field label="Detalle" required value={detail} onChange={setDetail} placeholder="Descripción del reclamo" />
       <Group justify="flex-end" mt="md">
-        <Button variant="default" onClick={props.onClose}>Cancelar</Button>
-        <Button variant="primary" onClick={save}>Guardar</Button>
+        <Button variant="default" disabled={saving} onClick={props.onClose}>Cancelar</Button>
+        <Button variant="primary" loading={saving} onClick={save}>Guardar</Button>
       </Group>
     </Modal>
   );

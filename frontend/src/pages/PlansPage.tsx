@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
-import { Button } from "../ui";
+import { Button, MutedBadge } from "../ui";
+import { formatApiError, fmtMoney } from "../format";
+import { IconPencil, IconRefresh, IconTrash } from "@tabler/icons-react";
 import {
   Stack,
   Alert,
   Table,
-  Badge,
   Group,
   Modal,
   TextInput,
@@ -15,7 +16,6 @@ import {
   ActionIcon,
   Tooltip,
   Card,
-  Title,
   Loader,
   Center,
 } from "@mantine/core";
@@ -79,8 +79,7 @@ export default function PlansPage() {
       const res = await api.listPlans();
       setPlans(res ?? []);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setLoading(false);
     }
@@ -123,8 +122,7 @@ export default function PlansPage() {
       setModalOpen(false);
       await loadPlans();
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setSaving(false);
     }
@@ -139,8 +137,7 @@ export default function PlansPage() {
       setDeleteTarget(null);
       await loadPlans();
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setDeleting(false);
     }
@@ -154,107 +151,83 @@ export default function PlansPage() {
         </Alert>
       ) : null}
 
-      <Card withBorder padding="lg" radius="md">
-        <Card.Section withBorder inheritPadding py="sm">
-          <Group justify="space-between">
-            <Title order={5}>Planes de servicio</Title>
-            <Group gap="xs">
-              <Button variant="default" onClick={loadPlans}>
-                Recargar
-              </Button>
-              <Button variant="primary" onClick={openCreate}>
-                Nuevo plan
-              </Button>
-            </Group>
-          </Group>
-        </Card.Section>
+      <Card withBorder padding="md" radius="md">
+        <Group justify="flex-end" mb="sm">
+          <Button variant="primaryLight" onClick={openCreate}>Nuevo plan</Button>
+          <Tooltip label="Recargar">
+            <ActionIcon size="lg" variant="light" color="violet" onClick={loadPlans} aria-label="Recargar">
+              <IconRefresh size={20} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
 
-        <Card.Section inheritPadding py="md">
-          {loading ? (
-            <Center py="xl">
-              <Loader size="md" />
-            </Center>
-          ) : plans.length === 0 ? (
-            <Text c="dimmed" ta="center" py="xl">
-              No hay planes cargados.
-            </Text>
-          ) : (
-            <Table striped highlightOnHover withTableBorder withColumnBorders>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Nombre</Table.Th>
-                  <Table.Th>Profile MK</Table.Th>
-                  <Table.Th ta="center">Bajada</Table.Th>
-                  <Table.Th ta="center">Subida</Table.Th>
-                  <Table.Th>Rate-limit MK</Table.Th>
-                  <Table.Th ta="right">Precio final</Table.Th>
-                  <Table.Th ta="right">IVA %</Table.Th>
-                  <Table.Th ta="right">Neto</Table.Th>
-                  <Table.Th ta="right">IVA $</Table.Th>
-                  <Table.Th ta="center">Estado</Table.Th>
-                  <Table.Th ta="center">Conexiones</Table.Th>
-                  <Table.Th ta="center">Acciones</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {plans.map((plan) => (
-                  <Table.Tr key={plan.id}>
-                    <Table.Td fw={500}>{plan.name}</Table.Td>
-                    <Table.Td>
-                      <Badge variant="light" color="gray" size="sm">
-                        {plan.profile}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td ta="center">{plan.download_mbps} Mbps</Table.Td>
-                    <Table.Td ta="center">{plan.upload_mbps} Mbps</Table.Td>
-                    <Table.Td>
-                      <Tooltip label={plan.rate_limit ? "rate-limit personalizado" : "auto: upload/download"}>
-                        <Text size="xs" ff="monospace" c={plan.rate_limit ? undefined : "dimmed"}>
-                          {plan.computed_rate_limit}
-                        </Text>
+        {loading ? (
+          <Center py="xl">
+            <Loader size="md" />
+          </Center>
+        ) : plans.length === 0 ? (
+          <Text c="dimmed" ta="center" py="xl">No hay planes cargados.</Text>
+        ) : (
+          <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="sm">
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Plan</Table.Th>
+                <Table.Th>Velocidad</Table.Th>
+                <Table.Th ta="right">Precio</Table.Th>
+                <Table.Th>Estado</Table.Th>
+                <Table.Th ta="center">Conex.</Table.Th>
+                <Table.Th>Acciones</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {plans.map((plan) => (
+                <Table.Tr key={plan.id}>
+                  <Table.Td>
+                    <Text fw={600} size="sm">{plan.name}</Text>
+                    <Text size="xs" c="dimmed">{plan.profile}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm">{plan.download_mbps} / {plan.upload_mbps} Mbps</Text>
+                    <Text size="xs" c="dimmed">bajada / subida</Text>
+                  </Table.Td>
+                  <Table.Td ta="right">
+                    <Text fw={600} size="sm">{fmtMoney(plan.price)}</Text>
+                    <Text size="xs" c="dimmed">IVA {plan.iva_percent}% · neto {fmtMoney(plan.price_net)}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <MutedBadge tone={plan.is_active ? "green" : "red"} size="sm">
+                      {plan.is_active ? "Activo" : "Inactivo"}
+                    </MutedBadge>
+                  </Table.Td>
+                  <Table.Td ta="center">
+                    <Text size="sm">{plan.connections_count}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Group gap={8} wrap="nowrap">
+                      <Tooltip label="Editar">
+                        <ActionIcon variant="light" color="violet" size="lg" onClick={() => openEdit(plan)} aria-label="Editar plan">
+                          <IconPencil size={18} />
+                        </ActionIcon>
                       </Tooltip>
-                    </Table.Td>
-                    <Table.Td ta="right" fw={600}>
-                      ${Number(plan.price).toLocaleString("es-AR", { minimumFractionDigits: 2 })}
-                    </Table.Td>
-                    <Table.Td ta="right">{plan.iva_percent}%</Table.Td>
-                    <Table.Td ta="right">${Number(plan.price_net).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</Table.Td>
-                    <Table.Td ta="right">${Number(plan.iva_amount).toLocaleString("es-AR", { minimumFractionDigits: 2 })}</Table.Td>
-                    <Table.Td ta="center">
-                      <Badge color={plan.is_active ? "green" : "red"} variant="filled" size="sm">
-                        {plan.is_active ? "Activo" : "Inactivo"}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td ta="center">
-                      <Badge variant="light" size="sm">
-                        {plan.connections_count}
-                      </Badge>
-                    </Table.Td>
-                    <Table.Td ta="center">
-                      <Group gap={4} justify="center">
-                        <Tooltip label="Editar">
-                          <ActionIcon variant="light" color="blue" onClick={() => openEdit(plan)}>
-                            ✏️
-                          </ActionIcon>
-                        </Tooltip>
-                        <Tooltip label={plan.connections_count > 0 ? "Tiene conexiones asignadas" : "Eliminar"}>
-                          <ActionIcon
-                            variant="light"
-                            color="red"
-                            disabled={plan.connections_count > 0}
-                            onClick={() => setDeleteTarget(plan)}
-                          >
-                            🗑️
-                          </ActionIcon>
-                        </Tooltip>
-                      </Group>
-                    </Table.Td>
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          )}
-        </Card.Section>
+                      <Tooltip label={plan.connections_count > 0 ? "Tiene conexiones asignadas" : "Eliminar"}>
+                        <ActionIcon
+                          variant="light"
+                          color="red"
+                          size="lg"
+                          disabled={plan.connections_count > 0}
+                          onClick={() => setDeleteTarget(plan)}
+                          aria-label="Eliminar plan"
+                        >
+                          <IconTrash size={18} />
+                        </ActionIcon>
+                      </Tooltip>
+                    </Group>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
       </Card>
 
       {/* Modal crear/editar */}
@@ -295,8 +268,8 @@ export default function PlansPage() {
           </Group>
           <TextInput
             label="Rate-limit Mikrotik (opcional)"
-            description='Se manda tal cual a /ppp/profile. Si lo dejás vacío se usa "{upload}M/{download}M". Formato: "rxR/txR rxBurst/txBurst rxThr/txThr rxTime/txTime prio rxMin/txMin".'
-            placeholder="ej: 500M/500M 550M/550M 255M/255M 40/40 0 20M/20M"
+            description="Si queda vacío se usa subida/bajada. Solo hace falta si el profile usa burst."
+            placeholder="vacío = automático"
             value={form.rate_limit}
             onChange={(e) => setForm({ ...form, rate_limit: e.currentTarget.value })}
           />

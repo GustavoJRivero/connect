@@ -89,7 +89,9 @@ def _update_connection(conn: Connection, today: date, cut_profile: str,
     mt_error = None
     sid = conn.server_id
 
-    if sid:
+    from ..mikrotik.guard import mikrotik_writes_disabled
+
+    if sid and not mikrotik_writes_disabled():
         if sid not in mt_cache:
             mt, server = _get_mt_for_connection(conn)
             if mt:
@@ -134,6 +136,12 @@ def update_all_services(cut_profile: str | None = None) -> dict:
     """
     Recorre TODAS las conexiones y aplica corte/restauración según deuda.
     """
+    from ..mikrotik.guard import mikrotik_writes_disabled
+
+    if mikrotik_writes_disabled():
+        logger.info("UpdateServices global: omitido (MIKROTIK_WRITES_DISABLED)")
+        return {"cut": [], "restored": [], "skipped": "mikrotik_writes_disabled"}
+
     today = today_local()
     if not cut_profile:
         cut_profile = _get_setting("mikrotik.cut_profile", "suspended")
@@ -175,6 +183,12 @@ def update_client_services(client_id: int, cut_profile: str | None = None) -> di
     """
     Actualiza estado de servicios para un cliente específico.
     """
+    from ..mikrotik.guard import mikrotik_writes_disabled
+
+    if mikrotik_writes_disabled():
+        logger.info("UpdateServices cliente #%d: omitido (MIKROTIK_WRITES_DISABLED)", client_id)
+        return {"cut": [], "restored": [], "skipped": "mikrotik_writes_disabled"}
+
     today = today_local()
     if not cut_profile:
         cut_profile = _get_setting("mikrotik.cut_profile", "suspended")

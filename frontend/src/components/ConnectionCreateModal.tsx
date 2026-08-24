@@ -3,6 +3,8 @@ import { Modal, Select, Grid, Alert, Group, NumberInput, Switch, Text } from "@m
 import { api } from "../api";
 import { Button, Field } from "../ui";
 import { IpPoolPicker } from "./IpPoolPicker";
+import { CoverageCheck, CoveragePreview } from "./CoverageCheck";
+import { formatApiError } from "../format";
 
 export function ConnectionCreateModal(props: {
   open: boolean;
@@ -14,10 +16,13 @@ export function ConnectionCreateModal(props: {
   onSaved: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [serverId, setServerId] = useState("");
   const [planProfile, setPlanProfile] = useState("50M");
   const [serviceAddress, setServiceAddress] = useState("");
   const [location, setLocation] = useState("");
+  const [locationUrl, setLocationUrl] = useState("");
+  const [coverage, setCoverage] = useState<CoveragePreview | null>(null);
   const [ip, setIp] = useState("");
   const [ipMode, setIpMode] = useState<"auto" | "manual">("auto");
   const [pppoeUsername, setPppoeUsername] = useState("");
@@ -31,6 +36,8 @@ export function ConnectionCreateModal(props: {
     setError(null);
     setServiceAddress("");
     setLocation("");
+    setLocationUrl("");
+    setCoverage(null);
     setIp("");
     setIpMode("auto");
     setPppoeUsername("");
@@ -43,12 +50,14 @@ export function ConnectionCreateModal(props: {
   }, [props.open, props.clientId, props.planOptions, props.defaultServerId]);
 
   async function save() {
+    if (saving) return;
     setError(null);
     if (!props.clientId) return;
     if (!planProfile.trim()) {
       setError("Seleccioná un plan.");
       return;
     }
+    setSaving(true);
     try {
       await api.createConnection({
         client_id: Number(props.clientId),
@@ -56,6 +65,7 @@ export function ConnectionCreateModal(props: {
         plan_profile: planProfile,
         service_address: serviceAddress || null,
         location: location || null,
+        location_url: locationUrl || null,
         ip: ipMode === "manual" ? (ip || null) : null,
         pppoe_username: pppoeUsername.trim() || null,
         pppoe_password: pppoePassword || null,
@@ -66,22 +76,9 @@ export function ConnectionCreateModal(props: {
       });
       props.onSaved();
     } catch (e: unknown) {
-      const body = (e as { body?: { error?: string; value?: string; cidr?: string } })?.body ?? e;
-      const err = e as { status?: number; body?: { error?: string; value?: string; cidr?: string } };
-      const code = (body as { error?: string })?.error;
-      if (code === "pool_exhausted") {
-        setError(`No hay IPs libres en el pool ${(body as { cidr?: string })?.cidr || ""}.`);
-        return;
-      }
-      if (code === "ip_already_taken") {
-        setError(`La IP ${(body as { value?: string })?.value} ya está asignada en este server.`);
-        return;
-      }
-      if (code === "ip_invalid") {
-        setError(`IP inválida${(body as { value?: string })?.value ? `: ${(body as { value?: string })?.value}` : ""}.`);
-        return;
-      }
-      setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
+      setError(formatApiError(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -89,7 +86,7 @@ export function ConnectionCreateModal(props: {
   const serverData = props.servers.map((s) => ({ value: String(s.id), label: `#${s.id} — ${s.name} (${s.host}:${s.port})` }));
 
   return (
-    <Modal opened={props.open} onClose={props.onClose} title="Nueva conexión" size="lg">
+    <Modal opened={props.open} onClose={props.onClose} title="Nueva conexión" size="xl">
       {error ? (
         <Alert color="red" className="sc-error" title="Error" mb="md">
           {error}
@@ -100,11 +97,18 @@ export function ConnectionCreateModal(props: {
           <Select label="Servidor PPPoE (Mikrotik)" value={serverId} onChange={(v) => v != null && setServerId(v)} data={[{ value: "", label: "(Seleccionar servidor)" }, ...serverData]} />
         </Grid.Col>
         <Grid.Col span={{ base: 12, md: 6 }}>
-          <Select label="Plan" value={planProfile} onChange={(v) => v && setPlanProfile(v)} data={planData} />
+          <Select label="Plan" withAsterisk value={planProfile} onChange={(v) => v && setPlanProfile(v)} data={planData} />
         </Grid.Col>
       </Grid>
-      <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} />
-      <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} />
+      <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} maxLength={255} />
+      <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} maxLength={255} />
+      <CoverageCheck
+        locationUrl={locationUrl}
+        onLocationUrlChange={setLocationUrl}
+        coverage={coverage}
+        onCoverageChange={setCoverage}
+        onError={setError}
+      />
       <IpPoolPicker
         serverId={serverId ? Number(serverId) : null}
         ip={ip}
@@ -116,7 +120,7 @@ export function ConnectionCreateModal(props: {
         <Grid.Col span={6}><Field label="Usuario PPPoE (opcional)" value={pppoeUsername} onChange={setPppoeUsername} placeholder="(vacío = auto)" /></Grid.Col>
         <Grid.Col span={6}><Field label="Contraseña PPPoE (opcional)" value={pppoePassword} onChange={setPppoePassword} type="password" placeholder="(vacío = auto)" /></Grid.Col>
       </Grid>
-      <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" />
+      <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" maxLength={64} />
       <Text size="sm" fw={500} mt="md" mb={4}>Facturación</Text>
       <Grid>
         <Grid.Col span={6}>
@@ -140,8 +144,8 @@ export function ConnectionCreateModal(props: {
         </Grid.Col>
       </Grid>
       <Group justify="flex-end" mt="md">
-        <Button variant="default" onClick={props.onClose}>Cancelar</Button>
-        <Button variant="primary" onClick={save}>Crear</Button>
+        <Button variant="default" disabled={saving} onClick={props.onClose}>Cancelar</Button>
+        <Button variant="primary" loading={saving} onClick={save}>Crear</Button>
       </Group>
     </Modal>
   );

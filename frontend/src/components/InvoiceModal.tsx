@@ -5,15 +5,14 @@ import {
   Grid,
   Alert,
   Group,
-  Text,
   Textarea,
   NumberInput,
   Stack,
   Divider,
-  Badge,
 } from "@mantine/core";
 import { api } from "../api";
-import { Button, Field } from "../ui";
+import { Button, Field, MutedBadge } from "../ui";
+import { formatApiError } from "../format";
 
 type InvoiceType = "A" | "B" | "X";
 
@@ -191,8 +190,7 @@ export function InvoiceModal(props: {
       const inv = await api.createInvoice(payload);
       props.onSaved(inv);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setSaving(false);
     }
@@ -208,13 +206,7 @@ export function InvoiceModal(props: {
         ) : null}
 
         {/* Cliente */}
-        {propsClientId ? (
-          <Alert variant="light" color="blue" title="Cliente seleccionado">
-            <Text size="sm">
-              ID #{propsClientId} — Tipo: {propsClientKind ?? "PERSON"}
-            </Text>
-          </Alert>
-        ) : (
+        {propsClientId ? null : (
           <Select
             label="Cliente"
             placeholder="Buscá por nombre..."
@@ -230,13 +222,13 @@ export function InvoiceModal(props: {
 
         {selectedClient ? (
           <Group gap="xs">
-            <Badge variant="light" size="sm">
+            <MutedBadge tone={selectedClient.kind === "COMPANY" ? "lilac" : "gray"} size="sm">
               {selectedClient.kind === "COMPANY" ? "Empresa" : "Persona"}
-            </Badge>
+            </MutedBadge>
             {selectedClient.email ? (
-              <Badge variant="light" color="gray" size="sm">
+              <MutedBadge tone="gray" size="sm">
                 {selectedClient.email}
-              </Badge>
+              </MutedBadge>
             ) : null}
           </Group>
         ) : null}

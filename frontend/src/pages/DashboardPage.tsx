@@ -14,19 +14,19 @@ import {
   Skeleton,
   Anchor,
   Box,
-  Divider,
-  Badge,
-  Paper,
 } from "@mantine/core";
+import { IconUsers, IconWifi, IconFileInvoice, IconPlugConnectedX, IconAlertTriangle, IconCircleCheck } from "@tabler/icons-react";
 import { api } from "../api";
 import { fmtDateTime as _fmtDateTime } from "../datetime";
+import { formatApiError } from "../format";
+import { MutedBadge, badgeToneFromColor } from "../ui";
 
 type DashboardData = {
   clients?: { total?: number };
   connections?: { active?: number; cut?: number };
   invoices?: { overdue?: number };
   payments?: { today_total?: number; today_count?: number };
-  jobs?: { pending?: number };
+  complaints?: { open?: number; created_today?: number; solved_today?: number };
   recent_payments?: {
     id: number;
     client_id: number;
@@ -62,8 +62,7 @@ export default function DashboardPage() {
       })
       .catch((e: unknown) => {
         if (!alive) return;
-        const err = e as { status?: number; body?: unknown };
-        setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+        setError(formatApiError(e));
       });
     return () => {
       alive = false;
@@ -92,7 +91,8 @@ export default function DashboardPage() {
     vencidas: d?.invoices?.overdue ?? "—",
     cobranzaHoy: fmtMoney(d?.payments?.today_total ?? 0),
     pagosHoy: d?.payments?.today_count ?? "—",
-    pendientes: d?.jobs?.pending ?? "—",
+    reclamosHoy: d?.complaints?.created_today ?? "—",
+    reclamosResueltos: d?.complaints?.solved_today ?? "—",
   };
 
   const fmtDateTime = (iso: unknown) => {
@@ -106,15 +106,15 @@ export default function DashboardPage() {
     {
       label: "Clientes",
       value: stats.clientes,
-      icon: "👥",
-      color: "blue" as const,
+      icon: <IconUsers size={24} stroke={1.8} />,
+      color: "violet" as const,
       to: "/clients",
       linkLabel: "Ver clientes",
     },
     {
       label: "Conexiones activas",
       value: stats.activos,
-      icon: "📶",
+      icon: <IconWifi size={24} stroke={1.8} />,
       color: "green" as const,
       to: "/clients",
       linkLabel: "Ver conexiones",
@@ -122,7 +122,7 @@ export default function DashboardPage() {
     {
       label: "Facturas vencidas",
       value: stats.vencidas,
-      icon: "📄",
+      icon: <IconFileInvoice size={24} stroke={1.8} />,
       color: "yellow" as const,
       to: "/invoices",
       linkLabel: "Ver facturas",
@@ -131,20 +131,12 @@ export default function DashboardPage() {
     {
       label: "Cortados",
       value: stats.cortados,
-      icon: "⛔",
+      icon: <IconPlugConnectedX size={24} stroke={1.8} />,
       color: "red" as const,
       to: "/clients",
       linkLabel: "Ver cortes",
       badge: Number(d?.connections?.cut ?? 0) > 0,
     },
-  ];
-
-  const quickLinks = [
-    { to: "/billing", label: "Cobranza", description: "Generar facturas y gestionar cobros", color: "blue" },
-    { to: "/payments", label: "Pagos", description: "Registrar y consultar pagos", color: "green" },
-    { to: "/invoices", label: "Facturas", description: "Listado y emisión de facturas", color: "cyan" },
-    { to: "/network", label: "Red", description: "Estado de servidores y jobs", color: "orange" },
-    { to: "/settings", label: "Configuración", description: "Planes, perfiles y parámetros", color: "gray" },
   ];
 
   return (
@@ -190,9 +182,9 @@ export default function DashboardPage() {
                       <Group gap="xs" align="baseline" mt={4}>
                         <Title order={3}>{card.value}</Title>
                         {card.badge ? (
-                          <Badge size="sm" color={card.color} variant="light">
+                          <MutedBadge size="sm" tone={badgeToneFromColor(card.color)}>
                             Atención
-                          </Badge>
+                          </MutedBadge>
                         ) : null}
                       </Group>
                     </Box>
@@ -211,14 +203,14 @@ export default function DashboardPage() {
       </SimpleGrid>
 
       <Grid>
-        <Grid.Col span={{ base: 12, lg: 8 }}>
+        <Grid.Col span={12}>
           <Card withBorder padding="lg" radius="md">
             <Card.Section withBorder inheritPadding py="sm">
               <Title order={5}>Resumen del día</Title>
             </Card.Section>
             {loading ? (
-              <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="md" mt="md">
-                {[1, 2, 3].map((i) => (
+              <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="md" mt="md">
+                {[1, 2, 3, 4].map((i) => (
                   <Group key={i} wrap="nowrap">
                     <Skeleton height={40} width={40} circle />
                     <Box>
@@ -229,9 +221,9 @@ export default function DashboardPage() {
                 ))}
               </SimpleGrid>
             ) : (
-              <SimpleGrid cols={{ base: 1, xs: 3 }} spacing="lg" mt="md">
+              <SimpleGrid cols={{ base: 1, xs: 2, md: 4 }} spacing="lg" mt="md">
                 <Group wrap="nowrap">
-                  <ThemeIcon size="lg" variant="light" color="blue">
+                  <ThemeIcon size="lg" variant="light" color="violet">
                     $
                   </ThemeIcon>
                   <Box>
@@ -257,15 +249,28 @@ export default function DashboardPage() {
                   </Box>
                 </Group>
                 <Group wrap="nowrap">
-                  <ThemeIcon size="lg" variant="light" color="yellow">
-                    ⏱
+                  <ThemeIcon size="lg" variant="light" color="orange">
+                    <IconAlertTriangle size={18} />
                   </ThemeIcon>
                   <Box>
                     <Text size="xs" c="dimmed">
-                      Jobs pendientes
+                      Reclamos generados
                     </Text>
                     <Text fw={700} size="lg">
-                      {stats.pendientes}
+                      {stats.reclamosHoy}
+                    </Text>
+                  </Box>
+                </Group>
+                <Group wrap="nowrap">
+                  <ThemeIcon size="lg" variant="light" color="teal">
+                    <IconCircleCheck size={18} />
+                  </ThemeIcon>
+                  <Box>
+                    <Text size="xs" c="dimmed">
+                      Reclamos solucionados
+                    </Text>
+                    <Text fw={700} size="lg">
+                      {stats.reclamosResueltos}
                     </Text>
                   </Box>
                 </Group>
@@ -278,101 +283,64 @@ export default function DashboardPage() {
             ) : null}
           </Card>
 
-          <Card withBorder padding={0} radius="md" mt="md">
+          <Card withBorder padding="lg" radius="md" mt="md">
             <Card.Section withBorder inheritPadding py="sm">
-              <Group justify="space-between">
+              <Group justify="space-between" wrap="nowrap">
                 <Title order={5}>Últimas transacciones (pagos)</Title>
                 <Anchor component={Link} to="/payments" size="sm">
                   Ver todos →
                 </Anchor>
               </Group>
             </Card.Section>
-            <Table.ScrollContainer minWidth={400}>
-              <Table striped highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Cliente</Table.Th>
-                    <Table.Th ta="end">Monto</Table.Th>
-                    <Table.Th>Usuario</Table.Th>
-                    <Table.Th>Fecha/Hora</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {loading ? (
-                    Array.from({ length: 4 }).map((_, i) => (
-                      <Table.Tr key={i}>
-                        <Table.Td><Skeleton height={20} width="80%" /></Table.Td>
-                        <Table.Td><Skeleton height={20} width={60} /></Table.Td>
-                        <Table.Td><Skeleton height={20} width={70} /></Table.Td>
-                        <Table.Td><Skeleton height={20} width={100} /></Table.Td>
-                      </Table.Tr>
-                    ))
-                  ) : recentPayments.length ? (
-                    recentPayments.map((p) => (
-                      <Table.Tr key={p.id}>
-                        <Table.Td>
-                          <Anchor
-                            component={Link}
-                            to={`/clients/${p.client_id}`}
-                            size="sm"
-                            style={{ maxWidth: 320, display: "block", overflow: "hidden", textOverflow: "ellipsis" }}
-                          >
-                            {p.client_name || `#${p.client_id}`}
-                          </Anchor>
-                        </Table.Td>
-                        <Table.Td ta="end" fw={600}>
-                          {fmtMoney(p.amount)}
-                        </Table.Td>
-                        <Table.Td>{p?.created_by?.username || "—"}</Table.Td>
-                        <Table.Td>{fmtDateTime(p.created_at)}</Table.Td>
-                      </Table.Tr>
-                    ))
-                  ) : (
-                    <Table.Tr>
-                      <Table.Td colSpan={4} c="dimmed" py="xl" ta="center">
-                        Sin pagos registrados todavía.
-                      </Table.Td>
+            <Table highlightOnHover verticalSpacing="sm" layout="fixed" mt="md">
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th w="40%">Cliente</Table.Th>
+                  <Table.Th w="20%">Monto</Table.Th>
+                  <Table.Th w="16%">Usuario</Table.Th>
+                  <Table.Th w="24%">Fecha/Hora</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <Table.Tr key={i}>
+                      <Table.Td><Skeleton height={20} width="80%" /></Table.Td>
+                      <Table.Td><Skeleton height={20} width={80} /></Table.Td>
+                      <Table.Td><Skeleton height={20} width={70} /></Table.Td>
+                      <Table.Td><Skeleton height={20} width="70%" /></Table.Td>
                     </Table.Tr>
-                  )}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
+                  ))
+                ) : recentPayments.length ? (
+                  recentPayments.map((p) => (
+                    <Table.Tr key={p.id}>
+                      <Table.Td>
+                        <Anchor
+                          component={Link}
+                          to={`/clients/${p.client_id}`}
+                          size="sm"
+                          lineClamp={1}
+                        >
+                          {p.client_name || `#${p.client_id}`}
+                        </Anchor>
+                      </Table.Td>
+                      <Table.Td fw={600}>{fmtMoney(p.amount)}</Table.Td>
+                      <Table.Td>{p?.created_by?.username || "—"}</Table.Td>
+                      <Table.Td>{fmtDateTime(p.created_at)}</Table.Td>
+                    </Table.Tr>
+                  ))
+                ) : (
+                  <Table.Tr>
+                    <Table.Td colSpan={4}>
+                      <Text c="dimmed" py="xl" ta="center">
+                        Sin pagos registrados todavía.
+                      </Text>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+              </Table.Tbody>
+            </Table>
           </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, lg: 4 }}>
-          <Paper withBorder p="lg" radius="md">
-            <Title order={5} mb="md">
-              Accesos rápidos
-            </Title>
-            {loading ? (
-              <Stack gap="xs">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} height={44} radius="sm" />
-                ))}
-              </Stack>
-            ) : (
-              <Stack gap={0}>
-                {quickLinks.map((link, idx) => (
-                  <Box key={link.to}>
-                    {idx > 0 ? <Divider mb="sm" /> : null}
-                    <Anchor
-                      component={Link}
-                      to={link.to}
-                      size="sm"
-                      fw={600}
-                      c={link.color}
-                    >
-                      {link.label}
-                    </Anchor>
-                    <Text size="xs" c="dimmed" mt={2}>
-                      {link.description}
-                    </Text>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </Paper>
         </Grid.Col>
       </Grid>
     </Stack>

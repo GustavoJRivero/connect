@@ -51,6 +51,7 @@ def seed():
             "billing.due_days": "10",
             "billing.scheduler.enabled": "false",
             "billing.scheduler.run_hour": "6",
+            "billing.services.enabled": "false",
             "afip.enabled": "false",
             "afip.env": "HOMOLOGACION",
             "afip.cuit": "",

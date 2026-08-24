@@ -71,6 +71,39 @@ async function request(path: string, init: RequestInit = {}) {
   }
 }
 
+async function requestForm(path: string, init: RequestInit = {}) {
+  loadingStart();
+  const headers = new Headers(init.headers || {});
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
+    } catch (e: any) {
+      const err: ApiError = { status: 0, body: { error: "network_error", message: String(e?.message ?? e) } };
+      throw err;
+    }
+    const text = await res.text();
+    const body = text ? safeJson(text) : null;
+    if (!res.ok) {
+      if (res.status === 401) {
+        setToken(null);
+        try {
+          window.dispatchEvent(new CustomEvent("sc:unauthorized", { detail: { path } }));
+        } catch {
+          /* ignore */
+        }
+      }
+      const err: ApiError = { status: res.status, body };
+      throw err;
+    }
+    return body;
+  } finally {
+    loadingEnd();
+  }
+}
+
 function safeJson(text: string) {
   try {
     return JSON.parse(text);
@@ -134,6 +167,12 @@ export const api = {
   },
   updateClient(id: number, payload: any) {
     return request(`/api/clients/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  getClientPortal(id: number) {
+    return request(`/api/clients/${id}/portal`);
+  },
+  upsertClientPortal(id: number, payload: { enabled?: boolean; password?: string }) {
+    return request(`/api/clients/${id}/portal`, { method: "PUT", body: JSON.stringify(payload) });
   },
   deleteClient(id: number) {
     return request(`/api/clients/${id}`, { method: "DELETE" });
@@ -209,6 +248,29 @@ export const api = {
   },
   putSettings(values: Record<string, string>) {
     return request("/api/settings/kv", { method: "PUT", body: JSON.stringify({ values }) });
+  },
+  uploadArcaCerts(files: { cert?: File | null; key?: File | null }) {
+    const fd = new FormData();
+    if (files.cert) fd.append("cert", files.cert);
+    if (files.key) fd.append("key", files.key);
+    return requestForm("/api/settings/arca-certs", { method: "POST", body: fd });
+  },
+  getMigrationStatus() {
+    return request("/api/settings/migration/status");
+  },
+  getSafetyStatus() {
+    return request("/api/settings/safety");
+  },
+  uploadMigrationBackup(file: File) {
+    const fd = new FormData();
+    fd.append("file", file);
+    return requestForm("/api/settings/migration/upload", { method: "POST", body: fd });
+  },
+  previewMigration() {
+    return request("/api/settings/migration/preview", { method: "POST", body: "{}" });
+  },
+  applyMigration() {
+    return request("/api/settings/migration/apply", { method: "POST", body: "{}" });
   },
 
   // billing
@@ -350,6 +412,45 @@ export const api = {
   // billing status
   getBillingStatus() {
     return request("/api/billing/status")
+  },
+
+  // installations (órdenes de instalación / reservas NAP)
+  listInstallations(opts?: { status?: string; client_id?: number; limit?: number; offset?: number }) {
+    const params = new URLSearchParams();
+    if (opts?.status) params.set("status", opts.status);
+    if (opts?.client_id) params.set("client_id", String(opts.client_id));
+    if (typeof opts?.limit === "number") params.set("limit", String(opts.limit));
+    if (typeof opts?.offset === "number") params.set("offset", String(opts.offset));
+    const qs = params.toString();
+    return request(`/api/installations${qs ? `?${qs}` : ""}`);
+  },
+  getInstallationsSummary() {
+    return request("/api/installations/summary");
+  },
+  getInstallation(id: number) {
+    return request(`/api/installations/${id}`);
+  },
+  createInstallation(payload: { client_id: number; connection_id?: number; location_url?: string; lat?: number; lng?: number; notes?: string }) {
+    return request("/api/installations", { method: "POST", body: JSON.stringify(payload) });
+  },
+  previewCoverage(payload: { location_url?: string; lat?: number; lng?: number }) {
+    return request("/api/installations/preview", { method: "POST", body: JSON.stringify(payload) });
+  },
+  retryInstallationCheck(id: number) {
+    return request(`/api/installations/${id}/retry-check`, { method: "POST", body: JSON.stringify({}) });
+  },
+  confirmInstallation(id: number) {
+    return request(`/api/installations/${id}/confirm`, { method: "POST", body: JSON.stringify({}) });
+  },
+  cancelInstallation(id: number) {
+    return request(`/api/installations/${id}/cancel`, { method: "POST", body: JSON.stringify({}) });
+  },
+  updateInstallation(id: number, payload: { technician?: string; notes?: string }) {
+    return request(`/api/installations/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  getInstallationPdfUrl(id: number) {
+    const token = getToken();
+    return `${API_BASE_URL}/api/installations/${id}/pdf${token ? `?jwt=${token}` : ""}`;
   },
 };
 

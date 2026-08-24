@@ -3,6 +3,7 @@ import { Modal, Select, Grid, Alert, Group, Text, NumberInput, Switch } from "@m
 import { api } from "../api";
 import { Button, Field } from "../ui";
 import { IpPoolPicker } from "./IpPoolPicker";
+import { formatApiError } from "../format";
 
 export function ConnectionEditModal(props: {
   open: boolean;
@@ -14,6 +15,7 @@ export function ConnectionEditModal(props: {
 }) {
   const conn = props.connection;
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [serverId, setServerId] = useState("");
   const [planProfile, setPlanProfile] = useState("50M");
   const [serviceAddress, setServiceAddress] = useState("");
@@ -44,12 +46,14 @@ export function ConnectionEditModal(props: {
   }, [props.open, conn?.id, conn?.server_id, conn?.plan_profile, conn?.service_address, conn?.location, conn?.ip, conn?.pppoe_username, conn?.pppoe_name, conn?.pppoe_password, conn?.pon_sn, conn?.billing_day, conn?.prorate_first_month]);
 
   async function save() {
+    if (saving) return;
     setError(null);
     if (!conn?.id) return;
     if (!planProfile.trim()) {
       setError("Seleccioná un plan.");
       return;
     }
+    setSaving(true);
     try {
       await api.updateConnection(Number(conn.id), {
         server_id: serverId ? Number(serverId) : null,
@@ -67,22 +71,9 @@ export function ConnectionEditModal(props: {
       });
       props.onSaved();
     } catch (e: unknown) {
-      const body = (e as { body?: { error?: string; value?: string; cidr?: string } })?.body ?? e;
-      const err = e as { status?: number; body?: { error?: string; value?: string; cidr?: string } };
-      const code = (body as { error?: string })?.error;
-      if (code === "pool_exhausted") {
-        setError(`No hay IPs libres en el pool ${(body as { cidr?: string })?.cidr || ""}.`);
-        return;
-      }
-      if (code === "ip_already_taken") {
-        setError(`La IP ${(body as { value?: string })?.value} ya está asignada en este server.`);
-        return;
-      }
-      if (code === "ip_invalid") {
-        setError(`IP inválida${(body as { value?: string })?.value ? `: ${(body as { value?: string })?.value}` : ""}.`);
-        return;
-      }
-      setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
+      setError(formatApiError(e));
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -105,8 +96,8 @@ export function ConnectionEditModal(props: {
           <Select label="Plan" value={planProfile} onChange={(v) => v && setPlanProfile(v)} data={planData} />
         </Grid.Col>
       </Grid>
-      <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} />
-      <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} />
+      <Field label="Domicilio del servicio" value={serviceAddress} onChange={setServiceAddress} maxLength={255} />
+      <Field label="Ubicación (referencia / GPS / barrio)" value={location} onChange={setLocation} maxLength={255} />
       <IpPoolPicker
         serverId={serverId ? Number(serverId) : null}
         ip={ip}
@@ -119,7 +110,7 @@ export function ConnectionEditModal(props: {
         <Grid.Col span={6}><Field label="Usuario PPPoE" value={pppoeUsername} onChange={setPppoeUsername} /></Grid.Col>
         <Grid.Col span={6}><Field label="Contraseña PPPoE" value={pppoePassword} onChange={setPppoePassword} type="password" /></Grid.Col>
       </Grid>
-      <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" />
+      <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" maxLength={64} />
       <Text size="sm" fw={500} mt="md" mb={4}>Facturación</Text>
       <Grid>
         <Grid.Col span={6}>
@@ -143,8 +134,8 @@ export function ConnectionEditModal(props: {
         </Grid.Col>
       </Grid>
       <Group justify="flex-end" mt="md">
-        <Button variant="default" onClick={props.onClose}>Cancelar</Button>
-        <Button variant="primary" onClick={save}>Guardar</Button>
+        <Button variant="default" disabled={saving} onClick={props.onClose}>Cancelar</Button>
+        <Button variant="primary" loading={saving} onClick={save}>Guardar</Button>
       </Group>
     </Modal>
   );
