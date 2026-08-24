@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { Badge, Group, SegmentedControl, Select, Stack, Text } from "@mantine/core";
+import { Group, SegmentedControl, Select, Stack, Text } from "@mantine/core";
 import { api } from "../api";
-import { Field } from "../ui";
+import { Field, MutedBadge } from "../ui";
 
 type Pool = {
   cidr: string;
@@ -128,24 +128,23 @@ export function IpPoolPicker(props: {
       ) : props.mode === "auto" ? (
         <Stack gap={4}>
           <Group gap="xs" wrap="wrap">
-            <Badge
-              variant="light"
-              color={summary.next_available ? "green" : "red"}
+            <MutedBadge
+              tone={summary.next_available ? "green" : "red"}
               size="sm"
             >
               {summary.next_available
                 ? `Se asignará ${summary.next_available}`
                 : "Sin IPs libres"}
-            </Badge>
+            </MutedBadge>
             <Text size="xs" c="dimmed">
               ({summary.assigned_count} usadas / {summary.total} total / {totalAvailable} libres)
             </Text>
           </Group>
           <Group gap={4} wrap="wrap">
             {summary.pools.map((p) => (
-              <Badge key={p.cidr} variant="light" color="gray" size="xs">
+              <MutedBadge key={p.cidr} tone="gray" size="xs">
                 {p.cidr}: {p.assigned.length}/{p.total}
-              </Badge>
+              </MutedBadge>
             ))}
           </Group>
         </Stack>

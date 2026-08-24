@@ -2,8 +2,10 @@
 Scheduler de facturación automática.
 
 La activación y la hora se configuran en Configuración (settings en BD):
-  billing.scheduler.enabled  — "true" / "false"
+  billing.scheduler.enabled  — generación automática de facturas ("true" / "false")
   billing.scheduler.run_hour — 0-23 (hora local de la app, según APP_TIMEZONE)
+  billing.services.enabled   — actualización automática de cortes/restauraciones
+                              (si no existe, hereda billing.scheduler.enabled)
 
 Estrategia:
 1. Si está habilitado al arrancar, ejecuta catch-up para los últimos 7 días
@@ -24,76 +26,85 @@ logger = logging.getLogger(__name__)
 _scheduler_started = False
 
 
-def _scheduler_config_from_db() -> tuple[bool, int]:
-    """Lee billing.scheduler.* desde la tabla settings."""
+def _flag(raw: str) -> bool:
+    return raw.lower() in ("1", "true", "yes", "on")
+
+
+def _scheduler_config_from_db() -> tuple[bool, bool, int]:
+    """Lee billing.scheduler.* y billing.services.enabled desde settings."""
     from ..models.setting import Setting
 
-    def _get(key: str, default: str) -> str:
+    def _get(key: str, default: str | None = "") -> str | None:
         s = Setting.query.get(key)
         if s is None or s.value is None:
             return default
-        return str(s.value).strip() or default
+        value = str(s.value).strip()
+        return value if value else default
 
-    raw = _get("billing.scheduler.enabled", "false").lower()
-    enabled = raw in ("1", "true", "yes", "on")
+    billing_enabled = _flag(_get("billing.scheduler.enabled", "false") or "false")
+    services_raw = _get("billing.services.enabled", None)
+    services_enabled = _flag(services_raw) if services_raw is not None else billing_enabled
     try:
-        hour = int(_get("billing.scheduler.run_hour", "6"))
+        hour = int(_get("billing.scheduler.run_hour", "6") or "6")
     except ValueError:
         hour = 6
     hour = max(0, min(23, hour))
-    return enabled, hour
+    return billing_enabled, services_enabled, hour
 
 
 def _run_daily(app: Flask):
-    """Ejecuta la facturación del día usando el motor centralizado."""
+    """Ejecuta facturación y/o actualización de servicios según la config del día."""
     with app.app_context():
-        from ..billing.engine import run_billing
         from ..logging_utils import slog
         from ..models.billing_run import BillingRun
 
+        billing_enabled, services_enabled, _hour = _scheduler_config_from_db()
         today = today_local()
 
-        existing = (
-            BillingRun.query
-            .filter_by(billing_date=today, status="COMPLETED")
-            .first()
-        )
-        if existing:
-            logger.debug("Billing scheduler: ya ejecutado hoy (run #%d)", existing.id)
-            return
-
-        slog(
-            module="BILLING",
-            action="SCHEDULER_TRIGGER",
-            message=f"Scheduler diario activado para {today.isoformat()}",
-            details={"date": today.isoformat()},
-        )
-
-        result = run_billing(
-            billing_date=today,
-            issue=True,
-            trigger="SCHEDULER",
-        )
-
-        logger.info(
-            "Billing scheduler: %s → created=%d skipped=%d errors=%d duration=%dms",
-            today.isoformat(),
-            result["created"],
-            result["skipped"],
-            len(result["errors"]),
-            result.get("duration_ms", 0),
-        )
-
-        try:
-            from ..billing.service_status import update_all_services
-            svc_result = update_all_services()
-            logger.info(
-                "Billing scheduler: actualización de servicios: cut=%d restored=%d",
-                len(svc_result.get("cut", [])),
-                len(svc_result.get("restored", [])),
+        if billing_enabled:
+            existing = (
+                BillingRun.query
+                .filter_by(billing_date=today, status="COMPLETED")
+                .first()
             )
-        except Exception:
-            logger.exception("Billing scheduler: error en actualización de servicios")
+            if existing:
+                logger.debug("Billing scheduler: facturación ya ejecutada hoy (run #%d)", existing.id)
+            else:
+                from ..billing.engine import run_billing
+
+                slog(
+                    module="BILLING",
+                    action="SCHEDULER_TRIGGER",
+                    message=f"Scheduler diario activado para {today.isoformat()}",
+                    details={"date": today.isoformat()},
+                )
+
+                result = run_billing(
+                    billing_date=today,
+                    issue=True,
+                    trigger="SCHEDULER",
+                )
+
+                logger.info(
+                    "Billing scheduler: %s → created=%d skipped=%d errors=%d duration=%dms",
+                    today.isoformat(),
+                    result["created"],
+                    result["skipped"],
+                    len(result["errors"]),
+                    result.get("duration_ms", 0),
+                )
+
+        if services_enabled:
+            try:
+                from ..billing.service_status import update_all_services
+                svc_result = update_all_services()
+                logger.info(
+                    "Billing scheduler: actualización de servicios: cut=%d restored=%d",
+                    len(svc_result.get("cut", [])),
+                    len(svc_result.get("restored", [])),
+                )
+            except Exception:
+                logger.exception("Billing scheduler: error en actualización de servicios")
 
 
 def _run_catchup(app: Flask):
@@ -123,17 +134,28 @@ def _run_catchup(app: Flask):
 def _maybe_run_catchup(app: Flask):
     """Catch-up solo si el scheduler está habilitado en configuración."""
     with app.app_context():
-        enabled, run_hour = _scheduler_config_from_db()
-        if not enabled:
+        billing_enabled, services_enabled, run_hour = _scheduler_config_from_db()
+        if not billing_enabled and not services_enabled:
             logger.info(
-                "Billing scheduler: catch-up omitido (activá el scheduler en Configuración > Cobranza)"
+                "Billing scheduler: catch-up omitido (activá generación o servicios en Configuración)"
             )
             return
-    logger.info(
-        "Billing scheduler: ejecutando catch-up (hora local configurada: %02d:00)",
-        run_hour,
-    )
-    _run_catchup(app)
+        if billing_enabled:
+            logger.info(
+                "Billing scheduler: ejecutando catch-up (hora local configurada: %02d:00)",
+                run_hour,
+            )
+        else:
+            logger.info("Billing scheduler: catch-up de facturas omitido (solo servicios automático)")
+    if billing_enabled:
+        _run_catchup(app)
+    if services_enabled:
+        with app.app_context():
+            try:
+                from ..billing.service_status import update_all_services
+                update_all_services()
+            except Exception:
+                logger.exception("Billing scheduler: error en actualización de servicios al arrancar")
 
 
 def _scheduler_loop(app: Flask):
@@ -143,8 +165,8 @@ def _scheduler_loop(app: Flask):
     while True:
         try:
             with app.app_context():
-                enabled, run_hour = _scheduler_config_from_db()
-            if not enabled:
+                billing_enabled, services_enabled, run_hour = _scheduler_config_from_db()
+            if not billing_enabled and not services_enabled:
                 time.sleep(60)
                 continue
 
@@ -189,17 +211,19 @@ def start_billing_scheduler(app: Flask):
 
     with app.app_context():
         from ..logging_utils import slog
-        enabled, run_hour = _scheduler_config_from_db()
+        billing_enabled, services_enabled, run_hour = _scheduler_config_from_db()
         slog(
             module="SYSTEM",
             action="SCHEDULER_STARTED",
             message=(
                 "Hilo de scheduler de facturación iniciado "
-                f"({'habilitado' if enabled else 'deshabilitado'} en BD; hora UTC si aplica: {run_hour:02d}:00)"
+                f"(facturas={'on' if billing_enabled else 'off'}, "
+                f"servicios={'on' if services_enabled else 'off'}; hora local: {run_hour:02d}:00)"
             ),
             details={
-                "enabled_in_db": enabled,
-                "run_hour_utc": run_hour,
-                "catchup_days": 7 if enabled else 0,
+                "billing_enabled": billing_enabled,
+                "services_enabled": services_enabled,
+                "run_hour": run_hour,
+                "catchup_days": 7 if billing_enabled else 0,
             },
         )

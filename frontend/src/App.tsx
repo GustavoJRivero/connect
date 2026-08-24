@@ -1,10 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import AppShell from "./AppShell";
 import Login from "./Login";
 import { api, setToken } from "./api";
+import { PortalApp } from "./portal/PortalApp";
+import { PortalHome } from "./portal/pages/Home";
+import { PortalInvoices } from "./portal/pages/Invoices";
+import { PortalConnection } from "./portal/pages/Connection";
+import { PortalComplaints } from "./portal/pages/Complaints";
+import { PortalNotices } from "./portal/pages/Notices";
 
-export default function App() {
+function AdminRoot() {
   const [authed, setAuthed] = useState<boolean>(() => Boolean(localStorage.getItem("sc_token")));
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +23,7 @@ export default function App() {
         setToken(null);
         setAuthed(false);
       });
-  }, []);
+  }, [authed]);
 
   useEffect(() => {
     const onUnauthorized = () => {
@@ -39,10 +45,24 @@ export default function App() {
           <div style={{ color: "var(--mantine-color-red-6)", whiteSpace: "pre-wrap" }}>{error}</div>
         </div>
       ) : null}
-      <BrowserRouter>
-        <AppShell onLogout={() => setAuthed(false)} />
-      </BrowserRouter>
+      <AppShell onLogout={() => setAuthed(false)} />
     </>
   );
 }
 
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/portal" element={<PortalApp />}>
+          <Route index element={<PortalHome />} />
+          <Route path="invoices" element={<PortalInvoices />} />
+          <Route path="connection" element={<PortalConnection />} />
+          <Route path="complaints" element={<PortalComplaints />} />
+          <Route path="notices" element={<PortalNotices />} />
+        </Route>
+        <Route path="*" element={<AdminRoot />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

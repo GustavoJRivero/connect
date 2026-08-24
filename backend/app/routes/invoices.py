@@ -66,6 +66,8 @@ def _afip_config() -> dict:
         "cuit": (_get_setting("afip.cuit", None) or current_app.config.get("AFIP_CUIT") or ""),
         "cert_path": (_get_setting("afip.cert_path", None) or current_app.config.get("AFIP_CERT_PATH") or ""),
         "key_path": (_get_setting("afip.key_path", None) or current_app.config.get("AFIP_KEY_PATH") or ""),
+        "cert_pem": (_get_setting("afip.cert_pem", None) or ""),
+        "key_pem": (_get_setting("afip.key_pem", None) or ""),
         "iva_percent_default": (_get_setting("afip.iva_percent_default", "21") or "21"),
     }
 
@@ -163,7 +165,7 @@ def _invoice_to_dict(x: Invoice) -> dict:
 @jwt_required(optional=True)
 def create_invoice_draft():
     """
-    Crea una factura en estado DRAFT.
+    Crea y emite una factura (ISSUED). Si AFIP falla, queda DRAFT.
 
     Body:
     {
@@ -206,24 +208,17 @@ def create_invoice_draft():
     )
 
     db.session.add(x)
+    db.session.flush()
+    err, err_status = _emit_invoice(x)
     db.session.commit()
+    if err:
+        return jsonify({**err, "invoice_id": x.id}), err_status
     return jsonify(_invoice_to_dict(x)), 201
 
 
-@bp.post("/<int:invoice_id>/issue")
-@jwt_required(optional=True)
-def issue_invoice(invoice_id: int):
-    """
-    Emite la factura:
-    - A/B: intenta AFIP (CAE real) si está habilitado
-    - X o AFIP deshabilitado: usa numeración interna
-    """
-    x = Invoice.query.get_or_404(invoice_id)
-    if getattr(x, "is_deleted", False):
-        return jsonify({"error": "invoice_deleted"}), 409
-    if x.status != "DRAFT":
-        return jsonify({"error": "invalid_status"}), 409
-
+def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
+    """Emite la factura. No hace commit. Devuelve (error, http) o (None, 200)."""
+    invoice_id = int(x.id) if x.id else None
     if not x.due_date:
         due_days = int(_get_setting("billing.due_days", "10"))
         x.due_date = today_local() + timedelta(days=due_days)
@@ -261,6 +256,8 @@ def issue_invoice(invoice_id: int):
                 cuit=str(afip_cfg["cuit"]),
                 cert_path=str(afip_cfg["cert_path"]),
                 key_path=str(afip_cfg["key_path"]),
+                cert_pem=str(afip_cfg.get("cert_pem") or ""),
+                key_pem=str(afip_cfg.get("key_pem") or ""),
                 db_read=_get_setting,
                 db_write=_set_setting,
             )
@@ -304,10 +301,7 @@ def issue_invoice(invoice_id: int):
                 ref_id=invoice_id,
                 ref_type="invoice",
             )
-            return jsonify({
-                "error": "afip_issue_failed",
-                "message": str(e),
-            }), 400
+            return {"error": "afip_issue_failed", "message": str(e)}, 400
         except Exception as e:
             logger.exception("Error inesperado emitiendo factura #%s en AFIP", invoice_id)
             slog(
@@ -319,16 +313,36 @@ def issue_invoice(invoice_id: int):
                 ref_id=invoice_id,
                 ref_type="invoice",
             )
-            return jsonify({
-                "error": "afip_issue_failed",
-                "message": str(e),
-            }), 500
+            return {"error": "afip_issue_failed", "message": str(e)}, 500
     else:
-        cbte = _next_cbte_number(point_of_sale=x.point_of_sale, invoice_type=x.invoice_type)
-        x.cbte_number = cbte
+        x.cbte_number = _next_cbte_number(point_of_sale=x.point_of_sale, invoice_type=x.invoice_type)
         x.status = "ISSUED"
+    try:
+        from ..portal.notify import notify_invoice_issued
+        notify_invoice_issued(x)
+    except Exception:
+        logger.exception("No se pudo crear el aviso de factura #%s", x.id)
+    return None, 200
 
+
+@bp.post("/<int:invoice_id>/issue")
+@jwt_required(optional=True)
+def issue_invoice(invoice_id: int):
+    """
+    Emite la factura:
+    - A/B: intenta AFIP (CAE real) si está habilitado
+    - X o AFIP deshabilitado: usa numeración interna
+    """
+    x = Invoice.query.get_or_404(invoice_id)
+    if getattr(x, "is_deleted", False):
+        return jsonify({"error": "invoice_deleted"}), 409
+    if x.status != "DRAFT":
+        return jsonify({"error": "invalid_status"}), 409
+
+    err, err_status = _emit_invoice(x)
     db.session.commit()
+    if err:
+        return jsonify(err), err_status
     return jsonify(_invoice_to_dict(x))
 
 
@@ -362,7 +376,15 @@ def afip_status():
         return jsonify({
             "status": "disabled",
             "config": masked,
-            "message": "AFIP deshabilitado en configuración (afip.enabled=false).",
+            "message": "CAE apagado en configuración.",
+        })
+    if not (str(cfg.get("cert_pem") or "").strip() or str(cfg.get("cert_path") or "").strip()) or not (
+        str(cfg.get("key_pem") or "").strip() or str(cfg.get("key_path") or "").strip()
+    ):
+        return jsonify({
+            "status": "error",
+            "config": masked,
+            "message": "Faltan el certificado o la clave de ARCA.",
         })
     try:
         afip = AfipWsfeClient(
@@ -370,6 +392,8 @@ def afip_status():
             cuit=str(cfg["cuit"]),
             cert_path=str(cfg["cert_path"]),
             key_path=str(cfg["key_path"]),
+            cert_pem=str(cfg.get("cert_pem") or ""),
+            key_pem=str(cfg.get("key_pem") or ""),
             db_read=_get_setting,
             db_write=_set_setting,
         )
@@ -380,7 +404,7 @@ def afip_status():
             "status": "error",
             "config": masked,
             "message": str(e),
-        }), 400
+        })
 
 
 @bp.delete("/<int:invoice_id>")

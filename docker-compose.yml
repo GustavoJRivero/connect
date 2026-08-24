@@ -44,6 +44,18 @@ services:
       MIKROTIK_PORT: ${MIKROTIK_PORT:-8728}
       MIKROTIK_USER: ${MIKROTIK_USER:-}
       MIKROTIK_PASS: ${MIKROTIK_PASS:-}
+      # Connect Maps API (disponibilidad / instalación / reserva de puertos NAP)
+      MAPS_API_BASE_URL: ${MAPS_API_BASE_URL:-https://maps.connectsrl.ar}
+      MAPS_API_KEY: ${MAPS_API_KEY:-}
+      MAPS_WEBHOOK_SECRET: ${MAPS_WEBHOOK_SECRET:-}
+      MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
+      MP_PUBLIC_KEY: ${MP_PUBLIC_KEY:-}
+      MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
+      API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:5001}
+      PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-http://localhost}
+      # Staging: descomentar para bloquear escrituras a Mikrotik de producción.
+      # MIKROTIK_WRITES_DISABLED: "true"
+      # MIKROTIK_PROD_HOSTS: "10.0.0.1"
     volumes:
       - ./backend/secrets:/app/secrets:ro
 

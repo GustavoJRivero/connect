@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Dependencias del sistema para PyMySQL y compilación
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends gcc default-libmysqlclient-dev && \
+    apt-get install -y --no-install-recommends gcc default-libmysqlclient-dev default-mysql-client && \
     rm -rf /var/lib/apt/lists/*
 
 # Instalar dependencias Python
@@ -13,6 +13,8 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn
 
 # Copiar código fuente
 COPY . .
+
+RUN mkdir -p /app/data/migration
 
 EXPOSE 5001
 

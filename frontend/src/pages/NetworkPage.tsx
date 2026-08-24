@@ -2,17 +2,22 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { ServerEditModal } from "../components/ServerEditModal";
-import { Button } from "../ui";
+import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
+import { formatApiError, jobStatusLabel } from "../format";
+import { IconArrowLeft, IconPencil, IconRefresh, IconTrash, IconX } from "@tabler/icons-react";
+import { fmtDateTime, fmtTime } from "../datetime";
+import { Button, MutedBadge, jobStatusTone } from "../ui";
 import {
   Group,
   Table,
   Alert,
-  Badge,
   Stack,
   Text,
   Card,
   Title,
   Skeleton,
+  ActionIcon,
+  Tooltip,
 } from "@mantine/core";
 
 type ServerRow = {
@@ -55,6 +60,7 @@ export default function NetworkPage() {
   const [jobsLoading, setJobsLoading] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [testMessage, setTestMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [confirm, setConfirm] = useState<ConfirmState>(null);
 
   const serverId = params.serverId ? Number(params.serverId) : null;
   const mode = useMemo<"list" | "detail">(() => (serverId ? "detail" : "list"), [serverId]);
@@ -88,8 +94,7 @@ export default function NetworkPage() {
       const res = await api.listServers();
       setItems(Array.isArray(res) ? (res as ServerRow[]) : []);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setLoading(false);
     }
@@ -102,8 +107,7 @@ export default function NetworkPage() {
       const res = await api.listServerJobs(id);
       setJobs(Array.isArray(res) ? (res as JobRow[]) : []);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setJobsLoading(false);
     }
@@ -143,168 +147,194 @@ export default function NetworkPage() {
     }
   }
 
-  const jobStatusColor = (status: string) =>
-    status === "DONE" ? "green" : status === "FAILED" ? "red" : status === "CANCELLED" ? "gray" : "yellow";
-
   return (
     <Stack gap="md">
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
       {error ? (
-        <Alert color="red" className="sc-error" title="Error">
+        <Alert color="red" title="Error" withCloseButton onClose={() => setError(null)}>
           {error}
         </Alert>
       ) : null}
 
       {mode === "list" ? (
-        <>
-          <Group justify="space-between" wrap="wrap" gap="sm">
-            <Group gap="sm">
-              <Text fw={600}>Resumen</Text>
-              <Badge color="blue" variant="light">
-                Servidores: {summary.total}
-              </Badge>
-              <Badge color="yellow" variant="light">
-                Jobs pendientes: {summary.totalPending}
-              </Badge>
+        <Card withBorder padding="lg" radius="md">
+          <Card.Section withBorder inheritPadding py="sm">
+            <Group justify="space-between">
+              <Group gap="sm">
+                <Title order={5}>Servidores PPPoE</Title>
+                <MutedBadge tone="lilac" size="sm">{summary.total}</MutedBadge>
+                {summary.totalPending ? (
+                  <MutedBadge tone="yellow" size="sm">{summary.totalPending} pendientes</MutedBadge>
+                ) : null}
+              </Group>
+              <Group gap="xs">
+                <Button
+                  variant="primaryLight"
+                  onClick={() => {
+                    setServerModalId(null);
+                    setServerModalOpen(true);
+                  }}
+                >
+                  Agregar servidor
+                </Button>
+                <Tooltip label="Recargar">
+                  <ActionIcon size="lg" variant="light" color="violet" onClick={reload} aria-label="Recargar">
+                    <IconRefresh size={20} />
+                  </ActionIcon>
+                </Tooltip>
+              </Group>
             </Group>
-            <Group>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setServerModalId(null);
-                  setServerModalOpen(true);
-                }}
-              >
-                Agregar servidor
-              </Button>
-              <Button variant="default" onClick={reload}>
-                Recargar
-              </Button>
-            </Group>
-          </Group>
-
-          <Card withBorder padding="lg" radius="md">
-            <Card.Section withBorder inheritPadding py="sm">
-              <Title order={5}>Servidores PPPoE</Title>
-            </Card.Section>
-            <Table.ScrollContainer minWidth={600} mt="md">
-              <Table striped highlightOnHover>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>ID</Table.Th>
-                    <Table.Th>Nombre</Table.Th>
-                    <Table.Th>Host</Table.Th>
-                    <Table.Th>Usuario</Table.Th>
-                    <Table.Th>Pool</Table.Th>
-                    <Table.Th>Pendientes</Table.Th>
-                    <Table.Th>Acciones</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {loading ? (
-                    Array.from({ length: 4 }).map((_, i) => (
-                      <Table.Tr key={i}>
-                        {Array.from({ length: 7 }).map((_, j) => (
-                          <Table.Td key={j}>
-                            <Skeleton height={20} width={j === 6 ? 140 : "80%"} />
-                          </Table.Td>
-                        ))}
-                      </Table.Tr>
-                    ))
-                  ) : (
-                    items.map((s) => (
-                      <Table.Tr key={s.id}>
-                        <Table.Td>#{s.id}</Table.Td>
-                        <Table.Td>{s.name}</Table.Td>
-                        <Table.Td>{s.host}:{s.port}</Table.Td>
-                        <Table.Td>{s.username}</Table.Td>
-                        <Table.Td>
-                          {s.ip_pool_cidrs && s.ip_pool_cidrs.length > 0 ? (
-                            <Stack gap={2}>
-                              <Group gap={4} wrap="wrap">
-                                {(s.ip_pool_cidrs ?? []).map((c) => (
-                                  <Badge key={c} variant="light" color="gray" size="sm">{c}</Badge>
-                                ))}
-                              </Group>
-                              <Badge
-                                variant="light"
-                                color={Number(s.pool_available) > 0 ? "blue" : "red"}
-                                size="sm"
-                              >
-                                {Number(s.pool_assigned ?? 0)}/{Number(s.pool_total ?? 0)} usadas
-                              </Badge>
-                            </Stack>
-                          ) : (
-                            <Text size="xs" c="dimmed">sin pool</Text>
-                          )}
+          </Card.Section>
+          <Table.ScrollContainer minWidth={600} mt="md">
+            <Table highlightOnHover>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Servidor</Table.Th>
+                  <Table.Th>Usuario</Table.Th>
+                  <Table.Th>Pool</Table.Th>
+                  <Table.Th>Pendientes</Table.Th>
+                  <Table.Th>Acciones</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, i) => (
+                    <Table.Tr key={i}>
+                      {Array.from({ length: 5 }).map((_, j) => (
+                        <Table.Td key={j}>
+                          <Skeleton height={20} width="80%" />
                         </Table.Td>
-                        <Table.Td>{Number(s.pending_jobs) ?? 0}</Table.Td>
-                        <Table.Td>
-                          <Group gap="xs">
-                            <Button variant="default" onClick={() => navigate(`/network/${s.id}`)}>
-                              Ver
-                            </Button>
-                            <Button
-                              variant="secondary"
+                      ))}
+                    </Table.Tr>
+                  ))
+                ) : items.length ? (
+                  items.map((s) => (
+                    <Table.Tr key={s.id} style={{ cursor: "pointer" }} onClick={() => navigate(`/network/${s.id}`)}>
+                      <Table.Td>
+                        <Text size="sm" fw={600}>{s.name}</Text>
+                        <Text size="xs" c="dimmed">{s.host}:{s.port}</Text>
+                      </Table.Td>
+                      <Table.Td>{s.username}</Table.Td>
+                      <Table.Td>
+                        {s.ip_pool_cidrs && s.ip_pool_cidrs.length > 0 ? (
+                          <Stack gap={2}>
+                            <Group gap={4} wrap="wrap">
+                              {(s.ip_pool_cidrs ?? []).map((c) => (
+                                <MutedBadge key={c} tone="gray" size="sm">{c}</MutedBadge>
+                              ))}
+                            </Group>
+                            <MutedBadge
+                              tone={Number(s.pool_available) > 0 ? "lilac" : "red"}
+                              size="sm"
+                            >
+                              {Number(s.pool_assigned ?? 0)}/{Number(s.pool_total ?? 0)} usadas
+                            </MutedBadge>
+                          </Stack>
+                        ) : (
+                          <Text size="xs" c="dimmed">sin pool</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>{Number(s.pending_jobs) ?? 0}</Table.Td>
+                      <Table.Td onClick={(e) => e.stopPropagation()}>
+                        <Group gap={8} wrap="nowrap">
+                          <Tooltip label="Editar">
+                            <ActionIcon
+                              size="lg"
+                              variant="light"
+                              color="violet"
+                              aria-label="Editar"
                               onClick={() => {
                                 setServerModalId(Number(s.id));
                                 setServerModalOpen(true);
                               }}
                             >
-                              Editar
-                            </Button>
-                            <Button
-                              variant="danger"
-                              onClick={async () => {
-                                if (!window.confirm("¿Eliminar servidor? (solo si no está en uso)")) return;
-                                await api.deleteServer(Number(s.id));
-                                await reload();
-                              }}
+                              <IconPencil size={18} />
+                            </ActionIcon>
+                          </Tooltip>
+                          <Tooltip label="Eliminar">
+                            <ActionIcon
+                              size="lg"
+                              variant="light"
+                              color="red"
+                              aria-label="Eliminar"
+                              onClick={() => setConfirm({
+                                title: `Eliminar servidor`,
+                                message: `Se eliminará el servidor "${s.name}". Solo es posible si no tiene conexiones asociadas.`,
+                                confirmLabel: "Eliminar servidor",
+                                danger: true,
+                                onConfirm: async () => {
+                                  try {
+                                    await api.deleteServer(Number(s.id));
+                                    await reload();
+                                  } catch (e: unknown) {
+                                    setError(formatApiError(e));
+                                  }
+                                },
+                              })}
                             >
-                              Eliminar
-                            </Button>
-                          </Group>
-                        </Table.Td>
-                      </Table.Tr>
-                    ))
-                  )}
-                </Table.Tbody>
-              </Table>
-            </Table.ScrollContainer>
-            {!loading && !items.length ? (
-              <Text c="dimmed" size="sm" p="md">
-                Sin servidores. Agregá uno con el botón de arriba.
-              </Text>
-            ) : null}
-          </Card>
-        </>
+                              <IconTrash size={18} />
+                            </ActionIcon>
+                          </Tooltip>
+                        </Group>
+                      </Table.Td>
+                    </Table.Tr>
+                  ))
+                ) : (
+                  <Table.Tr>
+                    <Table.Td colSpan={5}>
+                      <Text c="dimmed" ta="center" py="lg">Sin servidores.</Text>
+                    </Table.Td>
+                  </Table.Tr>
+                )}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Card>
       ) : (
         <>
           <Card withBorder padding="lg" radius="md">
             <Card.Section withBorder inheritPadding py="sm">
               <Group justify="space-between">
-                <Title order={5}>Servidor PPPoE #{serverId}</Title>
                 <Group gap="xs">
-                  <Button variant="default" onClick={() => navigate("/network")}>
-                    Volver
-                  </Button>
+                  <Tooltip label="Volver">
+                    <ActionIcon variant="subtle" color="gray" size="lg" onClick={() => navigate("/network")} aria-label="Volver">
+                      <IconArrowLeft size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Title order={5}>{selected?.name ?? "Servidor"}</Title>
+                </Group>
+                <Group gap="xs">
                   <Button
-                    variant="secondary"
-                    onClick={() =>
-                      serverId && (setServerModalId(Number(serverId)), setServerModalOpen(true))
-                    }
-                  >
-                    Editar
-                  </Button>
-                  <Button
-                    variant="info"
+                    variant="primaryLight"
                     onClick={() => serverId && testConnection(serverId)}
-                    disabled={testingConnection}
+                    loading={testingConnection}
                   >
-                    {testingConnection ? "Probando..." : "Probar conexión"}
+                    Probar conexión
                   </Button>
-                  <Button variant="default" onClick={() => serverId && reloadJobs(serverId)}>
-                    Recargar jobs
-                  </Button>
+                  <Tooltip label="Editar">
+                    <ActionIcon
+                      size="lg"
+                      variant="light"
+                      color="violet"
+                      aria-label="Editar"
+                      onClick={() =>
+                        serverId && (setServerModalId(Number(serverId)), setServerModalOpen(true))
+                      }
+                    >
+                      <IconPencil size={18} />
+                    </ActionIcon>
+                  </Tooltip>
+                  <Tooltip label="Recargar jobs">
+                    <ActionIcon
+                      size="lg"
+                      variant="light"
+                      color="violet"
+                      aria-label="Recargar jobs"
+                      onClick={() => serverId && reloadJobs(serverId)}
+                    >
+                      <IconRefresh size={20} />
+                    </ActionIcon>
+                  </Tooltip>
                 </Group>
               </Group>
             </Card.Section>
@@ -335,17 +365,17 @@ export default function NetworkPage() {
                 {selected?.ip_pool_cidrs && selected.ip_pool_cidrs.length > 0 ? (
                   <>
                     {selected.ip_pool_cidrs.map((c) => (
-                      <Badge key={c} variant="light" color="gray" size="sm">{c}</Badge>
+                      <MutedBadge key={c} tone="gray" size="sm">{c}</MutedBadge>
                     ))}
-                    <Badge variant="light" color="blue" size="sm">
+                    <MutedBadge tone="lilac" size="sm">
                       Asignadas: {Number(selected?.pool_assigned ?? 0)}
-                    </Badge>
-                    <Badge variant="light" color="green" size="sm">
+                    </MutedBadge>
+                    <MutedBadge tone="green" size="sm">
                       Libres: {Number(selected?.pool_available ?? 0)}
-                    </Badge>
-                    <Badge variant="light" color="gray" size="sm">
+                    </MutedBadge>
+                    <MutedBadge tone="gray" size="sm">
                       Total: {Number(selected?.pool_total ?? 0)}
-                    </Badge>
+                    </MutedBadge>
                   </>
                 ) : (
                   <Text size="sm" c="dimmed">sin pool configurado</Text>
@@ -375,8 +405,7 @@ export default function NetworkPage() {
                         const r = (await api.recoverStuckJobs(serverId)) as { count?: number };
                         if (r?.count) await reloadJobs(serverId);
                       } catch (e: unknown) {
-                        const err = e as { status?: number; body?: unknown };
-                        setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+                        setError(formatApiError(e));
                       }
                     }}
                   >
@@ -389,7 +418,6 @@ export default function NetworkPage() {
               <Table striped highlightOnHover>
                 <Table.Thead>
                   <Table.Tr>
-                    <Table.Th>ID</Table.Th>
                     <Table.Th>Fecha</Table.Th>
                     <Table.Th>Tipo</Table.Th>
                     <Table.Th>Estado</Table.Th>
@@ -403,7 +431,7 @@ export default function NetworkPage() {
                   {jobsLoading && !jobs.length ? (
                     Array.from({ length: 3 }).map((_, i) => (
                       <Table.Tr key={i}>
-                        {Array.from({ length: 8 }).map((_, j) => (
+                        {Array.from({ length: 7 }).map((_, j) => (
                           <Table.Td key={j}>
                             <Skeleton height={20} width="80%" />
                           </Table.Td>
@@ -413,14 +441,13 @@ export default function NetworkPage() {
                   ) : (
                     jobsSorted.map((j) => (
                       <Table.Tr key={j.id}>
-                        <Table.Td>#{j.id}</Table.Td>
-                        <Table.Td>{(j.created_at ?? "").slice(0, 19).replace("T", " ") || "-"}</Table.Td>
+                        <Table.Td>{fmtDateTime(j.created_at, { withSeconds: true }) || "-"}</Table.Td>
                         <Table.Td>{j.job_type}</Table.Td>
                         <Table.Td>
                           <Group gap="xs">
-                            <Badge size="sm" color={jobStatusColor(j.status)} variant="light">
-                              {j.status}
-                            </Badge>
+                            <MutedBadge size="sm" tone={jobStatusTone(j.status)}>
+                              {jobStatusLabel(j.status)}
+                            </MutedBadge>
                             {isStuck(j) ? (
                               <Text span size="xs" c="yellow">
                                 (colgado?)
@@ -431,53 +458,69 @@ export default function NetworkPage() {
                         <Table.Td>
                           {j.status === "PENDING"
                             ? j.run_after
-                              ? `A las ${String(j.run_after).slice(11, 19)}`
+                              ? `A las ${fmtTime(j.run_after)}`
                               : "En cola"
                             : j.status === "RUNNING"
                               ? j.locked_at
-                                ? `Desde ${String(j.locked_at).slice(11, 19)}`
+                                ? `Desde ${fmtTime(j.locked_at)}`
                                 : "Ejecutando…"
                               : "-"}
                         </Table.Td>
                         <Table.Td>{j.attempts ?? 0}</Table.Td>
                         <Table.Td style={{ maxWidth: 380, whiteSpace: "pre-wrap" }}>{j.last_error ?? "-"}</Table.Td>
                         <Table.Td>
-                          {j.status === "FAILED" || (j.status === "RUNNING" && isStuck(j)) ? (
-                            <Button
-                              variant="primary"
-                              onClick={async () => {
-                                if (!serverId) return;
-                                try {
-                                  await api.retryJob(Number(j.id));
-                                  await reloadJobs(serverId);
-                                } catch (e: unknown) {
-                                  const err = e as { status?: number; body?: unknown };
-                                  setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
-                                }
-                              }}
-                            >
-                              {j.status === "RUNNING" ? "Recuperar" : "Reintentar"}
-                            </Button>
-                          ) : j.status === "PENDING" ? (
-                            <Button
-                              variant="danger"
-                              onClick={async () => {
-                                if (!serverId) return;
-                                if (!window.confirm("¿Cancelar este job? No se ejecutará.")) return;
-                                try {
-                                  await api.cancelJob(Number(j.id));
-                                  await reloadJobs(serverId);
-                                } catch (e: unknown) {
-                                  const err = e as { status?: number; body?: unknown };
-                                  setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
-                                }
-                              }}
-                            >
-                              Cancelar
-                            </Button>
-                          ) : (
-                            "-"
-                          )}
+                          <Group gap={8} wrap="nowrap">
+                            {j.status === "FAILED" || (j.status === "RUNNING" && isStuck(j)) ? (
+                              <Tooltip label={j.status === "RUNNING" ? "Recuperar" : "Reintentar"}>
+                                <ActionIcon
+                                  size="lg"
+                                  variant="light"
+                                  color="violet"
+                                  aria-label={j.status === "RUNNING" ? "Recuperar" : "Reintentar"}
+                                  onClick={async () => {
+                                    if (!serverId) return;
+                                    try {
+                                      await api.retryJob(Number(j.id));
+                                      await reloadJobs(serverId);
+                                    } catch (e: unknown) {
+                                      setError(formatApiError(e));
+                                    }
+                                  }}
+                                >
+                                  <IconRefresh size={18} />
+                                </ActionIcon>
+                              </Tooltip>
+                            ) : null}
+                            {j.status === "PENDING" ? (
+                              <Tooltip label="Cancelar">
+                                <ActionIcon
+                                  size="lg"
+                                  variant="light"
+                                  color="red"
+                                  aria-label="Cancelar"
+                                  onClick={() => {
+                                    if (!serverId) return;
+                                    setConfirm({
+                                      title: "Cancelar job",
+                                      message: "El job quedará cancelado y no se ejecutará en el Mikrotik.",
+                                      confirmLabel: "Cancelar job",
+                                      danger: true,
+                                      onConfirm: async () => {
+                                        try {
+                                          await api.cancelJob(Number(j.id));
+                                          await reloadJobs(serverId);
+                                        } catch (e: unknown) {
+                                          setError(formatApiError(e));
+                                        }
+                                      },
+                                    });
+                                  }}
+                                >
+                                  <IconX size={18} />
+                                </ActionIcon>
+                              </Tooltip>
+                            ) : null}
+                          </Group>
                         </Table.Td>
                       </Table.Tr>
                     ))

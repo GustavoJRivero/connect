@@ -5,18 +5,37 @@ import {
   Group,
   NavLink as MantineNavLink,
   Title,
-  Breadcrumbs,
   Alert,
+  Text,
+  Stack,
+  Anchor,
   UnstyledButton,
   Box,
   ActionIcon,
   Tooltip,
   useMantineColorScheme,
   useComputedColorScheme,
-  Text,
-  ThemeIcon,
+  Burger,
 } from "@mantine/core";
+import {
+  IconLayoutDashboard,
+  IconUsers,
+  IconTool,
+  IconCash,
+  IconFileInvoice,
+  IconCreditCard,
+  IconServer,
+  IconPackage,
+  IconClock,
+  IconFileText,
+  IconSettings,
+  IconSun,
+  IconMoon,
+  IconMenu2,
+} from "@tabler/icons-react";
 import { api, setToken } from "./api";
+import { formatApiError } from "./format";
+import { BrandLogo } from "./BrandLogo";
 import { Button } from "./ui";
 
 import ClientsPage from "./pages/ClientsPage";
@@ -29,25 +48,51 @@ import NetworkPage from "./pages/NetworkPage";
 import PlansPage from "./pages/PlansPage";
 import LogsPage from "./pages/LogsPage";
 import JobsPage from "./pages/JobsPage";
+import InstallationsPage from "./pages/InstallationsPage";
 
-const NAV_ITEMS: { to: string; id: string; label: string; icon: string }[] = [
-  { to: "/dashboard", id: "dashboard", label: "Dashboard", icon: "📊" },
-  { to: "/clients", id: "clients", label: "Clientes", icon: "👥" },
-  { to: "/billing", id: "billing", label: "Cobranza", icon: "💰" },
-  { to: "/invoices", id: "invoices", label: "Facturas", icon: "📄" },
-  { to: "/payments", id: "payments", label: "Pagos", icon: "💵" },
-  { to: "/network", id: "network", label: "Red", icon: "🌐" },
-  { to: "/plans", id: "plans", label: "Planes", icon: "📋" },
-  { to: "/jobs", id: "jobs", label: "Jobs / Crons", icon: "🔧" },
-  { to: "/logs", id: "logs", label: "Logs", icon: "📜" },
-  { to: "/settings", id: "settings", label: "Configuración", icon: "⚙️" },
+function getPageHeading(pathname: string): { kicker?: string; kickerTo?: string; title: string | null } {
+  const path = pathname === "/" ? "/dashboard" : pathname;
+  if (path === "/clients/new") return { kicker: "Clientes", kickerTo: "/clients", title: "Nuevo cliente" };
+  if (/^\/clients\/[^/]+/.test(path)) return { kicker: "Clientes", kickerTo: "/clients", title: null };
+  if (path.startsWith("/clients")) return { kicker: "Gestión", title: "Clientes" };
+  if (path.startsWith("/dashboard")) return { kicker: "Panel", title: "Resumen" };
+  if (path.startsWith("/installations")) return { kicker: "Operación", title: "Instalaciones" };
+  if (path.startsWith("/billing")) return { kicker: "Operación", title: "Cobranza" };
+  if (path.startsWith("/invoices")) return { kicker: "Facturación", title: "Facturas" };
+  if (path.startsWith("/payments")) return { kicker: "Facturación", title: "Pagos" };
+  if (path.startsWith("/network")) return { kicker: "Infraestructura", title: "Red" };
+  if (path.startsWith("/plans")) return { kicker: "Infraestructura", title: "Planes" };
+  if (path.startsWith("/jobs")) return { kicker: "Sistema", title: "Tareas" };
+  if (path.startsWith("/logs")) return { kicker: "Sistema", title: "Logs" };
+  if (path.startsWith("/settings")) return { kicker: "Sistema", title: "Configuración" };
+  return { title: "Panel" };
+}
+
+const NAV_ITEMS: { to: string; id: string; label: string; icon: React.ComponentType<{ size?: number | string; stroke?: number | string }> }[] = [
+  { to: "/dashboard", id: "dashboard", label: "Inicio", icon: IconLayoutDashboard },
+  { to: "/clients", id: "clients", label: "Clientes", icon: IconUsers },
+  { to: "/installations", id: "installations", label: "Instalaciones", icon: IconTool },
+  { to: "/billing", id: "billing", label: "Cobranza", icon: IconCash },
+  { to: "/invoices", id: "invoices", label: "Facturas", icon: IconFileInvoice },
+  { to: "/payments", id: "payments", label: "Pagos", icon: IconCreditCard },
+  { to: "/network", id: "network", label: "Red", icon: IconServer },
+  { to: "/plans", id: "plans", label: "Planes", icon: IconPackage },
+  { to: "/jobs", id: "jobs", label: "Tareas / Crons", icon: IconClock },
+  { to: "/logs", id: "logs", label: "Logs", icon: IconFileText },
+  { to: "/settings", id: "settings", label: "Configuración", icon: IconSettings },
 ];
 
 export default function AppShell(props: { onLogout: () => void }) {
   const [me, setMe] = useState<unknown>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
+  const [safety, setSafety] = useState<{
+    mikrotik_writes_disabled?: boolean;
+    prod_host_overlap?: string[];
+    servers_with_real_credentials?: number;
+  } | null>(null);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("sc.sidebarCollapsed") === "1");
+  const [mobileOpened, setMobileOpened] = useState(false);
   const loc = useLocation();
   const { toggleColorScheme } = useMantineColorScheme();
   const computedColorScheme = useComputedColorScheme("light");
@@ -61,7 +106,14 @@ export default function AppShell(props: { onLogout: () => void }) {
     api
       .me()
       .then(setMe)
-      .catch((e: { status?: number; body?: unknown }) => setError(`${e?.status ?? ""} ${JSON.stringify(e?.body ?? e)}`));
+      .catch((e: unknown) => setError(formatApiError(e)));
+  }, []);
+
+  useEffect(() => {
+    api
+      .getSafetyStatus()
+      .then((res) => setSafety(res as typeof safety))
+      .catch(() => setSafety(null));
   }, []);
 
   useEffect(() => {
@@ -73,8 +125,7 @@ export default function AppShell(props: { onLogout: () => void }) {
     return () => window.removeEventListener("sc:loading", onLoading as EventListener);
   }, []);
 
-  const currentTitle =
-    NAV_ITEMS.find((t) => (loc.pathname === "/" ? "/dashboard" : loc.pathname).startsWith(t.to))?.label ?? "Panel";
+  const pageHeading = getPageHeading(loc.pathname);
 
   const toggleCollapsed = () => {
     const next = !collapsed;
@@ -88,7 +139,7 @@ export default function AppShell(props: { onLogout: () => void }) {
       navbar={{
         width: collapsed ? 60 : 220,
         breakpoint: "sm",
-        collapsed: { mobile: true },
+        collapsed: { mobile: !mobileOpened, desktop: false },
       }}
       padding="md"
     >
@@ -101,17 +152,31 @@ export default function AppShell(props: { onLogout: () => void }) {
       <MantineAppShell.Header>
         <Group h="100%" justify="space-between" px="md">
           <Group>
-            <UnstyledButton onClick={toggleCollapsed} style={{ fontSize: 20 }}>
-              ≡
-            </UnstyledButton>
+            <Burger
+              opened={mobileOpened}
+              onClick={() => setMobileOpened((o) => !o)}
+              hiddenFrom="sm"
+              size="sm"
+              aria-label="Abrir menú"
+            />
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="lg"
+              onClick={toggleCollapsed}
+              visibleFrom="sm"
+              aria-label="Contraer menú"
+            >
+              <IconMenu2 size={20} />
+            </ActionIcon>
             <NavLink to="/dashboard" style={{ textDecoration: "none", color: "inherit" }}>
-              Home
+              Inicio
             </NavLink>
           </Group>
           <Group>
             <Tooltip label={computedColorScheme === "dark" ? "Modo claro" : "Modo oscuro"}>
               <ActionIcon variant="default" size="lg" onClick={() => toggleColorScheme()} aria-label="Cambiar tema">
-                {computedColorScheme === "dark" ? "☀️" : "🌙"}
+                {computedColorScheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
               </ActionIcon>
             </Tooltip>
             <span>{me && typeof me === "object" && "username" in me ? String((me as { username: string }).username) : "..."}</span>
@@ -130,38 +195,44 @@ export default function AppShell(props: { onLogout: () => void }) {
 
       <MantineAppShell.Navbar p="xs">
         <MantineAppShell.Section>
-          <Tooltip label="Inicio" position="right" disabled={!collapsed}>
+          <Tooltip label="SistemaConnect" position="right" disabled={!collapsed}>
             <UnstyledButton
               component={Link}
               to="/dashboard"
+              aria-label="SistemaConnect"
               style={{
-                fontWeight: 600,
-                fontSize: collapsed ? "1rem" : "1.1rem",
-                display: "block",
+                display: "flex",
+                justifyContent: collapsed ? "center" : "flex-start",
                 width: "100%",
-                textAlign: collapsed ? "center" : "left",
-                padding: collapsed ? "8px" : "8px 12px",
+                padding: collapsed ? "8px 0" : "8px 12px",
               }}
             >
-              {collapsed ? "SC" : "SistemaConnect"}
+              <BrandLogo mark={collapsed ? 28 : 32} wordmark={!collapsed} wordmarkSize={18} />
             </UnstyledButton>
           </Tooltip>
         </MantineAppShell.Section>
         <MantineAppShell.Section grow mt="md">
           {NAV_ITEMS.map((t) => {
             const isActive = loc.pathname === "/" ? t.to === "/dashboard" : loc.pathname.startsWith(t.to);
+            const Icon = t.icon;
             if (collapsed) {
+              // Modo contraído: solo el ícono centrado (estilo barra de actividad),
+              // sin la doble caja NavLink + ThemeIcon.
               return (
                 <Tooltip key={t.id} label={t.label} position="right" withArrow>
-                  <Box style={{ marginBottom: 2 }}>
-                    <MantineNavLink
-                      component={NavLink}
-                      to={t.to}
-                      leftSection={<ThemeIcon variant="light" size="md" style={{ minWidth: 36, minHeight: 36 }}>{t.icon}</ThemeIcon>}
-                      active={isActive}
-                      style={{ borderRadius: "var(--mantine-radius-sm)" }}
-                    />
-                  </Box>
+                  <ActionIcon
+                    component={NavLink}
+                    to={t.to}
+                    onClick={() => setMobileOpened(false)}
+                    variant={isActive ? "light" : "subtle"}
+                    color={isActive ? "violet" : "gray"}
+                    size={40}
+                    radius="md"
+                    aria-label={t.label}
+                    style={{ display: "flex", margin: "0 auto 6px" }}
+                  >
+                    <Icon size={22} stroke={2} />
+                  </ActionIcon>
                 </Tooltip>
               );
             }
@@ -170,8 +241,9 @@ export default function AppShell(props: { onLogout: () => void }) {
                 <MantineNavLink
                   component={NavLink}
                   to={t.to}
+                  onClick={() => setMobileOpened(false)}
                   label={t.label}
-                  leftSection={<Text span style={{ fontSize: "1.1em" }}>{t.icon}</Text>}
+                  leftSection={<Icon size={20} stroke={2} />}
                   active={isActive}
                   style={{ borderRadius: "var(--mantine-radius-sm)" }}
                 />
@@ -182,13 +254,42 @@ export default function AppShell(props: { onLogout: () => void }) {
       </MantineAppShell.Navbar>
 
       <MantineAppShell.Main>
-        <Group justify="space-between" mb="md">
-          <Title order={3}>{currentTitle}</Title>
-          <Breadcrumbs>
-            <Link to="/dashboard" style={{ color: "var(--mantine-color-dimmed)" }}>Home</Link>
-            <span>{currentTitle}</span>
-          </Breadcrumbs>
-        </Group>
+        {pageHeading.title ? (
+          <Stack gap={2} mb="lg">
+            {pageHeading.kicker ? (
+              pageHeading.kickerTo ? (
+                <Anchor component={Link} to={pageHeading.kickerTo} size="sm" c="dimmed" underline="never">
+                  {pageHeading.kicker}
+                </Anchor>
+              ) : (
+                <Text size="sm" c="dimmed">{pageHeading.kicker}</Text>
+              )
+            ) : null}
+            <Title order={2} fw={600} lh={1.2}>
+              {pageHeading.title}
+            </Title>
+          </Stack>
+        ) : pageHeading.kicker ? (
+          <Anchor component={Link} to={pageHeading.kickerTo || "/clients"} size="sm" c="dimmed" underline="never" display="inline-block" mb="md">
+            {pageHeading.kicker}
+          </Anchor>
+        ) : null}
+
+        {safety?.mikrotik_writes_disabled ? (
+          <Alert color="teal" variant="light" mb="md" title="Staging: Mikrotik en solo lectura">
+            Cortes, altas/bajas PPPoE y sync de perfiles están bloqueados hacia el router.
+          </Alert>
+        ) : (safety?.prod_host_overlap?.length ?? 0) > 0 || (safety?.servers_with_real_credentials ?? 0) > 0 ? (
+          <Alert color="orange" variant="light" mb="md" title="Atención: Mikrotik de producción">
+            {(safety?.prod_host_overlap?.length ?? 0) > 0
+              ? `Hosts de prod detectados: ${safety!.prod_host_overlap!.join(", ")}. `
+              : ""}
+            {(safety?.servers_with_real_credentials ?? 0) > 0
+              ? "Hay credenciales API cargadas. "
+              : ""}
+            Activá MIKROTIK_WRITES_DISABLED en staging antes de migrar o sincronizar.
+          </Alert>
+        ) : null}
 
         {error ? (
           <Alert color="red" mb="md" className="sc-error">
@@ -202,6 +303,7 @@ export default function AppShell(props: { onLogout: () => void }) {
           <Route path="/clients" element={<ClientsPage />} />
           <Route path="/clients/new" element={<ClientsPage />} />
           <Route path="/clients/:clientId" element={<ClientsPage />} />
+          <Route path="/installations" element={<InstallationsPage />} />
           <Route path="/billing" element={<BillingPage />} />
           <Route path="/invoices" element={<InvoicesPage />} />
           <Route path="/payments" element={<PaymentsPage />} />
@@ -216,9 +318,8 @@ export default function AppShell(props: { onLogout: () => void }) {
       </MantineAppShell.Main>
 
       <MantineAppShell.Footer p="xs">
-        <Group justify="space-between">
-          <span>SistemaConnect</span>
-          <span>ISP Admin</span>
+        <Group justify="center">
+          <BrandLogo mark={20} wordmarkSize={14} />
         </Group>
       </MantineAppShell.Footer>
     </MantineAppShell>

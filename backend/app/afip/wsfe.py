@@ -51,6 +51,8 @@ class AfipWsfeClient:
         cuit: str,
         cert_path: str,
         key_path: str,
+        cert_pem: str | None = None,
+        key_pem: str | None = None,
         db_read: Callable[[str], str | None] | None = None,
         db_write: Callable[[str, str], None] | None = None,
     ):
@@ -58,20 +60,20 @@ class AfipWsfeClient:
         self.cuit = str(cuit or "").strip()
         self.cert_path = str(cert_path or "").strip()
         self.key_path = str(key_path or "").strip()
+        self.cert_pem = (cert_pem or "").strip() or None
+        self.key_pem = (key_pem or "").strip() or None
         self._db_read = db_read
         self._db_write = db_write
 
     def _require_config(self) -> None:
         if not self.cuit:
             raise AfipIntegrationError("afip_cuit_required")
-        if not self.cert_path:
-            raise AfipIntegrationError("afip_cert_path_required")
-        if not self.key_path:
-            raise AfipIntegrationError("afip_key_path_required")
-        if not os.path.exists(self.cert_path):
-            raise AfipIntegrationError(f"afip_cert_not_found:{self.cert_path}")
-        if not os.path.exists(self.key_path):
-            raise AfipIntegrationError(f"afip_key_not_found:{self.key_path}")
+        has_cert = bool(self.cert_pem) or (self.cert_path and os.path.exists(self.cert_path))
+        has_key = bool(self.key_pem) or (self.key_path and os.path.exists(self.key_path))
+        if not has_cert:
+            raise AfipIntegrationError("afip_cert_required")
+        if not has_key:
+            raise AfipIntegrationError("afip_key_required")
 
     def _service_urls(self) -> tuple[str, str]:
         if self.env == "PRODUCCION":
@@ -111,8 +113,8 @@ class AfipWsfeClient:
         raise AfipIntegrationError(f"afip_invalid_date:{raw}")
 
     def _load_cert_and_key(self):
-        cert_bytes = open(self.cert_path, "rb").read()
-        key_bytes = open(self.key_path, "rb").read()
+        cert_bytes = self.cert_pem.encode("utf-8") if self.cert_pem else open(self.cert_path, "rb").read()
+        key_bytes = self.key_pem.encode("utf-8") if self.key_pem else open(self.key_path, "rb").read()
 
         cert = None
         for loader in (x509.load_pem_x509_certificate, x509.load_der_x509_certificate):

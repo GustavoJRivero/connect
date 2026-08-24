@@ -39,9 +39,12 @@ def _next_cbte_number(*, point_of_sale: int, invoice_type: str) -> int:
 def _payment_to_dict(p: Payment) -> dict:
     allocs = PaymentAllocation.query.filter_by(payment_id=p.id).all()
     u = User.query.get(int(p.created_by_user_id)) if getattr(p, "created_by_user_id", None) else None
+    from ..models.client import Client
+    client = Client.query.get(int(p.client_id)) if p.client_id else None
     return {
         "id": p.id,
         "client_id": p.client_id,
+        "client_name": (client.full_name if client else None),
         "paid_at": p.paid_at.isoformat() if getattr(p, "paid_at", None) else None,
         "amount": str(p.amount),
         "method": p.method,

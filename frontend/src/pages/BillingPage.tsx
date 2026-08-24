@@ -1,22 +1,25 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { fmtDateTime } from "../datetime";
-import { Button, Field } from "../ui";
+import { formatApiError } from "../format";
+import { MutedBadge, jobStatusTone } from "../ui";
 import {
-  Grid,
-  Checkbox,
   Alert,
   Card,
   Title,
   Text,
   Stack,
   Group,
-  Badge,
   SimpleGrid,
   Paper,
   Loader,
   Center,
+  Anchor,
+  ActionIcon,
+  Tooltip,
 } from "@mantine/core";
+import { IconRefresh } from "@tabler/icons-react";
 
 interface BillingStatus {
   mode: string;
@@ -39,12 +42,7 @@ interface BillingStatus {
 }
 
 export default function BillingPage() {
-  const [issueDate, setIssueDate] = useState("");
-  const [issue, setIssue] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [generateResult, setGenerateResult] = useState<{ created: number; errors: any[] } | null>(null);
-  const [updateResult, setUpdateResult] = useState<{ cut: number[]; restored: number[] } | null>(null);
-
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
 
@@ -53,8 +51,8 @@ export default function BillingPage() {
     try {
       const res = await api.getBillingStatus();
       setStatus(res as BillingStatus);
-    } catch {
-      // ignore
+    } catch (e: unknown) {
+      setError(formatApiError(e));
     } finally {
       setStatusLoading(false);
     }
@@ -64,34 +62,6 @@ export default function BillingPage() {
     loadStatus();
   }, []);
 
-  async function generate() {
-    setError(null);
-    setGenerateResult(null);
-    try {
-      const payload: { issue?: boolean; issue_date?: string } = { issue };
-      if (issueDate) payload.issue_date = issueDate;
-      const res = await api.generateBilling(payload);
-      setGenerateResult(res as { created: number; errors: any[] });
-      await loadStatus();
-    } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
-    }
-  }
-
-  async function updateServices() {
-    setError(null);
-    setUpdateResult(null);
-    try {
-      const res = await api.updateServices();
-      setUpdateResult(res as { cut: number[]; restored: number[] });
-      await loadStatus();
-    } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
-    }
-  }
-
   return (
     <Stack gap="md">
       {error ? (
@@ -100,20 +70,21 @@ export default function BillingPage() {
         </Alert>
       ) : null}
 
-      {/* Panel de estado */}
       <Card withBorder padding="lg" radius="md">
         <Card.Section withBorder inheritPadding py="sm">
           <Group justify="space-between">
             <Title order={5}>Estado de facturación</Title>
             <Group gap="xs">
               {status ? (
-                <Badge color={status.mode === "INDIVIDUAL" ? "violet" : "blue"} variant="filled" size="lg">
+                <MutedBadge tone="lilac" size="lg">
                   Modo {status.mode}
-                </Badge>
+                </MutedBadge>
               ) : null}
-              <Button variant="default" onClick={loadStatus}>
-                Actualizar
-              </Button>
+              <Tooltip label="Actualizar">
+                <ActionIcon size="lg" variant="light" color="violet" onClick={loadStatus} aria-label="Actualizar">
+                  <IconRefresh size={20} />
+                </ActionIcon>
+              </Tooltip>
             </Group>
           </Group>
         </Card.Section>
@@ -124,7 +95,7 @@ export default function BillingPage() {
             <Stack gap="md">
               <SimpleGrid cols={{ base: 2, sm: 4 }}>
                 <Paper withBorder p="md" radius="sm" ta="center">
-                  <Text size="xl" fw={700} c="blue">{status.active_connections}</Text>
+                  <Text size="xl" fw={700} c="violet">{status.active_connections}</Text>
                   <Text size="xs" c="dimmed">Conexiones activas</Text>
                 </Paper>
                 <Paper withBorder p="md" radius="sm" ta="center">
@@ -133,7 +104,7 @@ export default function BillingPage() {
                 </Paper>
                 <Paper withBorder p="md" radius="sm" ta="center">
                   <Text size="xl" fw={700} c="orange">{status.overdue_invoices}</Text>
-                  <Text size="xs" c="dimmed">Facturas vencidas impagas</Text>
+                  <Text size="xs" c="dimmed">Facturas vencidas pendientes</Text>
                 </Paper>
                 <Paper withBorder p="md" radius="sm" ta="center">
                   <Text size="xl" fw={700} c="gray">{status.draft_invoices}</Text>
@@ -159,10 +130,10 @@ export default function BillingPage() {
                   <Group justify="space-between">
                     <Group gap="xs">
                       <Text size="sm" fw={500}>Última ejecución:</Text>
-                      <Badge size="sm" color={status.last_run.status === "COMPLETED" ? "green" : status.last_run.status === "FAILED" ? "red" : "yellow"}>
+                      <MutedBadge size="sm" tone={jobStatusTone(status.last_run.status)}>
                         {status.last_run.status}
-                      </Badge>
-                      <Badge size="sm" variant="light">{status.last_run.trigger}</Badge>
+                      </MutedBadge>
+                      <MutedBadge size="sm" tone="gray">{status.last_run.trigger}</MutedBadge>
                     </Group>
                     <Text size="xs" c="dimmed">
                       {status.last_run.created_at ? fmtDateTime(status.last_run.created_at) : "-"}
@@ -175,73 +146,17 @@ export default function BillingPage() {
               ) : (
                 <Text size="sm" c="dimmed">No hay ejecuciones de facturación registradas.</Text>
               )}
+
+              <Text size="sm" c="dimmed">
+                La generación de facturas y la actualización de servicios están en{" "}
+                <Anchor component={Link} to="/settings" size="sm">Configuración → Automatización</Anchor>.
+              </Text>
             </Stack>
           ) : (
             <Text c="dimmed">No se pudo cargar el estado.</Text>
           )}
         </Card.Section>
       </Card>
-
-      {/* Acciones */}
-      <Grid>
-        <Grid.Col span={{ base: 12, lg: 6 }}>
-          <Card withBorder padding="lg" radius="md">
-            <Card.Section withBorder inheritPadding py="sm">
-              <Title order={5}>Generación de facturas</Title>
-            </Card.Section>
-            <Stack gap="md" mt="md">
-              <Text size="sm" c="dimmed">
-                Genera facturas para todas las conexiones activas del período actual.
-              </Text>
-              <Field
-                label="Fecha de emisión (opcional)"
-                value={issueDate}
-                onChange={setIssueDate}
-                placeholder="YYYY-MM-DD (vacío = hoy)"
-              />
-              <Checkbox
-                label="Emitir directamente (ISSUED)"
-                checked={issue}
-                onChange={(e) => setIssue(e.currentTarget.checked)}
-              />
-              <Group>
-                <Button variant="primary" onClick={generate}>
-                  Generar facturas
-                </Button>
-              </Group>
-              {generateResult ? (
-                <Alert color={generateResult.errors.length > 0 ? "yellow" : "green"} title="Resultado">
-                  <Text size="sm">Facturas creadas: {generateResult.created}</Text>
-                  {generateResult.errors.length > 0 ? (
-                    <Text size="sm" c="red">Errores: {generateResult.errors.length}</Text>
-                  ) : null}
-                </Alert>
-              ) : null}
-            </Stack>
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, lg: 6 }}>
-          <Card withBorder padding="lg" radius="md">
-            <Card.Section withBorder inheritPadding py="sm">
-              <Title order={5}>Actualizar estado de servicios</Title>
-            </Card.Section>
-            <Stack gap="md" mt="md">
-              <Text size="sm" c="dimmed">
-                Revisa facturas vencidas impagas y actualiza el estado de las conexiones (corte / restauración).
-              </Text>
-              <Button variant="danger" onClick={updateServices}>
-                Actualizar servicios
-              </Button>
-              {updateResult ? (
-                <Alert color="blue" title="Resultado">
-                  <Text size="sm">Cortadas: {updateResult.cut.length} | Restauradas: {updateResult.restored.length}</Text>
-                </Alert>
-              ) : null}
-            </Stack>
-          </Card>
-        </Grid.Col>
-      </Grid>
     </Stack>
   );
 }

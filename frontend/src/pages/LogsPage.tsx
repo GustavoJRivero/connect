@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
-import { Button, Card } from "../ui";
+import { Card, MutedBadge, logLevelTone, badgeToneFromColor } from "../ui";
+import { formatApiError } from "../format";
+import { IconSettings, IconRefresh } from "@tabler/icons-react";
 import {
   Stack,
   Alert,
-  Badge,
   Group,
   Select,
   TextInput,
@@ -20,20 +21,13 @@ import {
   Tooltip,
 } from "@mantine/core";
 
-const LEVEL_COLORS: Record<string, string> = {
-  DEBUG: "gray",
-  INFO: "cyan",
-  WARNING: "yellow",
-  ERROR: "red",
-};
-
-const MODULE_COLORS: Record<string, string> = {
-  BILLING: "blue",
+const MODULE_TONES: Record<string, string> = {
+  BILLING: "violet",
   CLIENT: "green",
-  CONNECTION: "cyan",
+  CONNECTION: "violet",
   PAYMENT: "yellow",
   INVOICE: "gray",
-  NETWORK: "dark",
+  NETWORK: "gray",
   AUTH: "red",
   SYSTEM: "violet",
 };
@@ -72,8 +66,7 @@ export default function LogsPage() {
       setItems(res?.items ?? []);
       setTotal(res?.total ?? 0);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     }
   }
 
@@ -135,28 +128,29 @@ export default function LogsPage() {
         headerRight={
           <Group gap="xs">
             {config ? (
-              <Badge
-                color={config.enabled ? "green" : "red"}
-                variant="filled"
+              <MutedBadge
+                tone={config.enabled ? "green" : "red"}
                 size="lg"
                 style={{ cursor: "pointer" }}
                 onClick={toggleMaster}
               >
                 {config.enabled ? "Logging activo" : "Logging desactivado"}
-              </Badge>
+              </MutedBadge>
             ) : null}
             <Tooltip label="Configuración de logging">
               <ActionIcon
                 variant={showConfig ? "filled" : "light"}
-                color="blue"
+                color="violet"
                 onClick={() => setShowConfig(!showConfig)}
               >
-                ⚙️
+                <IconSettings size={18} />
               </ActionIcon>
             </Tooltip>
-            <Button variant="default" onClick={loadLogs}>
-              Recargar
-            </Button>
+            <Tooltip label="Recargar">
+              <ActionIcon size="lg" variant="light" color="violet" onClick={loadLogs} aria-label="Recargar">
+                <IconRefresh size={20} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         }
       >
@@ -177,9 +171,9 @@ export default function LogsPage() {
                   key={m.module}
                   label={
                     <Group gap={4}>
-                      <Badge color={MODULE_COLORS[m.module] ?? "gray"} variant="light" size="xs">
+                      <MutedBadge tone={badgeToneFromColor(MODULE_TONES[m.module])} size="xs">
                         {m.module}
-                      </Badge>
+                      </MutedBadge>
                       <Text size="xs">{m.label}</Text>
                     </Group>
                   }
@@ -279,14 +273,14 @@ export default function LogsPage() {
                     </Text>
                   </Table.Td>
                   <Table.Td>
-                    <Badge color={LEVEL_COLORS[log.level] ?? "gray"} variant="filled" size="sm">
+                    <MutedBadge tone={logLevelTone(log.level)} size="sm">
                       {log.level}
-                    </Badge>
+                    </MutedBadge>
                   </Table.Td>
                   <Table.Td>
-                    <Badge color={MODULE_COLORS[log.module] ?? "gray"} variant="light" size="sm">
+                    <MutedBadge tone={badgeToneFromColor(MODULE_TONES[log.module])} size="sm">
                       {log.module}
-                    </Badge>
+                    </MutedBadge>
                   </Table.Td>
                   <Table.Td>
                     <Code style={{ fontSize: "0.85em" }}>{log.action}</Code>

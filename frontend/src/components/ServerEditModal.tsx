@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Modal, Grid, Alert, Group, Checkbox, Stack, Skeleton, NumberInput, Text } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
+import { formatApiError } from "../format";
 
 const MAX_POOLS = 5;
 
@@ -70,8 +71,7 @@ export function ServerEditModal(props: {
         setIpPoolCidrs(padded.slice(0, count));
       })
       .catch((e: unknown) => {
-        const err = e as { status?: number; body?: unknown };
-        setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+        setError(formatApiError(e));
       })
       .finally(() => setLoading(false));
   }, [props.open, props.serverId]);
@@ -175,7 +175,7 @@ export function ServerEditModal(props: {
         setError(`Máximo ${(body as { max?: number })?.max ?? MAX_POOLS} pools por server.`);
         return;
       }
-      setError(`${err?.status ?? ""} ${JSON.stringify(body)}`);
+      setError(formatApiError(e));
     }
   }
 

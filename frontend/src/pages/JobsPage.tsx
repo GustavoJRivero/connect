@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
-import { Button } from "../ui";
+import { MutedBadge, jobStatusTone } from "../ui";
+import { formatApiError, jobStatusLabel } from "../format";
+import { IconRefresh, IconX } from "@tabler/icons-react";
 import {
   Alert,
-  Badge,
   Card,
   Code,
   Collapse,
@@ -33,14 +34,6 @@ interface JobRow {
   result: unknown;
   last_error: string | null;
 }
-
-const STATUS_COLORS: Record<string, string> = {
-  PENDING: "yellow",
-  RUNNING: "blue",
-  DONE: "green",
-  FAILED: "red",
-  CANCELLED: "gray",
-};
 
 const PAGE_SIZE = 30;
 
@@ -94,8 +87,7 @@ export default function JobsPage() {
       setJobs(res.items);
       setTotal(res.total);
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(formatApiError(e));
     } finally {
       setLoading(false);
     }
@@ -118,8 +110,7 @@ export default function JobsPage() {
       await api.retryJob(id);
       loadJobs();
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`Retry error: ${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(`Error al reintentar: ${formatApiError(e)}`);
     }
   };
 
@@ -128,8 +119,7 @@ export default function JobsPage() {
       await api.cancelJob(id);
       loadJobs();
     } catch (e: unknown) {
-      const err = e as { status?: number; body?: unknown };
-      setError(`Cancel error: ${err?.status ?? ""} ${JSON.stringify(err?.body ?? e)}`);
+      setError(`Error al cancelar: ${formatApiError(e)}`);
     }
   };
 
@@ -173,9 +163,11 @@ export default function JobsPage() {
             <Text size="sm" c="dimmed">
               {total} job{total !== 1 ? "s" : ""}
             </Text>
-            <Button variant="default" onClick={loadJobs}>
-              Recargar
-            </Button>
+            <Tooltip label="Recargar">
+              <ActionIcon size="lg" variant="light" color="violet" onClick={loadJobs} aria-label="Recargar">
+                <IconRefresh size={20} />
+              </ActionIcon>
+            </Tooltip>
           </Group>
         </Group>
 
@@ -215,14 +207,14 @@ export default function JobsPage() {
                         </Text>
                       </Table.Td>
                       <Table.Td>
-                        <Badge variant="light" size="sm">
+                        <MutedBadge tone="gray" size="sm">
                           {j.job_type}
-                        </Badge>
+                        </MutedBadge>
                       </Table.Td>
                       <Table.Td>
-                        <Badge color={STATUS_COLORS[j.status] ?? "gray"} size="sm">
-                          {j.status}
-                        </Badge>
+                        <MutedBadge tone={jobStatusTone(j.status)} size="sm">
+                          {jobStatusLabel(j.status)}
+                        </MutedBadge>
                       </Table.Td>
                       <Table.Td>
                         <Text size="xs">{fmtDate(j.created_at)}</Text>
@@ -242,11 +234,11 @@ export default function JobsPage() {
                             <Tooltip label="Reintentar">
                               <ActionIcon
                                 variant="light"
-                                color="blue"
+                                color="violet"
                                 size="sm"
                                 onClick={() => handleRetry(j.id)}
                               >
-                                🔄
+                                <IconRefresh size={14} />
                               </ActionIcon>
                             </Tooltip>
                           )}
@@ -258,7 +250,7 @@ export default function JobsPage() {
                                 size="sm"
                                 onClick={() => handleCancel(j.id)}
                               >
-                                ✕
+                                <IconX size={14} />
                               </ActionIcon>
                             </Tooltip>
                           )}

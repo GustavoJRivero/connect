@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional
 
 from ..extensions import db
 from ..models.job import Job
+from ..mikrotik.guard import MikrotikWritesDisabledError, assert_mikrotik_writes_allowed, is_mikrotik_write_job
 
 
 JOB_MT_CREATE_PPP_SECRET = "MT_CREATE_PPP_SECRET"
@@ -29,6 +30,8 @@ def enqueue_job(
     server_id: Optional[int] = None,
     run_after: Optional[datetime] = None,
 ) -> Job:
+    if is_mikrotik_write_job(job_type):
+        assert_mikrotik_writes_allowed()
     j = Job(
         job_type=job_type,
         status="PENDING",

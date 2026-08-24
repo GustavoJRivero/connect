@@ -72,6 +72,11 @@ def _require_keys(payload: dict, keys: list, job_type: str) -> None:
 
 
 def _execute_job(app: Flask, j: Job) -> Dict[str, Any]:
+    from ..mikrotik.guard import MikrotikWritesDisabledError, is_mikrotik_write_job, mikrotik_writes_disabled
+
+    if is_mikrotik_write_job(j.job_type) and mikrotik_writes_disabled(app):
+        raise MikrotikWritesDisabledError()
+
     payload = json.loads(j.payload_json or "{}")
 
     # Jobs de billing: actualización de estado de servicios

@@ -17,6 +17,7 @@ from ..tasks.queue import (
     JOB_MT_SET_PPP_REMOTE_ADDRESS,
     enqueue_job,
 )
+from ..validation import ValidationError, optional_str
 
 
 def _pool_error_response(e: PoolError):
@@ -31,6 +32,8 @@ bp = Blueprint("connections", __name__, url_prefix="/api/connections")
 
 def _iso(dt: Optional[datetime]):
     """Serializa un datetime UTC naive como ISO con offset (`+00:00`)."""
+    if dt is not None and getattr(dt, "year", 9999) < 1990:
+        return None
     from ..timezone import iso_utc
     return iso_utc(dt)
 
@@ -129,6 +132,13 @@ def create_connection():
         return _pool_error_response(e)
 
     client = Client.query.get_or_404(int(client_id))
+    try:
+        service_address = optional_str(data.get("service_address"), 255, "service_address")
+        location = optional_str(data.get("location"), 255, "location")
+        pon_sn = optional_str(data.get("pon_sn"), 64, "pon_sn")
+        location_url = optional_str(data.get("location_url"), 1000, "location_url")
+    except ValidationError as e:
+        return e.to_response()
     # Si estaba retirado, al crear una nueva conexión vuelve a ACTIVE
     if getattr(client, "status", "ACTIVE") == "RETIRED":
         client.status = "ACTIVE"
@@ -144,8 +154,8 @@ def create_connection():
     x = Connection(
         client_id=client.id,
         server_id=(int(server_id) if server_id else None),
-        service_address=(data.get("service_address") or None),
-        location=(data.get("location") or None),
+        service_address=service_address,
+        location=location,
         plan_profile=plan_profile,
         billing_day=billing_day,
         prorate_first_month=prorate,
@@ -157,7 +167,7 @@ def create_connection():
         ip_is_fixed=bool(ip) and not ip_autoassigned,
         pppoe_username=pppoe_username,
         pppoe_password_value=pppoe_password,
-        pon_sn=((str(data.get("pon_sn")).strip() or None) if data.get("pon_sn") is not None else None),
+        pon_sn=pon_sn,
     )
     db.session.add(x)
     db.session.commit()  # asigna x.id (pppoe)
@@ -169,8 +179,20 @@ def create_connection():
         x.pppoe_password_value = str(x.id)
     db.session.commit()
 
+    # Orden de instalación si vino ubicación (link Google Maps o lat,lng).
+    installation_order = None
+    if location_url:
+        from ..maps.service import create_order as create_installation_order
+
+        installation_order = create_installation_order(
+            client_id=int(client.id),
+            connection_id=int(x.id),
+            location_url=location_url,
+        )
+        db.session.commit()
+
     jobs = []
-    if provision_mikrotik:
+    if provision_mikrotik and x.server_id:
         j = enqueue_job(
             job_type=JOB_MT_CREATE_PPP_SECRET,
             payload={
@@ -180,11 +202,21 @@ def create_connection():
                 "remote_address": (x.ip or None),
                 "comment": (client.full_name or "").strip(),
             },
-            server_id=(int(x.server_id) if x.server_id else None),
+            server_id=int(x.server_id),
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
 
-    return jsonify({"connection": _conn_to_dict(x), "jobs": jobs}), 201
+    out = {"connection": _conn_to_dict(x), "jobs": jobs}
+    if installation_order is not None:
+        out["installation_order"] = {
+            "id": int(installation_order.id),
+            "status": installation_order.status,
+            "nap_name": installation_order.nap_name,
+            "fiber_meters": (str(installation_order.fiber_meters) if installation_order.fiber_meters is not None else None),
+            "expires_at": (installation_order.expires_at.isoformat() if installation_order.expires_at else None),
+            "last_maps_error": installation_order.last_maps_error,
+        }
+    return jsonify(out), 201
 
 
 @bp.put("/<int:connection_id>")
@@ -200,9 +232,15 @@ def update_connection(connection_id: int):
     old_server_id = int(x.server_id) if x.server_id else None
 
     if "service_address" in data:
-        x.service_address = data.get("service_address") or None
+        try:
+            x.service_address = optional_str(data.get("service_address"), 255, "service_address")
+        except ValidationError as e:
+            return e.to_response()
     if "location" in data:
-        x.location = data.get("location") or None
+        try:
+            x.location = optional_str(data.get("location"), 255, "location")
+        except ValidationError as e:
+            return e.to_response()
     if "server_id" in data:
         x.server_id = int(data.get("server_id")) if data.get("server_id") else None
 
@@ -234,8 +272,10 @@ def update_connection(connection_id: int):
         creds_changed = True
 
     if "pon_sn" in data:
-        raw = data.get("pon_sn")
-        x.pon_sn = (str(raw).strip() or None) if raw is not None else None
+        try:
+            x.pon_sn = optional_str(data.get("pon_sn"), 64, "pon_sn")
+        except ValidationError as e:
+            return e.to_response()
 
     if "plan_profile" in data:
         plan_profile = (data.get("plan_profile") or "").strip()
@@ -278,28 +318,28 @@ def update_connection(connection_id: int):
             jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id), "server_id": new_server_id})
         return jsonify({"connection": _conn_to_dict(x), "jobs": jobs})
 
-    if sync_mikrotik and x.status == "ACTIVE" and "plan_profile" in data:
+    if sync_mikrotik and x.status == "ACTIVE" and "plan_profile" in data and x.server_id:
         j = enqueue_job(
             job_type=JOB_MT_SET_PPP_PROFILE,
             payload={"name": x.pppoe_name(), "profile": x.plan_profile},
-            server_id=(int(x.server_id) if x.server_id else None),
+            server_id=int(x.server_id),
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
 
     # Solo sincronizar IP en Mikrotik si se está asignando una IP fija (no si se deja vacío)
-    if sync_mikrotik and ip_changed and (x.ip or "").strip():
+    if sync_mikrotik and ip_changed and (x.ip or "").strip() and x.server_id:
         j = enqueue_job(
             job_type=JOB_MT_SET_PPP_REMOTE_ADDRESS,
             payload={"name": x.pppoe_name(), "remote_address": (x.ip or "").strip()},
-            server_id=(int(x.server_id) if x.server_id else None),
+            server_id=int(x.server_id),
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
 
-    if sync_mikrotik and creds_changed:
+    if sync_mikrotik and creds_changed and x.server_id:
         j = enqueue_job(
             job_type=JOB_MT_SET_PPP_CREDENTIALS,
             payload={"old_name": old_name, "name": x.pppoe_name(), "password": x.pppoe_password()},
-            server_id=(int(x.server_id) if x.server_id else None),
+            server_id=int(x.server_id),
         )
         jobs.append({"job_id": int(j.id), "type": j.job_type, "connection_id": int(x.id)})
 
@@ -319,7 +359,19 @@ def connection_mt_status(connection_id: int):
 
     x = Connection.query.get_or_404(connection_id)
     if not x.server_id:
-        return jsonify({"error": "server_required"}), 400
+        return jsonify({
+            "connection_id": x.id,
+            "server_id": None,
+            "active": False,
+            "assigned_ip": None,
+            "uptime": None,
+            "last_connected_at": _iso(x.last_connected_at),
+            "last_disconnected_at": _iso(x.last_disconnected_at),
+            "fetched_at": None,
+            "ip": x.ip,
+            "ip_is_fixed": bool(getattr(x, "ip_is_fixed", False)),
+            "unavailable_reason": "sin_servidor",
+        })
     s = MikrotikServer.query.get(int(x.server_id))
     if not s:
         return jsonify({"error": "server_not_found"}), 404
@@ -351,9 +403,9 @@ def connection_mt_status(connection_id: int):
             x.last_uptime = str(uptime)
         dt_in = _parse_mt_datetime(str(last_in)) if last_in else None
         dt_out = _parse_mt_datetime(str(last_out)) if last_out else None
-        if dt_in:
+        if dt_in and dt_in.year >= 1990:
             x.last_connected_at = dt_in
-        if dt_out:
+        if dt_out and dt_out.year >= 1990:
             x.last_disconnected_at = dt_out
         db.session.commit()
 
@@ -394,12 +446,15 @@ def cut_connection(connection_id: int):
     x.mikrotik_profile = cut_profile
     db.session.commit()
 
-    j = enqueue_job(
-        job_type=JOB_MT_SET_PPP_PROFILE,
-        payload={"name": x.pppoe_name(), "profile": cut_profile},
-        server_id=(int(x.server_id) if x.server_id else None),
-    )
-    return jsonify({"status": "cut", "connection_id": x.id, "mikrotik_profile": x.mikrotik_profile, "job_id": int(j.id)})
+    job_id = None
+    if x.server_id:
+        j = enqueue_job(
+            job_type=JOB_MT_SET_PPP_PROFILE,
+            payload={"name": x.pppoe_name(), "profile": cut_profile},
+            server_id=int(x.server_id),
+        )
+        job_id = int(j.id)
+    return jsonify({"status": "cut", "connection_id": x.id, "mikrotik_profile": x.mikrotik_profile, "job_id": job_id})
 
 
 @bp.post("/<int:connection_id>/restore")
@@ -416,12 +471,21 @@ def restore_connection(connection_id: int):
     x.mikrotik_profile = x.plan_profile
     db.session.commit()
 
-    j = enqueue_job(
-        job_type=JOB_MT_SET_PPP_PROFILE,
-        payload={"name": x.pppoe_name(), "profile": x.plan_profile},
-        server_id=(int(x.server_id) if x.server_id else None),
-    )
-    return jsonify({"status": "restored", "connection_id": x.id, "mikrotik_profile": x.mikrotik_profile, "job_id": int(j.id)})
+    job_id = None
+    if x.server_id:
+        j = enqueue_job(
+            job_type=JOB_MT_SET_PPP_PROFILE,
+            payload={"name": x.pppoe_name(), "profile": x.plan_profile},
+            server_id=int(x.server_id),
+        )
+        job_id = int(j.id)
+    return jsonify({
+        "status": "restored",
+        "connection_id": x.id,
+        "connection": _conn_to_dict(x),
+        "mikrotik_profile": x.mikrotik_profile,
+        "job_id": job_id,
+    })
 
 
 @bp.delete("/<int:connection_id>")
@@ -434,11 +498,17 @@ def delete_connection(connection_id: int):
     server_id = int(x.server_id) if x.server_id else None
     name = x.pppoe_name()
 
+    # Desvincular órdenes de instalación (se conservan como historial del cliente)
+    from ..models.installation_order import InstallationOrder
+    InstallationOrder.query.filter_by(connection_id=int(x.id)).update(
+        {"connection_id": None}, synchronize_session=False
+    )
+
     db.session.delete(x)
     db.session.commit()
 
     jobs = []
-    if provision_mikrotik:
+    if provision_mikrotik and server_id:
         j = enqueue_job(job_type=JOB_MT_DELETE_PPP_SECRET, payload={"name": name}, server_id=server_id)
         jobs.append({"job_id": int(j.id), "type": j.job_type, "name": name})
 
