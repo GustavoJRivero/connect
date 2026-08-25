@@ -85,8 +85,9 @@ const SAVE_CONFIRM: Record<SaveKind, { title: string; message: string }> = {
       "Se van a guardar el modo de facturación y los vencimientos. ¿Seguís?",
   },
   services: {
-    title: "¿Guardar estado de servicios?",
-    message: "Se va a guardar el perfil de corte Mikrotik. ¿Seguís?",
+    title: "¿Guardar servicios Mikrotik?",
+    message:
+      "Se guardará el perfil de corte, la protección de escrituras al router y los hosts de producción. ¿Seguís?",
   },
   automation: {
     title: "¿Guardar automatización?",
@@ -120,7 +121,7 @@ const SAVE_CONFIRM: Record<SaveKind, { title: string; message: string }> = {
 const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "billing", label: "Cobranza", hint: "Ciclo y vencimientos" },
   { id: "automation", label: "Automatización", hint: "Generación de facturas y cortes" },
-  { id: "services", label: "Servicios", hint: "Perfil de corte Mikrotik" },
+  { id: "services", label: "Servicios", hint: "Mikrotik: corte y protección staging" },
   { id: "issuer", label: "Emisor PDF", hint: "Datos que salen en la factura" },
   { id: "fiscal", label: "ARCA", hint: "CUIT, certificados y CAE" },
   { id: "mp", label: "Mercado Pago", hint: "Cobro desde el portal del cliente" },
@@ -276,6 +277,9 @@ export default function SettingsPage() {
   const [schedulerHour, setSchedulerHour] = useState(6);
   const [servicesEnabled, setServicesEnabled] = useState(false);
   const [cutProfile, setCutProfile] = useState("suspended");
+  const [mikrotikWritesDisabled, setMikrotikWritesDisabled] = useState(false);
+  const [mikrotikWritesDisabledSource, setMikrotikWritesDisabledSource] = useState("");
+  const [mikrotikProdHosts, setMikrotikProdHosts] = useState("");
   const [mapsEnabled, setMapsEnabled] = useState(true);
   const [mapsCron, setMapsCron] = useState("0 * * * *");
   const [mapsTtl, setMapsTtl] = useState(168);
@@ -329,6 +333,10 @@ export default function SettingsPage() {
       const schedH = parseInt(String(billRes["billing.scheduler.run_hour"] ?? "6"), 10);
       setSchedulerHour(Number.isFinite(schedH) ? Math.min(23, Math.max(0, schedH)) : 6);
       setCutProfile(String(mtRes["mikrotik.cut_profile"] ?? "suspended"));
+      const mtWritesFlag = String(mtRes["mikrotik.writes_disabled"] ?? "false").toLowerCase();
+      setMikrotikWritesDisabled(["1", "true", "yes", "on"].includes(mtWritesFlag));
+      setMikrotikWritesDisabledSource(mtRes["mikrotik.writes_disabled_source"] ?? "");
+      setMikrotikProdHosts(mtRes["mikrotik.prod_hosts"] ?? "");
       const svcRaw = billRes["billing.services.enabled"];
       if (svcRaw == null || String(svcRaw).trim() === "") {
         setServicesEnabled(schedOn);
@@ -499,6 +507,8 @@ export default function SettingsPage() {
     try {
       await api.putSettings({
         "mikrotik.cut_profile": cutProfile.trim() || "suspended",
+        "mikrotik.writes_disabled": mikrotikWritesDisabled ? "true" : "false",
+        "mikrotik.prod_hosts": mikrotikProdHosts.trim(),
       });
       setSuccess("Estado de servicios guardado.");
       notifySuccess("Estado de servicios guardado.");
@@ -718,9 +728,13 @@ export default function SettingsPage() {
       badge: schedulerEnabled || servicesEnabled ? `${schedulerHour}:00` : "Manual",
     },
     services: {
-      line: cutProfile.trim() ? `Perfil ${cutProfile}` : "Sin perfil de corte",
-      tone: cutProfile.trim() ? "lilac" : "gray",
-      badge: cutProfile.trim() || "Vacío",
+      line: mikrotikWritesDisabled
+        ? "Escrituras Mikrotik bloqueadas"
+        : cutProfile.trim()
+          ? `Perfil ${cutProfile}`
+          : "Sin perfil de corte",
+      tone: mikrotikWritesDisabled ? "green" : cutProfile.trim() ? "lilac" : "gray",
+      badge: mikrotikWritesDisabled ? "Protegido" : cutProfile.trim() || "Vacío",
     },
     issuer: {
       line: issuerExtra.name?.trim() || "Sin razón social",
@@ -1024,16 +1038,59 @@ export default function SettingsPage() {
           ) : null}
 
           {section === "services" ? (
-            <Stack gap="md">
-              <Field
-                label="Profile de corte (Mikrotik)"
-                value={cutProfile}
-                onChange={setCutProfile}
-                placeholder="ej: suspended"
-              />
-              <Text size="xs" c="dimmed">
-                La actualización automática de cortes está en Automatización.
-              </Text>
+            <Stack gap="lg">
+              <Paper withBorder p="md" radius="md">
+                <Text size="sm" fw={600} mb="xs">
+                  Perfil de corte
+                </Text>
+                <Text size="xs" c="dimmed" mb="md">
+                  Perfil PPPoE que se aplica al suspender clientes morosos.
+                </Text>
+                <Field
+                  label="Profile de corte (Mikrotik)"
+                  value={cutProfile}
+                  onChange={setCutProfile}
+                  placeholder="ej: suspended"
+                />
+                <Text size="xs" c="dimmed" mt="sm">
+                  La actualización automática de cortes está en Automatización.
+                </Text>
+              </Paper>
+
+              <Paper withBorder p="md" radius="md">
+                <Group justify="space-between" wrap="nowrap" align="flex-start" mb="xs">
+                  <Box>
+                    <Text size="sm" fw={600}>
+                      Protección de escrituras
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={4}>
+                      Evita que staging modifique usuarios PPPoE o perfiles en routers reales.
+                    </Text>
+                  </Box>
+                  <MutedBadge tone={mikrotikWritesDisabled ? "green" : "gray"} size="sm">
+                    {mikrotikWritesDisabled
+                      ? (mikrotikWritesDisabledSource === "env" ? "Desde .env" : "Activo")
+                      : "Desactivado"}
+                  </MutedBadge>
+                </Group>
+                <Switch
+                  label="Bloquear escrituras a Mikrotik (MIKROTIK_WRITES_DISABLED)"
+                  description="Equivalente a MIKROTIK_WRITES_DISABLED=true. Los jobs de alta/baja/corte en el router quedan en cola sin ejecutarse."
+                  checked={mikrotikWritesDisabled}
+                  onChange={(e) => setMikrotikWritesDisabled(e.currentTarget.checked)}
+                  mb="md"
+                />
+                <Field
+                  label="Hosts de producción (opcional)"
+                  value={mikrotikProdHosts}
+                  onChange={setMikrotikProdHosts}
+                  placeholder="172.16.1.1, 10.0.0.5"
+                />
+                <Text size="xs" c="dimmed" mt="sm">
+                  IPs o hostnames separados por coma. Si un servidor configurado coincide, el panel avisa antes de migrar o sincronizar.
+                </Text>
+              </Paper>
+
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
                 <Button variant="primary" onClick={() => void confirmAndSave("services")}>Guardar servicios</Button>
@@ -1352,15 +1409,15 @@ export default function SettingsPage() {
 
           {section === "maps" ? (
             <Stack gap="lg">
-              <Paper withBorder p="sm" radius="md">
-                <Group gap="sm" wrap="nowrap" align="flex-start">
+              <Paper withBorder p="md" radius="md">
+                <Group gap="sm" wrap="nowrap" align="flex-start" mb="md">
                   <ThemeIcon variant="light" color="blue" size={42} radius="md">
                     <IconMapPin size={22} stroke={1.5} />
                   </ThemeIcon>
-                  <Box>
+                  <Box style={{ flex: 1 }}>
                     <Group gap={8} mb={2}>
                       <Text size="sm" fw={600}>
-                        {mapsApiKeyReady ? "Listo para cobertura e instalaciones" : "Faltan credenciales de Maps"}
+                        Conexión API
                       </Text>
                       <MutedBadge tone={mapsApiKeyReady ? "green" : "gray"} size="sm">
                         {mapsApiKeySource === "env" ? "Desde .env" : mapsApiKeyReady ? "Admin" : "Sin API key"}
@@ -1371,67 +1428,76 @@ export default function SettingsPage() {
                     </Text>
                   </Box>
                 </Group>
+                <Stack gap="sm">
+                  <Field
+                    label="URL base de la API"
+                    value={mapsApi.api_base_url}
+                    onChange={(v) => setMapsApi((s) => ({ ...s, api_base_url: v }))}
+                    placeholder="https://maps.connectsrl.ar"
+                  />
+                  <PasswordInput
+                    label="API key"
+                    description={
+                      mapsApiKeyReady
+                        ? "Ya hay una key cargada. Dejá vacío para conservarla, o pegá una nueva para reemplazarla."
+                        : "cmk_read_… o cmk_write_… (Write para reservar/liberar puertos)."
+                    }
+                    value={mapsApi.api_key}
+                    onChange={(e) => setMapsApi((s) => ({ ...s, api_key: e.currentTarget.value }))}
+                    placeholder={mapsApiKeyReady ? "••••••••  (cargada)" : "cmk_write_…"}
+                  />
+                  <PasswordInput
+                    label="Webhook secret (opcional)"
+                    description={
+                      mapsWebhookReady
+                        ? "Ya hay un secret cargado. Dejá vacío para conservarlo."
+                        : "Secret compartido para POST /api/webhooks/maps/install-confirmed."
+                    }
+                    value={mapsApi.webhook_secret}
+                    onChange={(e) => setMapsApi((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
+                    placeholder={mapsWebhookReady ? "••••••••  (cargado)" : "secret-largo"}
+                  />
+                </Stack>
               </Paper>
 
-              <Field
-                label="URL base de la API"
-                value={mapsApi.api_base_url}
-                onChange={(v) => setMapsApi((s) => ({ ...s, api_base_url: v }))}
-                placeholder="https://maps.connectsrl.ar"
-              />
-              <PasswordInput
-                label="API key"
-                description={
-                  mapsApiKeyReady
-                    ? "Ya hay una key cargada. Dejá vacío para conservarla, o pegá una nueva para reemplazarla."
-                    : "cmk_read_… o cmk_write_… (Write para reservar/liberar puertos)."
-                }
-                value={mapsApi.api_key}
-                onChange={(e) => setMapsApi((s) => ({ ...s, api_key: e.currentTarget.value }))}
-                placeholder={mapsApiKeyReady ? "••••••••  (cargada)" : "cmk_write_…"}
-              />
-              <PasswordInput
-                label="Webhook secret (opcional)"
-                description={
-                  mapsWebhookReady
-                    ? "Ya hay un secret cargado. Dejá vacío para conservarlo."
-                    : "Secret compartido para POST /api/webhooks/maps/install-confirmed."
-                }
-                value={mapsApi.webhook_secret}
-                onChange={(e) => setMapsApi((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
-                placeholder={mapsWebhookReady ? "••••••••  (cargado)" : "secret-largo"}
-              />
+              <Paper withBorder p="md" radius="md">
+                <Text size="sm" fw={600} mb={4}>
+                  Reservas automáticas
+                </Text>
+                <Text size="xs" c="dimmed" mb="md">
+                  Liberación de puertos NAP cuando vence el plazo de una orden de instalación.
+                </Text>
+                <Stack gap="sm">
+                  <Switch
+                    label="Liberar automáticamente las reservas vencidas"
+                    description="Al vencer, el puerto se libera en el mapa (Reservados −1 / Disponibles +1) y la orden pasa a Vencida."
+                    checked={mapsEnabled}
+                    onChange={(e) => setMapsEnabled(e.currentTarget.checked)}
+                  />
+                  <Field
+                    label="Cron de ejecución (5 campos: min hora díaMes mes díaSemana)"
+                    value={mapsCron}
+                    onChange={setMapsCron}
+                    placeholder="0 * * * *"
+                  />
+                  <NumberInput
+                    label="Plazo de espera de la reserva (horas)"
+                    description="Tiempo desde la reserva hasta que se libera el puerto."
+                    value={mapsTtl}
+                    onChange={(v) =>
+                      setMapsTtl(typeof v === "number" && !Number.isNaN(v) && v > 0 ? v : 168)
+                    }
+                    min={1}
+                    max={8760}
+                    disabled={!mapsEnabled}
+                    maw={220}
+                  />
+                  <Text size="xs" c="dimmed">
+                    Ejemplos: <code>0 * * * *</code> cada hora · <code>*/15 * * * *</code> cada 15 min · <code>0 6 * * *</code> todos los días a las 6:00.
+                  </Text>
+                </Stack>
+              </Paper>
 
-              <Text size="sm" fw={600} mt="xs">
-                Reservas automáticas
-              </Text>
-              <Switch
-                label="Liberar automáticamente las reservas vencidas"
-                description="Al vencer, el puerto se libera en el mapa (Reservados −1 / Disponibles +1) y la orden pasa a Vencida."
-                checked={mapsEnabled}
-                onChange={(e) => setMapsEnabled(e.currentTarget.checked)}
-              />
-              <Field
-                label="Cron de ejecución (5 campos: min hora díaMes mes díaSemana)"
-                value={mapsCron}
-                onChange={setMapsCron}
-                placeholder="0 * * * *"
-              />
-              <NumberInput
-                label="Plazo de espera de la reserva (horas)"
-                description="Tiempo desde la reserva hasta que se libera el puerto."
-                value={mapsTtl}
-                onChange={(v) =>
-                  setMapsTtl(typeof v === "number" && !Number.isNaN(v) && v > 0 ? v : 168)
-                }
-                min={1}
-                max={8760}
-                disabled={!mapsEnabled}
-                maw={220}
-              />
-              <Text size="xs" c="dimmed">
-                Ejemplos: <code>0 * * * *</code> cada hora · <code>*/15 * * * *</code> cada 15 min · <code>0 6 * * *</code> todos los días a las 6:00.
-              </Text>
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
                 <Button variant="primary" onClick={() => void confirmAndSave("maps")}>Guardar Maps</Button>
@@ -1443,19 +1509,19 @@ export default function SettingsPage() {
             <Stack gap="lg">
               {migrationStatus?.safety?.mikrotik_writes_disabled ? (
                 <Alert color="teal" variant="light" title="Mikrotik protegido en este entorno">
-                  Las escrituras al router están bloqueadas (MIKROTIK_WRITES_DISABLED).
+                  Las escrituras al router están bloqueadas (Configuración → Servicios).
                   Podés migrar la base sin riesgo de cortar, restaurar ni modificar usuarios PPPoE en producción.
                 </Alert>
               ) : (
                 <Alert color="red" variant="light" title="Mikrotik sin bloqueo de escrituras">
                   Este entorno puede modificar el router de producción si hay credenciales API cargadas
-                  o si corrés cortes/restauraciones. Activá MIKROTIK_WRITES_DISABLED=true en staging antes de importar.
+                  o si corrés cortes/restauraciones. Activá «Bloquear escrituras a Mikrotik» en Servicios antes de importar.
                 </Alert>
               )}
 
               {(migrationStatus?.safety?.prod_host_overlap?.length ?? 0) > 0 ? (
                 <Alert color="red" variant="outline" title="Servidores apuntando a producción">
-                  Los hosts {migrationStatus!.safety!.prod_host_overlap!.join(", ")} coinciden con MIKROTIK_PROD_HOSTS.
+                  Los hosts {migrationStatus!.safety!.prod_host_overlap!.join(", ")} coinciden con los hosts de producción configurados.
                   No cargues credenciales reales ni actives servicios automáticos hasta estar en producción.
                 </Alert>
               ) : null}

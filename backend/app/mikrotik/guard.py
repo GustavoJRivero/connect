@@ -36,11 +36,20 @@ def _truthy(raw: Any) -> bool:
     return str(raw or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def mikrotik_writes_disabled(app=None) -> bool:
+def _effective_setting(setting_key: str, env_key: str, app=None) -> str:
     from flask import current_app
 
+    from ..models.setting import Setting
+
     cfg = app or current_app
-    return _truthy(cfg.config.get("MIKROTIK_WRITES_DISABLED"))
+    s = Setting.query.get(setting_key)
+    if s is not None and str(s.value or "").strip():
+        return str(s.value).strip()
+    return str(cfg.config.get(env_key) or "").strip()
+
+
+def mikrotik_writes_disabled(app=None) -> bool:
+    return _truthy(_effective_setting("mikrotik.writes_disabled", "MIKROTIK_WRITES_DISABLED", app))
 
 
 def is_mikrotik_write_job(job_type: str) -> bool:
@@ -53,10 +62,7 @@ def assert_mikrotik_writes_allowed(app=None) -> None:
 
 
 def prod_host_list(app=None) -> list[str]:
-    from flask import current_app
-
-    cfg = app or current_app
-    raw = str(cfg.config.get("MIKROTIK_PROD_HOSTS") or "").strip()
+    raw = _effective_setting("mikrotik.prod_hosts", "MIKROTIK_PROD_HOSTS", app)
     if not raw:
         return []
     return [h.strip() for h in raw.split(",") if h.strip()]

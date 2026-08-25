@@ -287,7 +287,7 @@ export default function AppShell(props: { onLogout: () => void }) {
             {(safety?.servers_with_real_credentials ?? 0) > 0
               ? "Hay credenciales API cargadas. "
               : ""}
-            Activá MIKROTIK_WRITES_DISABLED en staging antes de migrar o sincronizar.
+            Activá «Bloquear escrituras a Mikrotik» en Configuración → Servicios antes de migrar o sincronizar.
           </Alert>
         ) : null}
 

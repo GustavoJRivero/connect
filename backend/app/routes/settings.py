@@ -89,6 +89,14 @@ def get_kv():
         out["maps.webhook_secret_ready"] = "true" if webhook_secret else "false"
         out["maps.webhook_secret_source"] = wh_src
         out.setdefault("maps.api_base_url", base_url or "https://maps.connectsrl.ar")
+    if (not prefix) or prefix.startswith("mikrotik"):
+        writes, wd_src = _effective("mikrotik.writes_disabled", "MIKROTIK_WRITES_DISABLED")
+        prod_hosts, ph_src = _effective("mikrotik.prod_hosts", "MIKROTIK_PROD_HOSTS")
+        writes_on = str(writes or "").strip().lower() in ("1", "true", "yes", "on")
+        out.setdefault("mikrotik.writes_disabled", "true" if writes_on else "false")
+        out["mikrotik.writes_disabled_source"] = wd_src
+        out.setdefault("mikrotik.prod_hosts", prod_hosts)
+        out["mikrotik.prod_hosts_source"] = ph_src
     return jsonify(out)
 
 
