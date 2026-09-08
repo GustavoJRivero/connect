@@ -70,12 +70,14 @@ def get_kv():
         out.setdefault("afip.key_filename", _get("afip.key_filename", "") or "")
     if (not prefix) or prefix.startswith("mp"):
         token, token_src = _effective("mp.access_token", "MP_ACCESS_TOKEN")
-        public_key, _pk_src = _effective("mp.public_key", "MP_PUBLIC_KEY")
+        public_key, pk_src = _effective("mp.public_key", "MP_PUBLIC_KEY")
         webhook, _wh_src = _effective("mp.webhook_url", "MP_WEBHOOK_URL")
         out.pop("mp.access_token", None)
         out["mp.access_token_ready"] = "true" if token else "false"
         out["mp.access_token_source"] = token_src
         out["mp.public_key_ready"] = "true" if public_key else "false"
+        out["mp.public_key_source"] = pk_src
+        out["mp.credentials_sources_match"] = "true" if (token_src and token_src == pk_src) else "false"
         out.setdefault("mp.public_key", public_key)
         out.setdefault("mp.webhook_url", webhook)
     if (not prefix) or prefix.startswith("maps"):
@@ -236,6 +238,54 @@ def get_safety():
     from ..mikrotik.guard import safety_status
 
     return jsonify(safety_status())
+
+
+@bp.get("/mp-check")
+@jwt_required(optional=True)
+def mp_check():
+    """Valida token/public key de MP y detecta mezcla panel vs .env."""
+    import requests
+
+    token, token_src = _effective("mp.access_token", "MP_ACCESS_TOKEN")
+    public_key, pk_src = _effective("mp.public_key", "MP_PUBLIC_KEY")
+    out = {
+        "token_ready": bool(token),
+        "public_key_ready": bool(public_key),
+        "token_source": token_src,
+        "public_key_source": pk_src,
+        "sources_match": bool(token_src and token_src == pk_src),
+    }
+    if not token or not public_key:
+        return jsonify({**out, "ok": False, "error": "missing_credentials"}), 400
+    if not out["sources_match"]:
+        return jsonify({
+            **out,
+            "ok": False,
+            "error": "sources_mismatch",
+            "message": "El token y la public key vienen de orígenes distintos (panel vs .env). Cargá los dos juntos.",
+        }), 409
+    try:
+        r = requests.get(
+            "https://api.mercadopago.com/users/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        body = r.json() if r.content else {}
+        if r.status_code >= 400:
+            return jsonify({
+                **out,
+                "ok": False,
+                "error": "invalid_token",
+                "mp_status": r.status_code,
+                "mp_message": body.get("message") or body.get("error"),
+            }), 502
+        out["ok"] = True
+        out["collector_id"] = body.get("id")
+        out["nickname"] = body.get("nickname")
+        out["site_id"] = body.get("site_id")
+        return jsonify(out)
+    except requests.RequestException as e:
+        return jsonify({**out, "ok": False, "error": "mp_unreachable", "message": str(e)}), 502
 
 
 @bp.get("/migration/status")

@@ -46,14 +46,14 @@ export function MpWallet(props: { publicKey: string; preferenceId: string; initP
 
   return (
     <Stack gap="sm">
-      <div id="mp-wallet-brick" />
       {props.initPoint ? (
-        <Button component="a" href={props.initPoint} variant="light" color="violet">
+        <Button component="a" href={props.initPoint} variant="filled" color="violet" fullWidth>
           Pagar en Mercado Pago
         </Button>
       ) : (
-        <Text size="sm" c="dimmed">Cargando checkout…</Text>
+        <Text size="sm" c="dimmed">Preparando checkout…</Text>
       )}
+      <div id="mp-wallet-brick" />
     </Stack>
   );
 }
