@@ -23,15 +23,8 @@ def mp_public_key() -> str:
     return _mp_value("mp.public_key", "MP_PUBLIC_KEY")
 
 
-def mp_test_mode() -> bool:
-    token = _mp_value("mp.access_token", "MP_ACCESS_TOKEN")
-    return token.startswith("TEST-")
-
-
 def preference_checkout_url(pref: dict) -> str | None:
-    """init_point de producción vs sandbox_init_point según el access token."""
-    if mp_test_mode():
-        return pref.get("sandbox_init_point") or pref.get("init_point")
+    """Siempre init_point: MP unificó test y prod en la misma URL."""
     return pref.get("init_point") or pref.get("sandbox_init_point")
 
 
