@@ -12,7 +12,7 @@ from ..models.client_portal import ClientNotification, ClientPortalAccount, MpCh
 from ..models.complaint import Complaint
 from ..models.connection import Connection
 from ..models.invoice import Invoice
-from ..portal.mp import create_preference, mp_configured, mp_public_key
+from ..portal.mp import create_preference, mp_configured, mp_public_key, preference_checkout_url
 from ..routes.complaints import _complaint_to_dict
 from ..routes.invoices import _invoice_to_dict, _payment_status
 from ..timezone import iso_utc
@@ -254,7 +254,7 @@ def invoice_checkout(invoice_id: int):
         client_id=int(client.id),
         invoice_id=int(x.id),
         preference_id=str(pref.get("id")),
-        init_point=pref.get("init_point") or pref.get("sandbox_init_point"),
+        init_point=preference_checkout_url(pref),
         status="PENDING",
         amount=remaining,
     )

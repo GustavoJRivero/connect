@@ -47,6 +47,18 @@ def _set(key: str, value: str):
         s.value = value
 
 
+def _sync_mp_bundle(incoming: dict) -> None:
+    """Al guardar MP desde el panel, persiste el par completo (settings + .env unificado)."""
+    if not any(str(k).startswith("mp.") for k in incoming):
+        return
+    from ..portal.mp import MP_SETTING_KEYS
+
+    for sk, ek in MP_SETTING_KEYS:
+        val = _effective(sk, ek)[0]
+        if val:
+            _set(sk, val)
+
+
 @bp.get("/kv")
 @jwt_required(optional=True)
 def get_kv():
@@ -69,15 +81,15 @@ def get_kv():
         out.setdefault("afip.cert_filename", _get("afip.cert_filename", "") or "")
         out.setdefault("afip.key_filename", _get("afip.key_filename", "") or "")
     if (not prefix) or prefix.startswith("mp"):
-        token, token_src = _effective("mp.access_token", "MP_ACCESS_TOKEN")
-        public_key, _pk_src = _effective("mp.public_key", "MP_PUBLIC_KEY")
-        webhook, _wh_src = _effective("mp.webhook_url", "MP_WEBHOOK_URL")
+        from ..portal.mp import mp_credentials
+
+        creds = mp_credentials()
         out.pop("mp.access_token", None)
-        out["mp.access_token_ready"] = "true" if token else "false"
-        out["mp.access_token_source"] = token_src
-        out["mp.public_key_ready"] = "true" if public_key else "false"
-        out.setdefault("mp.public_key", public_key)
-        out.setdefault("mp.webhook_url", webhook)
+        out["mp.access_token_ready"] = "true" if creds["access_token"] else "false"
+        out["mp.public_key_ready"] = "true" if creds["public_key"] else "false"
+        out["mp.configured"] = "true" if (creds["access_token"] and creds["public_key"]) else "false"
+        out.setdefault("mp.public_key", creds["public_key"])
+        out.setdefault("mp.webhook_url", creds["webhook_url"])
     if (not prefix) or prefix.startswith("maps"):
         api_key, api_key_src = _effective("maps.api_key", "MAPS_API_KEY")
         webhook_secret, wh_src = _effective("maps.webhook_secret", "MAPS_WEBHOOK_SECRET")
@@ -124,6 +136,7 @@ def put_kv():
                 return e.to_response()
         _set(key, raw)
 
+    _sync_mp_bundle(values)
     db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -228,6 +241,46 @@ def get_safety():
     from ..mikrotik.guard import safety_status
 
     return jsonify(safety_status())
+
+
+@bp.get("/mp-check")
+@jwt_required(optional=True)
+def mp_check():
+    """Comprueba access token y public key contra la API de Mercado Pago."""
+    import requests
+
+    from ..portal.mp import mp_credentials
+
+    creds = mp_credentials()
+    token = creds["access_token"]
+    public_key = creds["public_key"]
+    if not token or not public_key:
+        return jsonify({
+            "ok": False,
+            "error": "missing_credentials",
+            "message": "Faltan access token o public key.",
+        }), 400
+    try:
+        r = requests.get(
+            "https://api.mercadopago.com/users/me",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=15,
+        )
+        body = r.json() if r.content else {}
+        if r.status_code >= 400:
+            return jsonify({
+                "ok": False,
+                "error": "invalid_token",
+                "message": body.get("message") or body.get("error") or "Access token rechazado por Mercado Pago.",
+            }), 502
+        return jsonify({
+            "ok": True,
+            "message": "Credenciales válidas.",
+            "collector_id": body.get("id"),
+            "nickname": body.get("nickname"),
+        })
+    except requests.RequestException as e:
+        return jsonify({"ok": False, "error": "mp_unreachable", "message": str(e)}), 502
 
 
 @bp.get("/migration/status")

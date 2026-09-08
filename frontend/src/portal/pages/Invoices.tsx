@@ -86,6 +86,10 @@ export function PortalInvoices() {
         {paying ? (
           <Stack>
             <Text>Importe: <b>{fmtMoney(Number(paying.total) - Number(paying.paid_total || 0))}</b></Text>
+            <Alert color="blue" variant="light" title="Modo prueba">
+              Con credenciales de prueba no uses tarjeta real. Tarjeta: <b>5031 7557 3453 0604</b>, titular <b>APRO</b>, DNI <b>12345678</b>, CVV <b>123</b>.
+              O iniciá sesión en MP con un <b>usuario de prueba</b> (Developers → Cuentas de prueba).
+            </Alert>
             {checkout?.preference_id && checkout?.public_key ? (
               <MpWallet publicKey={checkout.public_key} preferenceId={checkout.preference_id} initPoint={checkout.init_point} />
             ) : (

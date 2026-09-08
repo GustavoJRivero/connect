@@ -291,7 +291,7 @@ export default function SettingsPage() {
   const [arcaKeyName, setArcaKeyName] = useState("");
   const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "" });
   const [mpTokenReady, setMpTokenReady] = useState(false);
-  const [mpTokenSource, setMpTokenSource] = useState("");
+  const [mpCheckMsg, setMpCheckMsg] = useState<string | null>(null);
   const [issueDate, setIssueDate] = useState("");
   const [issue, setIssue] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -357,7 +357,7 @@ export default function SettingsPage() {
           webhook_url: mpRes["mp.webhook_url"] ?? "",
         });
         setMpTokenReady(String(mpRes["mp.access_token_ready"] ?? "").toLowerCase() === "true");
-        setMpTokenSource(mpRes["mp.access_token_source"] ?? "");
+        setMpCheckMsg(null);
       } catch {
         setMp({ access_token: "", public_key: "", webhook_url: "" });
         setMpTokenReady(false);
@@ -524,6 +524,18 @@ export default function SettingsPage() {
       await reload();
     } catch (e: unknown) {
       setError(formatApiError(e));
+    }
+  }
+
+  async function verifyMp() {
+    setMpCheckMsg(null);
+    setError(null);
+    try {
+      const res = (await api.checkMp()) as { ok?: boolean; message?: string };
+      setMpCheckMsg(res.message || (res.ok ? "Credenciales válidas." : "Credenciales inválidas."));
+    } catch (e: unknown) {
+      const err = e as { message?: string; data?: { message?: string } };
+      setMpCheckMsg(err.data?.message || err.message || formatApiError(e));
     }
   }
 
@@ -735,8 +747,8 @@ export default function SettingsPage() {
         : "Sin CAE",
     },
     mp: {
-      line: mpTokenReady
-        ? (mpTokenSource === "env" ? "Credenciales desde el entorno" : "Credenciales cargadas")
+      line: mpTokenReady && mp.public_key.trim()
+        ? "Credenciales cargadas"
         : "Access token, public key y webhook",
       tone: mpTokenReady && mp.public_key.trim() ? "green" : mpTokenReady || mp.public_key.trim() ? "yellow" : "gray",
       badge: mpTokenReady && mp.public_key.trim() ? "Listo" : "No configurado",
@@ -1246,7 +1258,7 @@ export default function SettingsPage() {
                         tone={mpTokenReady && mp.public_key.trim() ? "green" : "gray"}
                         size="sm"
                       >
-                        {mpTokenSource === "env" ? "Desde .env" : mpTokenReady ? "Admin" : "Sin token"}
+                        {mpTokenReady && mp.public_key.trim() ? "Listo" : "Incompleto"}
                       </MutedBadge>
                     </Group>
                     <Text size="xs" c="dimmed">
@@ -1261,17 +1273,18 @@ export default function SettingsPage() {
                 description={
                   mpTokenReady
                     ? "Ya hay un token cargado. Dejá vacío para conservarlo, o pegá uno nuevo para reemplazarlo."
-                    : "TEST-… o APP_USR-… de la aplicación en Mercado Pago."
+                    : "APP_USR-… de Credenciales de prueba en Mercado Pago."
                 }
                 value={mp.access_token}
                 onChange={(e) => setMp((s) => ({ ...s, access_token: e.currentTarget.value }))}
-                placeholder={mpTokenReady ? "••••••••  (cargado)" : "TEST-… o APP_USR-…"}
+                placeholder={mpTokenReady ? "••••••••  (cargado)" : "APP_USR-…"}
               />
               <Field
                 label="Public key"
+                description="Tiene que ser del mismo par que el access token (misma pestaña en MP Developers)."
                 value={mp.public_key}
                 onChange={(v) => setMp((s) => ({ ...s, public_key: v }))}
-                placeholder="TEST-… o APP_USR-…"
+                placeholder="APP_USR-…"
               />
               <Field
                 label="URL de webhook (opcional)"
@@ -1280,10 +1293,25 @@ export default function SettingsPage() {
                 placeholder="https://tu-dominio/api/webhooks/mercadopago"
               />
               <Text size="xs" c="dimmed">
-                En local Mercado Pago no llega a localhost: usá un túnel (ngrok) y pegá esa URL acá.
+                Podés cargarlas acá o en el .env del server; al guardar se unifican automáticamente.
               </Text>
+              {mpCheckMsg ? (
+                <Alert
+                  color={
+                    mpCheckMsg.toLowerCase().includes("válid") || mpCheckMsg.toLowerCase().includes("valid")
+                      ? "green"
+                      : "red"
+                  }
+                  variant="light"
+                >
+                  {mpCheckMsg}
+                </Alert>
+              ) : null}
               <Group justify="space-between">
-                <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
+                <Group gap="sm">
+                  <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
+                  <Button variant="default" onClick={() => void verifyMp()}>Verificar credenciales</Button>
+                </Group>
                 <Button variant="primary" onClick={() => void confirmAndSave("mp")}>Guardar Mercado Pago</Button>
               </Group>
             </Stack>
@@ -1352,15 +1380,15 @@ export default function SettingsPage() {
 
           {section === "maps" ? (
             <Stack gap="lg">
-              <Paper withBorder p="sm" radius="md">
-                <Group gap="sm" wrap="nowrap" align="flex-start">
+              <Paper withBorder p="md" radius="md">
+                <Group gap="sm" wrap="nowrap" align="flex-start" mb="md">
                   <ThemeIcon variant="light" color="blue" size={42} radius="md">
                     <IconMapPin size={22} stroke={1.5} />
                   </ThemeIcon>
-                  <Box>
+                  <Box style={{ flex: 1 }}>
                     <Group gap={8} mb={2}>
                       <Text size="sm" fw={600}>
-                        {mapsApiKeyReady ? "Listo para cobertura e instalaciones" : "Faltan credenciales de Maps"}
+                        Conexión API
                       </Text>
                       <MutedBadge tone={mapsApiKeyReady ? "green" : "gray"} size="sm">
                         {mapsApiKeySource === "env" ? "Desde .env" : mapsApiKeyReady ? "Admin" : "Sin API key"}
@@ -1371,67 +1399,76 @@ export default function SettingsPage() {
                     </Text>
                   </Box>
                 </Group>
+                <Stack gap="sm">
+                  <Field
+                    label="URL base de la API"
+                    value={mapsApi.api_base_url}
+                    onChange={(v) => setMapsApi((s) => ({ ...s, api_base_url: v }))}
+                    placeholder="https://maps.connectsrl.ar"
+                  />
+                  <PasswordInput
+                    label="API key"
+                    description={
+                      mapsApiKeyReady
+                        ? "Ya hay una key cargada. Dejá vacío para conservarla, o pegá una nueva para reemplazarla."
+                        : "cmk_read_… o cmk_write_… (Write para reservar/liberar puertos)."
+                    }
+                    value={mapsApi.api_key}
+                    onChange={(e) => setMapsApi((s) => ({ ...s, api_key: e.currentTarget.value }))}
+                    placeholder={mapsApiKeyReady ? "••••••••  (cargada)" : "cmk_write_…"}
+                  />
+                  <PasswordInput
+                    label="Webhook secret (opcional)"
+                    description={
+                      mapsWebhookReady
+                        ? "Ya hay un secret cargado. Dejá vacío para conservarlo."
+                        : "Secret compartido para POST /api/webhooks/maps/install-confirmed."
+                    }
+                    value={mapsApi.webhook_secret}
+                    onChange={(e) => setMapsApi((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
+                    placeholder={mapsWebhookReady ? "••••••••  (cargado)" : "secret-largo"}
+                  />
+                </Stack>
               </Paper>
 
-              <Field
-                label="URL base de la API"
-                value={mapsApi.api_base_url}
-                onChange={(v) => setMapsApi((s) => ({ ...s, api_base_url: v }))}
-                placeholder="https://maps.connectsrl.ar"
-              />
-              <PasswordInput
-                label="API key"
-                description={
-                  mapsApiKeyReady
-                    ? "Ya hay una key cargada. Dejá vacío para conservarla, o pegá una nueva para reemplazarla."
-                    : "cmk_read_… o cmk_write_… (Write para reservar/liberar puertos)."
-                }
-                value={mapsApi.api_key}
-                onChange={(e) => setMapsApi((s) => ({ ...s, api_key: e.currentTarget.value }))}
-                placeholder={mapsApiKeyReady ? "••••••••  (cargada)" : "cmk_write_…"}
-              />
-              <PasswordInput
-                label="Webhook secret (opcional)"
-                description={
-                  mapsWebhookReady
-                    ? "Ya hay un secret cargado. Dejá vacío para conservarlo."
-                    : "Secret compartido para POST /api/webhooks/maps/install-confirmed."
-                }
-                value={mapsApi.webhook_secret}
-                onChange={(e) => setMapsApi((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
-                placeholder={mapsWebhookReady ? "••••••••  (cargado)" : "secret-largo"}
-              />
+              <Paper withBorder p="md" radius="md">
+                <Text size="sm" fw={600} mb={4}>
+                  Reservas automáticas
+                </Text>
+                <Text size="xs" c="dimmed" mb="md">
+                  Liberación de puertos NAP cuando vence el plazo de una orden de instalación.
+                </Text>
+                <Stack gap="sm">
+                  <Switch
+                    label="Liberar automáticamente las reservas vencidas"
+                    description="Al vencer, el puerto se libera en el mapa (Reservados −1 / Disponibles +1) y la orden pasa a Vencida."
+                    checked={mapsEnabled}
+                    onChange={(e) => setMapsEnabled(e.currentTarget.checked)}
+                  />
+                  <Field
+                    label="Cron de ejecución (5 campos: min hora díaMes mes díaSemana)"
+                    value={mapsCron}
+                    onChange={setMapsCron}
+                    placeholder="0 * * * *"
+                  />
+                  <NumberInput
+                    label="Plazo de espera de la reserva (horas)"
+                    description="Tiempo desde la reserva hasta que se libera el puerto."
+                    value={mapsTtl}
+                    onChange={(v) =>
+                      setMapsTtl(typeof v === "number" && !Number.isNaN(v) && v > 0 ? v : 168)
+                    }
+                    min={1}
+                    max={8760}
+                    disabled={!mapsEnabled}
+                    maw={220}
+                  />
+                  <Text size="xs" c="dimmed">
+                    Ejemplos: <code>0 * * * *</code> cada hora · <code>*/15 * * * *</code> cada 15 min · <code>0 6 * * *</code> todos los días a las 6:00.
+                  </Text>
+                </Stack>
+              </Paper>
 
-              <Text size="sm" fw={600} mt="xs">
-                Reservas automáticas
-              </Text>
-              <Switch
-                label="Liberar automáticamente las reservas vencidas"
-                description="Al vencer, el puerto se libera en el mapa (Reservados −1 / Disponibles +1) y la orden pasa a Vencida."
-                checked={mapsEnabled}
-                onChange={(e) => setMapsEnabled(e.currentTarget.checked)}
-              />
-              <Field
-                label="Cron de ejecución (5 campos: min hora díaMes mes díaSemana)"
-                value={mapsCron}
-                onChange={setMapsCron}
-                placeholder="0 * * * *"
-              />
-              <NumberInput
-                label="Plazo de espera de la reserva (horas)"
-                description="Tiempo desde la reserva hasta que se libera el puerto."
-                value={mapsTtl}
-                onChange={(v) =>
-                  setMapsTtl(typeof v === "number" && !Number.isNaN(v) && v > 0 ? v : 168)
-                }
-                min={1}
-                max={8760}
-                disabled={!mapsEnabled}
-                maw={220}
-              />
-              <Text size="xs" c="dimmed">
-                Ejemplos: <code>0 * * * *</code> cada hora · <code>*/15 * * * *</code> cada 15 min · <code>0 6 * * *</code> todos los días a las 6:00.
-              </Text>
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
                 <Button variant="primary" onClick={() => void confirmAndSave("maps")}>Guardar Maps</Button>
