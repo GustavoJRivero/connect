@@ -79,6 +79,9 @@ export const portalApi = {
   checkout(invoiceId: number) {
     return request(`/api/portal/invoices/${invoiceId}/checkout`, { method: "POST" });
   },
+  confirmMp(paymentId: string) {
+    return request("/api/portal/mp/confirm", { method: "POST", body: JSON.stringify({ payment_id: paymentId }) });
+  },
   connections() {
     return request("/api/portal/connections");
   },

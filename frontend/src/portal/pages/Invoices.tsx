@@ -13,8 +13,8 @@ export function PortalInvoices() {
   const [paying, setPaying] = useState<any>(null);
   const [checkout, setCheckout] = useState<any>(null);
   const [busy, setBusy] = useState(false);
-  const [params] = useSearchParams();
-  const paidFlag = params.get("paid");
+  const [params, setParams] = useSearchParams();
+  const [payResult, setPayResult] = useState<{ color: string; title: string; text: string } | null>(null);
 
   function reload() {
     portalApi.invoices().then(setItems).catch((e) => setError(formatApiError(e)));
@@ -22,6 +22,42 @@ export function PortalInvoices() {
 
   useEffect(() => {
     reload();
+  }, []);
+
+  // Retorno desde Mercado Pago: confirmamos el pago contra MP en el momento,
+  // sin depender de que la notificación del webhook haya llegado.
+  useEffect(() => {
+    const paidFlag = params.get("paid");
+    const rawId = params.get("payment_id") || params.get("collection_id") || "";
+    const paymentId = rawId && rawId !== "null" ? rawId : "";
+    if (!paidFlag && !paymentId) return;
+    setParams(new URLSearchParams(), { replace: true });
+
+    if (!paymentId) {
+      setPayResult(
+        paidFlag === "1"
+          ? { color: "green", title: "Pago realizado", text: "En unos minutos queda imputado a tu factura." }
+          : { color: "red", title: "Pago no completado", text: "Podés intentar de nuevo cuando quieras." },
+      );
+      return;
+    }
+
+    portalApi
+      .confirmMp(paymentId)
+      .then((res: any) => {
+        const status = String(res?.status || "");
+        if (status === "credited" || status === "duplicate") {
+          setPayResult({ color: "green", title: "Pago acreditado", text: "Ya está imputado a tu factura. ¡Gracias!" });
+          reload();
+        } else if (status === "rejected") {
+          setPayResult({ color: "red", title: "Pago rechazado", text: "Mercado Pago rechazó el pago. Podés intentar de nuevo." });
+        } else {
+          setPayResult({ color: "yellow", title: "Pago en proceso", text: "Mercado Pago todavía no lo confirmó. Se acredita en cuanto lo apruebe." });
+        }
+      })
+      .catch(() => {
+        setPayResult({ color: "yellow", title: "Pago en proceso", text: "No pudimos confirmarlo ahora. Si el cobro se hizo, se acredita en unos minutos." });
+      });
   }, []);
 
   async function openPdf(id: number) {
@@ -52,8 +88,7 @@ export function PortalInvoices() {
   return (
     <Stack gap="lg">
       <Title order={2} fw={700}>Facturas</Title>
-      {paidFlag === "1" ? <Alert color="green" title="Pago recibido">Si Mercado Pago confirmó el cobro, en unos segundos se imputa a tu factura.</Alert> : null}
-      {paidFlag === "0" ? <Alert color="red">El pago no se completó. Podés intentar de nuevo.</Alert> : null}
+      {payResult ? <Alert color={payResult.color} title={payResult.title} onClose={() => setPayResult(null)} withCloseButton>{payResult.text}</Alert> : null}
       {error ? <Alert color="red">{error}</Alert> : null}
       {!items.length ? <Text c="dimmed">No hay facturas para mostrar.</Text> : null}
       {items.map((x) => {

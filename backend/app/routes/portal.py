@@ -13,6 +13,7 @@ from ..models.complaint import Complaint
 from ..models.connection import Connection
 from ..models.invoice import Invoice
 from ..portal.mp import create_preference, mp_configured, mp_public_key, preference_checkout_url
+from ..portal.mp_credit import credit_mp_payment
 from ..routes.complaints import _complaint_to_dict
 from ..routes.invoices import _invoice_to_dict, _payment_status
 from ..timezone import iso_utc
@@ -266,6 +267,28 @@ def invoice_checkout(invoice_id: int):
         "public_key": mp_public_key(),
         "amount": str(remaining),
     })
+
+
+@bp.post("/mp/confirm")
+@jwt_required()
+def mp_confirm():
+    """Acredita el pago al volver del checkout, sin esperar el webhook.
+
+    Es el mismo camino idempotente que usa la notificación de Mercado Pago: si
+    el webhook ya lo imputó, acá se responde `duplicate` y no se duplica nada.
+    """
+    client, err = _require_client()
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    payment_id = str(body.get("payment_id") or request.args.get("payment_id") or "").strip()
+    if not payment_id:
+        return jsonify({"error": "missing_payment_id", "message": "Falta el pago a confirmar."}), 400
+
+    result = credit_mp_payment(payment_id, expected_client_id=int(client.id))
+    if result.get("status") == "forbidden":
+        return jsonify({"error": "not_found"}), 404
+    return jsonify(result)
 
 
 @bp.get("/connections")

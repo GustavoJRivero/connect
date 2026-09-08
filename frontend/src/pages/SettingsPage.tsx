@@ -289,7 +289,7 @@ export default function SettingsPage() {
   const [arcaKeyReady, setArcaKeyReady] = useState(false);
   const [arcaCertName, setArcaCertName] = useState("");
   const [arcaKeyName, setArcaKeyName] = useState("");
-  const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "" });
+  const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "", portal_url: "" });
   const [mpTokenReady, setMpTokenReady] = useState(false);
   const [mpCheckMsg, setMpCheckMsg] = useState<string | null>(null);
   const [issueDate, setIssueDate] = useState("");
@@ -355,11 +355,12 @@ export default function SettingsPage() {
           access_token: "",
           public_key: mpRes["mp.public_key"] ?? "",
           webhook_url: mpRes["mp.webhook_url"] ?? "",
+          portal_url: mpRes["mp.portal_url"] ?? "",
         });
         setMpTokenReady(String(mpRes["mp.access_token_ready"] ?? "").toLowerCase() === "true");
         setMpCheckMsg(null);
       } catch {
-        setMp({ access_token: "", public_key: "", webhook_url: "" });
+        setMp({ access_token: "", public_key: "", webhook_url: "", portal_url: "" });
         setMpTokenReady(false);
         setMpCheckMsg(null);
       }
@@ -546,6 +547,7 @@ export default function SettingsPage() {
       const values: Record<string, string> = {
         "mp.public_key": mp.public_key.trim(),
         "mp.webhook_url": mp.webhook_url.trim(),
+        "mp.portal_url": mp.portal_url.trim(),
       };
       if (mp.access_token.trim()) values["mp.access_token"] = mp.access_token.trim();
       await api.putSettings(values);
@@ -1288,9 +1290,17 @@ export default function SettingsPage() {
               />
               <Field
                 label="URL de webhook (opcional)"
+                description="Sin barra al final: con barra Mercado Pago recibe 404 y la prueba del panel falla."
                 value={mp.webhook_url}
                 onChange={(v) => setMp((s) => ({ ...s, webhook_url: v }))}
                 placeholder="https://tu-dominio/api/webhooks/mercadopago"
+              />
+              <Field
+                label="URL del portal (retorno del pago)"
+                description="A dónde vuelve el cliente al terminar de pagar. Debe ser pública, no localhost."
+                value={mp.portal_url}
+                onChange={(v) => setMp((s) => ({ ...s, portal_url: v }))}
+                placeholder="https://admin.connectsrl.ar"
               />
               <Text size="xs" c="dimmed">
                 Podés cargarlas acá o en el .env del server; al guardar se unifican automáticamente.

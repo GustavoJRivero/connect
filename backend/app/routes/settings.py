@@ -90,6 +90,7 @@ def get_kv():
         out["mp.configured"] = "true" if (creds["access_token"] and creds["public_key"]) else "false"
         out.setdefault("mp.public_key", creds["public_key"])
         out.setdefault("mp.webhook_url", creds["webhook_url"])
+        out["mp.portal_url"] = creds["portal_url"]
     if (not prefix) or prefix.startswith("maps"):
         api_key, api_key_src = _effective("maps.api_key", "MAPS_API_KEY")
         webhook_secret, wh_src = _effective("maps.webhook_secret", "MAPS_WEBHOOK_SECRET")
@@ -260,6 +261,12 @@ def mp_check():
             "error": "missing_credentials",
             "message": "Faltan access token o public key.",
         }), 400
+    if token.startswith("TEST-") != public_key.startswith("TEST-"):
+        return jsonify({
+            "ok": False,
+            "error": "credentials_mismatch",
+            "message": "El access token y la public key son de entornos distintos. Copiá las dos del mismo bloque de credenciales.",
+        }), 400
     try:
         r = requests.get(
             "https://api.mercadopago.com/users/me",
@@ -273,11 +280,26 @@ def mp_check():
                 "error": "invalid_token",
                 "message": body.get("message") or body.get("error") or "Access token rechazado por Mercado Pago.",
             }), 502
+
+        pk = requests.get(
+            "https://api.mercadopago.com/v1/payment_methods",
+            params={"public_key": public_key},
+            timeout=15,
+        )
+        if pk.status_code >= 400:
+            return jsonify({
+                "ok": False,
+                "error": "invalid_public_key",
+                "message": "La public key fue rechazada por Mercado Pago.",
+            }), 502
+
+        nickname = body.get("nickname") or ""
         return jsonify({
             "ok": True,
-            "message": "Credenciales válidas.",
+            "message": f"Credenciales válidas (cuenta {nickname}).",
             "collector_id": body.get("id"),
-            "nickname": body.get("nickname"),
+            "nickname": nickname,
+            "email": body.get("email"),
         })
     except requests.RequestException as e:
         return jsonify({"ok": False, "error": "mp_unreachable", "message": str(e)}), 502
