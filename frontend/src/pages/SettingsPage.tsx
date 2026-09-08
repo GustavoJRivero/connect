@@ -361,7 +361,7 @@ export default function SettingsPage() {
       } catch {
         setMp({ access_token: "", public_key: "", webhook_url: "" });
         setMpTokenReady(false);
-        setMpTokenSource("");
+        setMpCheckMsg(null);
       }
 
       const mapsRes = (await api.getSettings("maps.")) as Record<string, string>;
