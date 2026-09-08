@@ -54,10 +54,12 @@ export function Field(props: {
   placeholder?: string;
   required?: boolean;
   maxLength?: number;
+  description?: string;
 }) {
   return (
     <TextInput
       label={props.label}
+      description={props.description}
       value={props.value}
       onChange={(e) => props.onChange(e.currentTarget.value)}
       type={props.type ?? "text"}
