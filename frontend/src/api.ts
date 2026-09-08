@@ -261,6 +261,9 @@ export const api = {
   getSafetyStatus() {
     return request("/api/settings/safety");
   },
+  checkMp() {
+    return request("/api/settings/mp-check");
+  },
   uploadMigrationBackup(file: File) {
     const fd = new FormData();
     fd.append("file", file);
