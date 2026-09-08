@@ -6,6 +6,13 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 
+MP_SETTING_KEYS = (
+    ("mp.access_token", "MP_ACCESS_TOKEN"),
+    ("mp.public_key", "MP_PUBLIC_KEY"),
+    ("mp.webhook_url", "MP_WEBHOOK_URL"),
+)
+
+
 def _mp_value(setting_key: str, env_key: str) -> str:
     from ..models.setting import Setting
 
@@ -15,12 +22,57 @@ def _mp_value(setting_key: str, env_key: str) -> str:
     return (current_app.config.get(env_key) or "").strip()
 
 
+def _coalesce_mp_settings() -> None:
+    """Si hay credenciales MP partidas entre panel y .env, las unifica en settings."""
+    from ..extensions import db
+    from ..models.setting import Setting
+
+    def _db_val(sk: str) -> str:
+        s = Setting.query.get(sk)
+        return str(s.value).strip() if s and s.value else ""
+
+    db_filled = [_db_val(sk) for sk, _ in MP_SETTING_KEYS]
+    if not any(db_filled) or all(db_filled):
+        return
+
+    changed = False
+    for sk, ek in MP_SETTING_KEYS:
+        if _db_val(sk):
+            continue
+        val = (current_app.config.get(ek) or "").strip()
+        if not val:
+            continue
+        s = Setting.query.get(sk)
+        if not s:
+            s = Setting(key=sk, value=val)
+            db.session.add(s)
+        else:
+            s.value = val
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+
+def mp_credentials() -> dict[str, str]:
+    """Credenciales MP: panel y .env son equivalentes; se unifican automáticamente."""
+    _coalesce_mp_settings()
+    return {
+        "access_token": _mp_value("mp.access_token", "MP_ACCESS_TOKEN"),
+        "public_key": _mp_value("mp.public_key", "MP_PUBLIC_KEY"),
+        "webhook_url": _mp_value("mp.webhook_url", "MP_WEBHOOK_URL"),
+    }
+
+
 def mp_configured() -> bool:
-    return bool(_mp_value("mp.access_token", "MP_ACCESS_TOKEN"))
+    creds = mp_credentials()
+    return bool(creds["access_token"] and creds["public_key"])
 
 
 def mp_public_key() -> str:
-    return _mp_value("mp.public_key", "MP_PUBLIC_KEY")
+    return mp_credentials()["public_key"]
 
 
 def preference_checkout_url(pref: dict) -> str | None:
@@ -29,7 +81,8 @@ def preference_checkout_url(pref: dict) -> str | None:
 
 
 def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: str | None, client_id: int) -> dict:
-    token = _mp_value("mp.access_token", "MP_ACCESS_TOKEN")
+    creds = mp_credentials()
+    token = creds["access_token"]
     if not token:
         raise RuntimeError("mp_not_configured")
 
@@ -37,7 +90,7 @@ def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: st
 
     sdk = mercadopago.SDK(token)
     portal_url = (current_app.config.get("PORTAL_PUBLIC_URL") or "http://localhost").rstrip("/")
-    notify_url = _mp_value("mp.webhook_url", "MP_WEBHOOK_URL")
+    notify_url = creds["webhook_url"]
     if not notify_url:
         api_url = (current_app.config.get("API_PUBLIC_URL") or "").rstrip("/")
         if api_url:
@@ -82,7 +135,7 @@ def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: st
 
 
 def get_payment(payment_id: str) -> dict:
-    token = _mp_value("mp.access_token", "MP_ACCESS_TOKEN")
+    token = mp_credentials()["access_token"]
     if not token:
         raise RuntimeError("mp_not_configured")
     import mercadopago

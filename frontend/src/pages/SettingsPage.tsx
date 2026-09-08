@@ -295,9 +295,6 @@ export default function SettingsPage() {
   const [arcaKeyName, setArcaKeyName] = useState("");
   const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "" });
   const [mpTokenReady, setMpTokenReady] = useState(false);
-  const [mpTokenSource, setMpTokenSource] = useState("");
-  const [mpPublicKeySource, setMpPublicKeySource] = useState("");
-  const [mpSourcesMatch, setMpSourcesMatch] = useState(true);
   const [mpCheckMsg, setMpCheckMsg] = useState<string | null>(null);
   const [issueDate, setIssueDate] = useState("");
   const [issue, setIssue] = useState(false);
@@ -368,9 +365,6 @@ export default function SettingsPage() {
           webhook_url: mpRes["mp.webhook_url"] ?? "",
         });
         setMpTokenReady(String(mpRes["mp.access_token_ready"] ?? "").toLowerCase() === "true");
-        setMpTokenSource(mpRes["mp.access_token_source"] ?? "");
-        setMpPublicKeySource(mpRes["mp.public_key_source"] ?? "");
-        setMpSourcesMatch(String(mpRes["mp.credentials_sources_match"] ?? "true").toLowerCase() === "true");
         setMpCheckMsg(null);
       } catch {
         setMp({ access_token: "", public_key: "", webhook_url: "" });
@@ -547,12 +541,8 @@ export default function SettingsPage() {
     setMpCheckMsg(null);
     setError(null);
     try {
-      const res = (await api.checkMp()) as { ok?: boolean; nickname?: string; collector_id?: number; message?: string };
-      if (res.ok) {
-        setMpCheckMsg(`Credenciales OK — cuenta MP #${res.collector_id}${res.nickname ? ` (${res.nickname})` : ""}.`);
-      } else {
-        setMpCheckMsg(res.message || "No se pudieron validar las credenciales.");
-      }
+      const res = (await api.checkMp()) as { ok?: boolean; message?: string };
+      setMpCheckMsg(res.message || (res.ok ? "Credenciales válidas." : "Credenciales inválidas."));
     } catch (e: unknown) {
       const err = e as { message?: string; data?: { message?: string } };
       setMpCheckMsg(err.data?.message || err.message || formatApiError(e));
@@ -771,8 +761,8 @@ export default function SettingsPage() {
         : "Sin CAE",
     },
     mp: {
-      line: mpTokenReady
-        ? (mpTokenSource === "env" ? "Credenciales desde el entorno" : "Credenciales cargadas")
+      line: mpTokenReady && mp.public_key.trim()
+        ? "Credenciales cargadas"
         : "Access token, public key y webhook",
       tone: mpTokenReady && mp.public_key.trim() ? "green" : mpTokenReady || mp.public_key.trim() ? "yellow" : "gray",
       badge: mpTokenReady && mp.public_key.trim() ? "Listo" : "No configurado",
@@ -1311,12 +1301,6 @@ export default function SettingsPage() {
 
           {section === "mp" ? (
             <Stack gap="lg">
-              {!mpSourcesMatch && mpTokenReady ? (
-                <Alert color="red" variant="light" title="Credenciales mezcladas">
-                  El access token y la public key vienen de lugares distintos (panel vs .env del server).
-                  Pegá <b>los dos</b> de nuevo desde Mercado Pago → Credenciales de prueba y guardá.
-                </Alert>
-              ) : null}
               <Paper withBorder p="sm" radius="md">
                 <Group gap="sm" wrap="nowrap" align="flex-start">
                   <BrandLogoMark src="/brands/mercadopago.svg" alt="Mercado Pago" size={42} />
@@ -1331,11 +1315,7 @@ export default function SettingsPage() {
                         tone={mpTokenReady && mp.public_key.trim() ? "green" : "gray"}
                         size="sm"
                       >
-                        {mpTokenSource === "env" || mpPublicKeySource === "env"
-                          ? "Parcial .env"
-                          : mpTokenReady
-                            ? "Admin"
-                            : "Sin token"}
+                        {mpTokenReady && mp.public_key.trim() ? "Listo" : "Incompleto"}
                       </MutedBadge>
                     </Group>
                     <Text size="xs" c="dimmed">
@@ -1370,11 +1350,17 @@ export default function SettingsPage() {
                 placeholder="https://tu-dominio/api/webhooks/mercadopago"
               />
               <Text size="xs" c="dimmed">
-                Credenciales de prueba también usan prefijo APP_USR-. Copiá token y public key juntos.
-                En el server, no mezcles panel con MP_* en el .env.
+                Podés cargarlas acá o en el .env del server; al guardar se unifican automáticamente.
               </Text>
               {mpCheckMsg ? (
-                <Alert color={mpCheckMsg.startsWith("Credenciales OK") ? "green" : "orange"} variant="light">
+                <Alert
+                  color={
+                    mpCheckMsg.toLowerCase().includes("válid") || mpCheckMsg.toLowerCase().includes("valid")
+                      ? "green"
+                      : "red"
+                  }
+                  variant="light"
+                >
                   {mpCheckMsg}
                 </Alert>
               ) : null}
