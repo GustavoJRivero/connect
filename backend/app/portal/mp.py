@@ -63,7 +63,32 @@ def mp_credentials() -> dict[str, str]:
         "access_token": _mp_value("mp.access_token", "MP_ACCESS_TOKEN"),
         "public_key": _mp_value("mp.public_key", "MP_PUBLIC_KEY"),
         "webhook_url": _mp_value("mp.webhook_url", "MP_WEBHOOK_URL"),
+        "portal_url": portal_base_url(),
     }
+
+
+def portal_base_url() -> str:
+    """URL pública del portal para las back_urls del checkout.
+
+    Con `localhost` Mercado Pago descarta el retorno automático, así que si no
+    está configurada usamos el origen real del pedido (el portal y el panel
+    comparten dominio).
+    """
+    from flask import has_request_context, request
+
+    url = _mp_value("mp.portal_url", "PORTAL_PUBLIC_URL").rstrip("/")
+    if url and not _is_local(url):
+        return url
+    if has_request_context():
+        proto = request.headers.get("X-Forwarded-Proto") or request.scheme
+        host = request.headers.get("X-Forwarded-Host") or request.host
+        if host and not _is_local(host):
+            return f"{proto}://{host}"
+    return url or "http://localhost"
+
+
+def _is_local(value: str) -> bool:
+    return "localhost" in value or "127.0.0.1" in value
 
 
 def mp_configured() -> bool:
@@ -89,7 +114,7 @@ def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: st
     import mercadopago
 
     sdk = mercadopago.SDK(token)
-    portal_url = (current_app.config.get("PORTAL_PUBLIC_URL") or "http://localhost").rstrip("/")
+    portal_url = creds["portal_url"]
     notify_url = creds["webhook_url"]
     if not notify_url:
         api_url = (current_app.config.get("API_PUBLIC_URL") or "").rstrip("/")
@@ -112,7 +137,6 @@ def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: st
             "failure": f"{portal_url}/portal/invoices?paid=0",
             "pending": f"{portal_url}/portal/invoices?paid=pending",
         },
-        "auto_return": "approved",
         "statement_descriptor": "CONNECT",
     }
     if email:
@@ -120,14 +144,22 @@ def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: st
     if notify_url:
         preference["notification_url"] = notify_url
 
-    result = sdk.preference().create(preference)
-    status = int(result.get("status") or 0)
-    body = result.get("response") or {}
-    if status not in (200, 201) and preference.get("auto_return"):
-        preference.pop("auto_return", None)
+    # "all" devuelve al portal también con pago rechazado o pendiente. Si MP
+    # rechaza la preferencia (por ejemplo con back_urls no públicas) probamos
+    # con menos exigencia antes de darla por fallida.
+    body: dict = {}
+    status = 0
+    for auto_return in ("all", "approved", None):
+        if auto_return:
+            preference["auto_return"] = auto_return
+        else:
+            preference.pop("auto_return", None)
         result = sdk.preference().create(preference)
         status = int(result.get("status") or 0)
         body = result.get("response") or {}
+        if status in (200, 201):
+            break
+        logger.info("Mercado Pago rechazó auto_return=%s: %s", auto_return, body.get("message"))
     if status not in (200, 201):
         logger.warning("Mercado Pago preference error: %s %s", status, body)
         raise RuntimeError(body.get("message") or "mp_preference_failed")
