@@ -291,6 +291,7 @@ export default function SettingsPage() {
   const [arcaKeyName, setArcaKeyName] = useState("");
   const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "", portal_url: "" });
   const [mpTokenReady, setMpTokenReady] = useState(false);
+  const [mpSource, setMpSource] = useState("");
   const [mpCheckMsg, setMpCheckMsg] = useState<string | null>(null);
   const [issueDate, setIssueDate] = useState("");
   const [issue, setIssue] = useState(false);
@@ -358,10 +359,12 @@ export default function SettingsPage() {
           portal_url: mpRes["mp.portal_url"] ?? "",
         });
         setMpTokenReady(String(mpRes["mp.access_token_ready"] ?? "").toLowerCase() === "true");
+        setMpSource(mpRes["mp.source"] ?? "");
         setMpCheckMsg(null);
       } catch {
         setMp({ access_token: "", public_key: "", webhook_url: "", portal_url: "" });
         setMpTokenReady(false);
+        setMpSource("");
         setMpCheckMsg(null);
       }
 
@@ -1303,7 +1306,13 @@ export default function SettingsPage() {
                 placeholder="https://admin.connectsrl.ar"
               />
               <Text size="xs" c="dimmed">
-                Podés cargarlas acá o en el .env del server; al guardar se unifican automáticamente.
+                Pegá el access token y la public key <b>del mismo bloque</b> de MP Developers: si se mezclan
+                una de prueba con una de producción, Mercado Pago rechaza el pago.
+                {mpSource === "panel"
+                  ? " En uso: las cargadas acá (tienen prioridad sobre el .env)."
+                  : mpSource === "env"
+                    ? " En uso: las del .env del server. Si cargás una acá, pasan a mandar estas."
+                    : ""}
               </Text>
               {mpCheckMsg ? (
                 <Alert
