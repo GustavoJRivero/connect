@@ -6,62 +6,38 @@ from flask import current_app
 logger = logging.getLogger(__name__)
 
 
-MP_SETTING_KEYS = (
-    ("mp.access_token", "MP_ACCESS_TOKEN"),
-    ("mp.public_key", "MP_PUBLIC_KEY"),
-    ("mp.webhook_url", "MP_WEBHOOK_URL"),
-)
-
-
-def _mp_value(setting_key: str, env_key: str) -> str:
+def _db_value(setting_key: str) -> str:
     from ..models.setting import Setting
 
     s = Setting.query.get(setting_key)
-    if s is not None and str(s.value or "").strip():
-        return str(s.value).strip()
+    return str(s.value).strip() if s is not None and str(s.value or "").strip() else ""
+
+
+def _env_value(env_key: str) -> str:
     return (current_app.config.get(env_key) or "").strip()
 
 
-def _coalesce_mp_settings() -> None:
-    """Si hay credenciales MP partidas entre panel y .env, las unifica en settings."""
-    from ..extensions import db
-    from ..models.setting import Setting
-
-    def _db_val(sk: str) -> str:
-        s = Setting.query.get(sk)
-        return str(s.value).strip() if s and s.value else ""
-
-    db_filled = [_db_val(sk) for sk, _ in MP_SETTING_KEYS]
-    if not any(db_filled) or all(db_filled):
-        return
-
-    changed = False
-    for sk, ek in MP_SETTING_KEYS:
-        if _db_val(sk):
-            continue
-        val = (current_app.config.get(ek) or "").strip()
-        if not val:
-            continue
-        s = Setting.query.get(sk)
-        if not s:
-            s = Setting(key=sk, value=val)
-            db.session.add(s)
-        else:
-            s.value = val
-        changed = True
-    if changed:
-        try:
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+def _mp_value(setting_key: str, env_key: str) -> str:
+    return _db_value(setting_key) or _env_value(env_key)
 
 
 def mp_credentials() -> dict[str, str]:
-    """Credenciales MP: panel y .env son equivalentes; se unifican automáticamente."""
-    _coalesce_mp_settings()
+    """Credenciales de Mercado Pago tomadas de un único origen.
+
+    El access token y la public key tienen que ser del mismo par: si se mezclan
+    (una del panel y la otra del .env) Mercado Pago rechaza el checkout con
+    "una de las partes es de prueba". Por eso el par se resuelve junto: si el
+    panel tiene alguna de las dos, manda el panel; si no, manda el .env.
+    """
+    db_token, db_key = _db_value("mp.access_token"), _db_value("mp.public_key")
+    if db_token or db_key:
+        token, public_key, source = db_token, db_key, "panel"
+    else:
+        token, public_key, source = _env_value("MP_ACCESS_TOKEN"), _env_value("MP_PUBLIC_KEY"), "env"
     return {
-        "access_token": _mp_value("mp.access_token", "MP_ACCESS_TOKEN"),
-        "public_key": _mp_value("mp.public_key", "MP_PUBLIC_KEY"),
+        "access_token": token,
+        "public_key": public_key,
+        "source": source,
         "webhook_url": _mp_value("mp.webhook_url", "MP_WEBHOOK_URL"),
         "portal_url": portal_base_url(),
     }

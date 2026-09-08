@@ -47,18 +47,6 @@ def _set(key: str, value: str):
         s.value = value
 
 
-def _sync_mp_bundle(incoming: dict) -> None:
-    """Al guardar MP desde el panel, persiste el par completo (settings + .env unificado)."""
-    if not any(str(k).startswith("mp.") for k in incoming):
-        return
-    from ..portal.mp import MP_SETTING_KEYS
-
-    for sk, ek in MP_SETTING_KEYS:
-        val = _effective(sk, ek)[0]
-        if val:
-            _set(sk, val)
-
-
 @bp.get("/kv")
 @jwt_required(optional=True)
 def get_kv():
@@ -88,7 +76,8 @@ def get_kv():
         out["mp.access_token_ready"] = "true" if creds["access_token"] else "false"
         out["mp.public_key_ready"] = "true" if creds["public_key"] else "false"
         out["mp.configured"] = "true" if (creds["access_token"] and creds["public_key"]) else "false"
-        out.setdefault("mp.public_key", creds["public_key"])
+        out["mp.public_key"] = creds["public_key"]
+        out["mp.source"] = creds["source"]
         out.setdefault("mp.webhook_url", creds["webhook_url"])
         out["mp.portal_url"] = creds["portal_url"]
     if (not prefix) or prefix.startswith("maps"):
@@ -137,7 +126,6 @@ def put_kv():
                 return e.to_response()
         _set(key, raw)
 
-    _sync_mp_bundle(values)
     db.session.commit()
     return jsonify({"status": "ok"})
 
@@ -244,6 +232,24 @@ def get_safety():
     return jsonify(safety_status())
 
 
+def _public_key_is_test(public_key: str) -> bool | None:
+    """Indica si la public key es de prueba, o None si Mercado Pago no lo dice."""
+    import requests
+
+    try:
+        r = requests.get(
+            "https://api.mercadopago.com/plugins-credentials-wrapper/credentials",
+            params={"public_key": public_key},
+            timeout=10,
+        )
+        if r.status_code >= 400:
+            return None
+        value = (r.json() or {}).get("is_test")
+        return bool(value) if isinstance(value, bool) else None
+    except (requests.RequestException, ValueError):
+        return None
+
+
 @bp.get("/mp-check")
 @jwt_required(optional=True)
 def mp_check():
@@ -293,13 +299,34 @@ def mp_check():
                 "message": "La public key fue rechazada por Mercado Pago.",
             }), 502
 
-        nickname = body.get("nickname") or ""
+        nickname = str(body.get("nickname") or "")
+        email = str(body.get("email") or "")
+        token_is_test = (
+            token.startswith("TEST-")
+            or nickname.upper().startswith("TESTUSER")
+            or email.endswith("@testuser.com")
+        )
+        key_is_test = _public_key_is_test(public_key)
+        if key_is_test is not None and key_is_test != token_is_test:
+            de_prueba = "de prueba" if token_is_test else "de producción"
+            la_otra = "de producción" if token_is_test else "de prueba"
+            return jsonify({
+                "ok": False,
+                "error": "credentials_mismatch",
+                "message": (
+                    f"El access token es {de_prueba} (cuenta {nickname}) y la public key es {la_otra}: "
+                    "Mercado Pago rechaza el pago con «una de las partes es de prueba». "
+                    "Copiá el access token y la public key del mismo bloque de credenciales."
+                ),
+            }), 400
+
         return jsonify({
             "ok": True,
             "message": f"Credenciales válidas (cuenta {nickname}).",
             "collector_id": body.get("id"),
             "nickname": nickname,
-            "email": body.get("email"),
+            "email": email,
+            "source": creds["source"],
         })
     except requests.RequestException as e:
         return jsonify({"ok": False, "error": "mp_unreachable", "message": str(e)}), 502
