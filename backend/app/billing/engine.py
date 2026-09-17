@@ -89,6 +89,15 @@ def _plan_price(conn: Connection) -> Decimal:
     return plan.price_with_iva
 
 
+def _plan_iva_percent(conn: Connection) -> Decimal:
+    """%IVA del plan de la conexión, o el default general si el plan no está en la tabla (legacy)."""
+    if conn.plan_profile:
+        plan = Plan.query.filter_by(profile=conn.plan_profile).first()
+        if plan:
+            return Decimal(str(plan.iva_percent))
+    return Decimal(str(_get_setting("afip.iva_percent_default", "21") or "21"))
+
+
 def _default_invoice_type(client: Client) -> str:
     return "A" if client.kind == "COMPANY" else "B"
 
@@ -331,12 +340,21 @@ def run_billing(
                 elif is_first and not x.prorate_first_month:
                     actual_start = x.created_at.date()
 
+                # Neto/IVA congelados sobre el total ya prorrateado, para que
+                # el comprobante no cambie si después se edita el plan.
+                iva_pct = _plan_iva_percent(x)
+                net_amount = (total / (Decimal("1") + iva_pct / Decimal("100"))).quantize(Decimal("0.01"))
+                iva_amount = total - net_amount
+
                 inv = Invoice(
                     client_id=client.id,
                     connection_id=x.id,
                     invoice_type=_default_invoice_type(client),
                     issuer_cuit=str(issuer["cuit"]),
                     point_of_sale=int(issuer["point_of_sale"]),
+                    iva_percent=iva_pct,
+                    net_amount=net_amount,
+                    iva_amount=iva_amount,
                     issue_date=billing_date,
                     due_date=billing_date + timedelta(days=due_days) if issue else None,
                     total=total,
