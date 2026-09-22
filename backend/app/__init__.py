@@ -25,6 +25,9 @@ from .routes.plans import bp as plans_bp
 from .routes.settings import bp as settings_bp
 from .routes.portal import bp as portal_bp
 from .routes.mp_webhook import bp as mp_webhook_bp
+from .routes.users import bp as users_bp, roles_bp
+
+
 def create_app() -> Flask:
     load_dotenv()
 
@@ -68,6 +71,12 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(portal_bp)
     app.register_blueprint(mp_webhook_bp)
+    app.register_blueprint(users_bp)
+    app.register_blueprint(roles_bp)
+
+    from .acl import init_acl
+
+    init_acl(app)
 
     from sqlalchemy.exc import DataError, IntegrityError
     from flask import jsonify

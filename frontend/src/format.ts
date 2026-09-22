@@ -115,7 +115,7 @@ type ApiErrorBody = {
 };
 
 const ERROR_CODE_MESSAGES: Record<string, (b: ApiErrorBody) => string> = {
-  invalid_credentials: () => "Usuario o contraseña incorrectos.",
+  invalid_credentials: () => "Email, usuario o contraseña incorrectos.",
   already_bootstrapped: () => "Ya existe un administrador. Iniciá sesión con tu usuario.",
   username_and_password_required: () => "Ingresá usuario y contraseña.",
   dni_already_exists: (b) => `El DNI ya está registrado${b.client_id ? ` (cliente #${b.client_id})` : ""}.`,

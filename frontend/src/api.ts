@@ -3,6 +3,45 @@ export const API_BASE_URL =
 
 export type ApiError = { status: number; body: any };
 
+export type Permissions = Record<string, string[]>;
+
+export type LoginResponse = {
+  access_token?: string;
+  code_skipped?: "no_email" | "smtp_not_configured";
+  require_code?: boolean;
+  challenge_id?: string;
+  email_hint?: string;
+  expires_in?: number;
+  resend_in?: number;
+};
+
+export type StaffUser = {
+  id: number;
+  username: string;
+  email: string | null;
+  is_active: boolean;
+  is_admin: boolean;
+  role: { id: number; name: string; is_admin: boolean } | null;
+  last_login_at: string | null;
+  created_at: string | null;
+};
+
+export type Me = StaffUser & { permissions: Permissions; smtp_configured: boolean };
+
+export type RoleItem = {
+  id: number;
+  name: string;
+  description: string | null;
+  is_admin: boolean;
+  permissions: Permissions;
+  users_count: number;
+};
+
+export type PermissionsCatalog = {
+  modules: { id: string; label: string; actions: string[] }[];
+  actions: { id: string; label: string }[];
+};
+
 let _pendingRequests = 0;
 
 function emitLoading() {
@@ -119,20 +158,67 @@ export const api = {
   },
 
   // auth
-  bootstrap(username: string, password: string) {
+  bootstrap(username: string, password: string, email?: string) {
     return request("/api/auth/bootstrap", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ username, password, email }),
     });
   },
-  async login(username: string, password: string): Promise<{ access_token: string }> {
+  login(identifier: string, password: string): Promise<LoginResponse> {
     return request("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ identifier, password }),
     });
   },
-  me() {
+  verifyLoginCode(challenge_id: string, code: string): Promise<LoginResponse> {
+    return request("/api/auth/login/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge_id, code }),
+    });
+  },
+  resendLoginCode(challenge_id: string): Promise<{ ok: boolean; resend_in: number }> {
+    return request("/api/auth/login/resend", {
+      method: "POST",
+      body: JSON.stringify({ challenge_id }),
+    });
+  },
+  logout() {
+    return request("/api/auth/logout", { method: "POST", body: "{}" });
+  },
+  me(): Promise<Me> {
     return request("/api/auth/me");
+  },
+  updateMe(payload: { current_password: string; email?: string; new_password?: string }): Promise<Me> {
+    return request("/api/auth/me", { method: "PUT", body: JSON.stringify(payload) });
+  },
+
+  // usuarios y roles
+  listUsers(): Promise<StaffUser[]> {
+    return request("/api/users");
+  },
+  createUser(payload: { username: string; email: string; password: string; role_id: number; is_active?: boolean }) {
+    return request("/api/users", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateUser(id: number, payload: Partial<{ username: string; email: string; password: string; role_id: number; is_active: boolean }>) {
+    return request(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteUser(id: number) {
+    return request(`/api/users/${id}`, { method: "DELETE" });
+  },
+  getPermissionsCatalog(): Promise<PermissionsCatalog> {
+    return request("/api/roles/catalog");
+  },
+  listRoles(): Promise<RoleItem[]> {
+    return request("/api/roles");
+  },
+  createRole(payload: { name: string; description?: string; permissions: Permissions }) {
+    return request("/api/roles", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateRole(id: number, payload: Partial<{ name: string; description: string; permissions: Permissions }>) {
+    return request(`/api/roles/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteRole(id: number) {
+    return request(`/api/roles/${id}`, { method: "DELETE" });
   },
 
   // clients
@@ -392,6 +478,30 @@ export const api = {
   },
   getLogModules() {
     return request("/api/logs/modules");
+  },
+  getUserActivity(opts?: {
+    user_id?: number | null;
+    module?: string | null;
+    action?: string | null;
+    q?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    Object.entries(opts || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    });
+    const qs = params.toString();
+    return request(`/api/logs/activity${qs ? `?${qs}` : ""}`);
+  },
+  getUserActivityMeta(): Promise<{
+    users: { id: number; username: string }[];
+    modules: { id: string; label: string }[];
+    actions: { id: string; label: string }[];
+  }> {
+    return request("/api/logs/activity/meta");
   },
   getLoggingConfig() {
     return request("/api/logs/config");

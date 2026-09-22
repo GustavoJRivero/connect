@@ -32,11 +32,16 @@ import {
   IconSun,
   IconMoon,
   IconMenu2,
+  IconUserShield,
+  IconUserCircle,
 } from "@tabler/icons-react";
-import { api, setToken } from "./api";
+import { api, Me, setToken } from "./api";
 import { formatApiError } from "./format";
 import { BrandLogo } from "./BrandLogo";
 import { Button } from "./ui";
+import { canDo, MeProvider, RequirePermission } from "./auth";
+import { CODE_SKIPPED_KEY } from "./Login";
+import { ProfileModal } from "./components/ProfileModal";
 
 import ClientsPage from "./pages/ClientsPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -49,6 +54,7 @@ import PlansPage from "./pages/PlansPage";
 import LogsPage from "./pages/LogsPage";
 import JobsPage from "./pages/JobsPage";
 import InstallationsPage from "./pages/InstallationsPage";
+import UsersPage from "./pages/UsersPage";
 
 function getPageHeading(pathname: string): { kicker?: string; kickerTo?: string; title: string | null } {
   const path = pathname === "/" ? "/dashboard" : pathname;
@@ -64,10 +70,12 @@ function getPageHeading(pathname: string): { kicker?: string; kickerTo?: string;
   if (path.startsWith("/plans")) return { kicker: "Infraestructura", title: "Planes" };
   if (path.startsWith("/jobs")) return { kicker: "Sistema", title: "Tareas" };
   if (path.startsWith("/logs")) return { kicker: "Sistema", title: "Logs" };
+  if (path.startsWith("/users")) return { kicker: "Sistema", title: "Usuarios y roles" };
   if (path.startsWith("/settings")) return { kicker: "Sistema", title: "Configuración" };
   return { title: "Panel" };
 }
 
+// `id` es también el módulo del ACL que habilita la sección.
 const NAV_ITEMS: { to: string; id: string; label: string; icon: React.ComponentType<{ size?: number | string; stroke?: number | string }> }[] = [
   { to: "/dashboard", id: "dashboard", label: "Inicio", icon: IconLayoutDashboard },
   { to: "/clients", id: "clients", label: "Clientes", icon: IconUsers },
@@ -79,11 +87,19 @@ const NAV_ITEMS: { to: string; id: string; label: string; icon: React.ComponentT
   { to: "/plans", id: "plans", label: "Planes", icon: IconPackage },
   { to: "/jobs", id: "jobs", label: "Tareas / Crons", icon: IconClock },
   { to: "/logs", id: "logs", label: "Logs", icon: IconFileText },
+  { to: "/users", id: "users", label: "Usuarios", icon: IconUserShield },
   { to: "/settings", id: "settings", label: "Configuración", icon: IconSettings },
 ];
 
+const CODE_SKIPPED_MESSAGES: Record<string, string> = {
+  no_email: "Tu usuario no tiene email, así que ingresaste sin código de verificación. Cargalo en Mi perfil.",
+  smtp_not_configured: "El SMTP no está configurado, así que el ingreso no pide código por email. Configuralo en Configuración → SMTP.",
+};
+
 export default function AppShell(props: { onLogout: () => void }) {
-  const [me, setMe] = useState<unknown>(null);
+  const [me, setMe] = useState<Me | null>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [codeSkipped, setCodeSkipped] = useState(() => sessionStorage.getItem(CODE_SKIPPED_KEY));
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [safety, setSafety] = useState<{
@@ -126,6 +142,11 @@ export default function AppShell(props: { onLogout: () => void }) {
   }, []);
 
   const pageHeading = getPageHeading(loc.pathname);
+  const visibleNav = NAV_ITEMS.filter((t) => canDo(me, t.id, "view"));
+  const homePath = visibleNav[0]?.to ?? "/dashboard";
+  const skippedMessage =
+    (codeSkipped && CODE_SKIPPED_MESSAGES[codeSkipped]) || (me && !me.email ? CODE_SKIPPED_MESSAGES.no_email : null);
+  const guard = (module: string, el: React.ReactElement) => <RequirePermission module={module}>{el}</RequirePermission>;
 
   const toggleCollapsed = () => {
     const next = !collapsed;
@@ -179,10 +200,24 @@ export default function AppShell(props: { onLogout: () => void }) {
                 {computedColorScheme === "dark" ? <IconSun size={18} /> : <IconMoon size={18} />}
               </ActionIcon>
             </Tooltip>
-            <span>{me && typeof me === "object" && "username" in me ? String((me as { username: string }).username) : "..."}</span>
+            <UnstyledButton onClick={() => setProfileOpen(true)} aria-label="Mi perfil">
+              <Group gap={6} wrap="nowrap">
+                <IconUserCircle size={20} />
+                <Stack gap={0}>
+                  <Text size="sm" fw={600} lh={1.1}>{me?.username ?? "..."}</Text>
+                  {me?.role ? <Text size="xs" c="dimmed" lh={1.1}>{me.role.name}</Text> : null}
+                </Stack>
+              </Group>
+            </UnstyledButton>
             <Button
               variant="danger"
-              onClick={() => {
+              onClick={async () => {
+                try {
+                  await api.logout();
+                } catch {
+                  // la sesión se cierra igual
+                }
+                sessionStorage.removeItem(CODE_SKIPPED_KEY);
                 setToken(null);
                 props.onLogout();
               }}
@@ -212,7 +247,7 @@ export default function AppShell(props: { onLogout: () => void }) {
           </Tooltip>
         </MantineAppShell.Section>
         <MantineAppShell.Section grow mt="md">
-          {NAV_ITEMS.map((t) => {
+          {visibleNav.map((t) => {
             const isActive = loc.pathname === "/" ? t.to === "/dashboard" : loc.pathname.startsWith(t.to);
             const Icon = t.icon;
             if (collapsed) {
@@ -297,24 +332,56 @@ export default function AppShell(props: { onLogout: () => void }) {
           </Alert>
         ) : null}
 
-        <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/clients" element={<ClientsPage />} />
-          <Route path="/clients/new" element={<ClientsPage />} />
-          <Route path="/clients/:clientId" element={<ClientsPage />} />
-          <Route path="/installations" element={<InstallationsPage />} />
-          <Route path="/billing" element={<BillingPage />} />
-          <Route path="/invoices" element={<InvoicesPage />} />
-          <Route path="/payments" element={<PaymentsPage />} />
-          <Route path="/network" element={<NetworkPage />} />
-          <Route path="/network/:serverId" element={<NetworkPage />} />
-          <Route path="/plans" element={<PlansPage />} />
-          <Route path="/jobs" element={<JobsPage />} />
-          <Route path="/logs" element={<LogsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        {skippedMessage ? (
+          <Alert
+            color="yellow"
+            variant="light"
+            mb="md"
+            title="Ingreso sin código de verificación"
+            withCloseButton
+            onClose={() => {
+              sessionStorage.removeItem(CODE_SKIPPED_KEY);
+              setCodeSkipped(null);
+            }}
+          >
+            {skippedMessage}
+          </Alert>
+        ) : null}
+
+        <MeProvider value={me}>
+          {me ? (
+            <Routes>
+              <Route path="/" element={<Navigate to={homePath} replace />} />
+              <Route path="/dashboard" element={guard("dashboard", <DashboardPage />)} />
+              <Route path="/clients" element={guard("clients", <ClientsPage />)} />
+              <Route path="/clients/new" element={guard("clients", <ClientsPage />)} />
+              <Route path="/clients/:clientId" element={guard("clients", <ClientsPage />)} />
+              <Route path="/installations" element={guard("installations", <InstallationsPage />)} />
+              <Route path="/billing" element={guard("billing", <BillingPage />)} />
+              <Route path="/invoices" element={guard("invoices", <InvoicesPage />)} />
+              <Route path="/payments" element={guard("payments", <PaymentsPage />)} />
+              <Route path="/network" element={guard("network", <NetworkPage />)} />
+              <Route path="/network/:serverId" element={guard("network", <NetworkPage />)} />
+              <Route path="/plans" element={guard("plans", <PlansPage />)} />
+              <Route path="/jobs" element={guard("jobs", <JobsPage />)} />
+              <Route path="/logs" element={guard("logs", <LogsPage />)} />
+              <Route path="/users" element={guard("users", <UsersPage />)} />
+              <Route path="/settings" element={guard("settings", <SettingsPage />)} />
+              <Route path="*" element={<Navigate to={homePath} replace />} />
+            </Routes>
+          ) : null}
+          <ProfileModal
+            opened={profileOpen}
+            onClose={() => setProfileOpen(false)}
+            onSaved={(next) => {
+              setMe(next);
+              if (next.email) {
+                sessionStorage.removeItem(CODE_SKIPPED_KEY);
+                setCodeSkipped(null);
+              }
+            }}
+          />
+        </MeProvider>
       </MantineAppShell.Main>
 
       <MantineAppShell.Footer p="xs">
