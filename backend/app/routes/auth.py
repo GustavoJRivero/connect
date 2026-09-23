@@ -117,8 +117,16 @@ def _challenge_response(challenge_id: str):
     })
 
 
-def _fake_challenge_response():
-    return _challenge_response(str(uuid.uuid4()))
+def _clear_failed_logins(identifier: str, user: User) -> None:
+    """Sin esto el bloqueo de 15 minutos sigue vivo aunque la contraseña ya sea correcta."""
+    who = func.lower(UserActivity.username) == identifier.lower()
+    who = who | (UserActivity.user_id == user.id)
+    try:
+        UserActivity.query.filter(UserActivity.action == "LOGIN_FAILED").filter(who).delete(synchronize_session=False)
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.warning("No se pudieron limpiar los intentos fallidos de %s: %s", user.id, e)
 
 
 def _too_many_code_sends(user: User) -> bool:
@@ -273,7 +281,12 @@ def login():
             status_code=401,
             details={"identifier": identifier},
         )
-        return _fake_challenge_response()
+        return jsonify({
+            "error": "invalid_credentials",
+            "message": "Usuario o contraseña incorrectos.",
+        }), 401
+
+    _clear_failed_logins(identifier, user)
 
     # La contraseña ya está validada, así que acá conviene decir la verdad en vez de
     # mostrar la pantalla del código sin haber mandado nada.

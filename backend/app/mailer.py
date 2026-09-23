@@ -47,10 +47,12 @@ def send_mail(*, to: str, subject: str, html: str, text: str | None = None) -> N
         msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    server = smtplib.SMTP(cfg["host"], cfg["port"], timeout=15)
+    # El 465 habla TLS desde el saludo; el 587 arranca en claro y sube con STARTTLS.
+    implicit_ssl = cfg["port"] == 465
+    server = (smtplib.SMTP_SSL if implicit_ssl else smtplib.SMTP)(cfg["host"], cfg["port"], timeout=15)
     try:
         server.ehlo()
-        if cfg["use_tls"]:
+        if cfg["use_tls"] and not implicit_ssl:
             server.starttls()
             server.ehlo()
         server.login(cfg["user"], cfg["password"])
