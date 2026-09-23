@@ -196,7 +196,12 @@ def bootstrap_admin():
     data = request.get_json(force=True) or {}
     expected_token = str(current_app.config.get("BOOTSTRAP_TOKEN") or "")
     provided_token = str(request.headers.get("X-Bootstrap-Token") or data.get("bootstrap_token") or "")
-    if expected_token and not hmac.compare_digest(expected_token, provided_token):
+    if not expected_token:
+        return jsonify({
+            "error": "bootstrap_disabled",
+            "message": "Para crear el primer administrador hay que definir BOOTSTRAP_TOKEN en el servidor.",
+        }), 403
+    if not hmac.compare_digest(expected_token, provided_token):
         return jsonify({"error": "invalid_bootstrap_token", "message": "Token de instalación inválido."}), 403
     if not verify_recaptcha(str(data.get("recaptcha_token") or ""), "staff_bootstrap"):
         return jsonify({"error": "recaptcha_failed", "message": "No pudimos validar que seas una persona."}), 400

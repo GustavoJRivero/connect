@@ -43,13 +43,13 @@ def get_config() -> dict:
     ):
         raise ValueError("SECRET_KEY y JWT_SECRET_KEY deben ser claves únicas de al menos 32 caracteres en producción.")
 
-    cors_origins = [
-        value.strip()
-        for value in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
-        if value.strip()
-    ]
-    if environment == "production" and (not cors_origins or "*" in cors_origins):
-        raise ValueError("CORS_ORIGINS debe listar los orígenes permitidos y no puede contener '*' en producción.")
+    # Sin CORS_ORIGINS en producción no se habilita ningún origen cruzado. El panel y el
+    # portal se sirven bajo el mismo dominio que la API, así que siguen funcionando; solo
+    # hace falta configurarlo si el frontend vive en otro dominio. "*" nunca se acepta.
+    raw_cors = os.getenv("CORS_ORIGINS", "").strip()
+    if not raw_cors and environment != "production":
+        raw_cors = "http://localhost:3000"
+    cors_origins = [value.strip() for value in raw_cors.split(",") if value.strip() and value.strip() != "*"]
     try:
         proxy_fix_x_for = max(0, int(os.getenv("PROXY_FIX_X_FOR", "0")))
     except ValueError:
@@ -63,13 +63,9 @@ def get_config() -> dict:
     except ValueError:
         recaptcha_min_score = 0.5
     recaptcha_min_score = max(0.0, min(recaptcha_min_score, 1.0))
-    if environment == "production":
-        if not recaptcha_site_key or len(recaptcha_secret_key) < 20:
-            raise ValueError("RECAPTCHA_SITE_KEY y RECAPTCHA_SECRET_KEY son obligatorios en producción.")
-        if len(bootstrap_token) < 32:
-            raise ValueError("BOOTSTRAP_TOKEN debe tener al menos 32 caracteres en producción.")
-        # MP_WEBHOOK_SECRET es opcional acá: se carga desde Configuración → Mercado Pago
-        # y el .env queda como respaldo. Sin secret el webhook rechaza todo (fail-closed).
+    # RECAPTCHA_*, BOOTSTRAP_TOKEN y MP_WEBHOOK_SECRET son opcionales: sin ellos el
+    # arranque no falla, pero la función que dependen queda cerrada (el captcha no se
+    # exige, el bootstrap se deshabilita y el webhook de MP rechaza las notificaciones).
 
     return {
         "APP_ENV": environment,

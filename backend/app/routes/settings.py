@@ -25,6 +25,7 @@ _HIDDEN_KV = (
     "mp.webhook_secret",
     "maps.api_key",
     "maps.webhook_secret",
+    "security.recaptcha_secret_key",
 )
 _MAX_CERT_BYTES = 80_000
 
@@ -102,6 +103,14 @@ def get_kv():
         out["maps.webhook_secret_ready"] = "true" if webhook_secret else "false"
         out["maps.webhook_secret_source"] = wh_src
         out.setdefault("maps.api_base_url", base_url or "https://maps.connectsrl.ar")
+    if (not prefix) or prefix.startswith("security"):
+        site_key, site_src = _effective("security.recaptcha_site_key", "RECAPTCHA_SITE_KEY")
+        secret_key, secret_src = _effective("security.recaptcha_secret_key", "RECAPTCHA_SECRET_KEY")
+        out.pop("security.recaptcha_secret_key", None)
+        out["security.recaptcha_site_key"] = site_key
+        out["security.recaptcha_secret_ready"] = "true" if secret_key else "false"
+        out["security.recaptcha_source"] = site_src or secret_src
+        out["security.recaptcha_enabled"] = "true" if (site_key and secret_key) else "false"
     return jsonify(out)
 
 

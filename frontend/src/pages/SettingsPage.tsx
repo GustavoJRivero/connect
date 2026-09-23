@@ -39,6 +39,7 @@ import {
   IconCreditCard,
   IconCircleCheck,
   IconDatabaseImport,
+  IconShieldLock,
 } from "@tabler/icons-react";
 
 type MigrationSummary = {
@@ -75,8 +76,18 @@ type SafetyStatus = {
   staging_safe?: boolean;
 };
 
-type SaveKind = "billing" | "services" | "automation" | "issuerExtra" | "smtp" | "fiscal" | "maps" | "mp";
-type SectionId = "billing" | "services" | "automation" | "issuer" | "fiscal" | "smtp" | "maps" | "mp" | "migration";
+type SaveKind = "billing" | "services" | "automation" | "issuerExtra" | "smtp" | "fiscal" | "maps" | "mp" | "security";
+type SectionId =
+  | "billing"
+  | "services"
+  | "automation"
+  | "issuer"
+  | "fiscal"
+  | "smtp"
+  | "maps"
+  | "mp"
+  | "security"
+  | "migration";
 
 const SAVE_CONFIRM: Record<SaveKind, { title: string; message: string }> = {
   billing: {
@@ -115,6 +126,11 @@ const SAVE_CONFIRM: Record<SaveKind, { title: string; message: string }> = {
     message:
       "Se guardarán la URL, la API key, el webhook secret y los ajustes de reservas (cron y plazo). ¿Seguís?",
   },
+  security: {
+    title: "¿Guardar seguridad?",
+    message:
+      "Con las dos claves cargadas, el captcha empieza a pedirse en todos los ingresos. ¿Seguís?",
+  },
 };
 
 const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
@@ -126,6 +142,7 @@ const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "mp", label: "Mercado Pago", hint: "Cobro desde el portal del cliente" },
   { id: "smtp", label: "Correo", hint: "Envío de facturas por email" },
   { id: "maps", label: "Maps", hint: "API de cobertura y reservas NAP" },
+  { id: "security", label: "Seguridad", hint: "reCAPTCHA en los ingresos" },
   { id: "migration", label: "Migración", hint: "Backup del sistema anterior" },
 ];
 
@@ -138,6 +155,7 @@ const SECTION_ICONS: Record<SectionId, React.ComponentType<{ size?: number | str
   mp: IconCreditCard,
   smtp: IconMail,
   maps: IconMapPin,
+  security: IconShieldLock,
   migration: IconDatabaseImport,
 };
 
@@ -294,6 +312,10 @@ export default function SettingsPage() {
   const [mpWebhookSecretReady, setMpWebhookSecretReady] = useState(false);
   const [mpSource, setMpSource] = useState("");
   const [mpCheckMsg, setMpCheckMsg] = useState<string | null>(null);
+  const [recaptcha, setRecaptcha] = useState({ site_key: "", secret_key: "" });
+  const [recaptchaSecretReady, setRecaptchaSecretReady] = useState(false);
+  const [recaptchaEnabled, setRecaptchaEnabled] = useState(false);
+  const [recaptchaSource, setRecaptchaSource] = useState("");
   const [issueDate, setIssueDate] = useState("");
   const [issue, setIssue] = useState(false);
   const [generating, setGenerating] = useState(false);
@@ -370,6 +392,19 @@ export default function SettingsPage() {
         setMpWebhookSecretReady(false);
         setMpSource("");
         setMpCheckMsg(null);
+      }
+
+      try {
+        const secRes = (await api.getSettings("security.")) as Record<string, string>;
+        setRecaptcha({ site_key: secRes["security.recaptcha_site_key"] ?? "", secret_key: "" });
+        setRecaptchaSecretReady(String(secRes["security.recaptcha_secret_ready"] ?? "").toLowerCase() === "true");
+        setRecaptchaEnabled(String(secRes["security.recaptcha_enabled"] ?? "").toLowerCase() === "true");
+        setRecaptchaSource(secRes["security.recaptcha_source"] ?? "");
+      } catch {
+        setRecaptcha({ site_key: "", secret_key: "" });
+        setRecaptchaSecretReady(false);
+        setRecaptchaEnabled(false);
+        setRecaptchaSource("");
       }
 
       const mapsRes = (await api.getSettings("maps.")) as Record<string, string>;
@@ -568,6 +603,22 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveSecurity() {
+    setError(null);
+    setSuccess(null);
+    try {
+      const values: Record<string, string> = { "security.recaptcha_site_key": recaptcha.site_key.trim() };
+      if (recaptcha.secret_key.trim()) values["security.recaptcha_secret_key"] = recaptcha.secret_key.trim();
+      await api.putSettings(values);
+      setSuccess("Seguridad guardada.");
+      notifySuccess("Seguridad guardada.");
+      setSection(null);
+      await reload();
+    } catch (e: unknown) {
+      setError(formatApiError(e));
+    }
+  }
+
   async function saveMaps() {
     setError(null);
     setSuccess(null);
@@ -714,6 +765,7 @@ export default function SettingsPage() {
         else if (kind === "smtp") await saveSmtp();
         else if (kind === "maps") await saveMaps();
         else if (kind === "mp") await saveMp();
+        else if (kind === "security") await saveSecurity();
         else await saveFacturacionFiscal();
       },
     });
@@ -774,6 +826,13 @@ export default function SettingsPage() {
         : "URL y API key de Connect Maps",
       tone: mapsApiKeyReady ? "green" : "gray",
       badge: mapsApiKeyReady ? (mapsEnabled ? `${mapsTtl}h` : "Manual") : "No configurado",
+    },
+    security: {
+      line: recaptchaEnabled
+        ? (recaptchaSource === "env" ? "reCAPTCHA desde el entorno" : "reCAPTCHA activo")
+        : "Claves de reCAPTCHA v3 de Google",
+      tone: recaptchaEnabled ? "green" : "yellow",
+      badge: recaptchaEnabled ? "Activo" : "Sin captcha",
     },
     migration: {
       line: migrationStatus?.last_filename
@@ -1409,6 +1468,57 @@ export default function SettingsPage() {
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
                 <Button variant="primary" onClick={() => void confirmAndSave("smtp")}>Guardar correo</Button>
+              </Group>
+            </Stack>
+          ) : null}
+
+          {section === "security" ? (
+            <Stack gap="lg">
+              <Paper withBorder p="md" radius="md">
+                <Group gap="sm" wrap="nowrap" align="flex-start" mb="md">
+                  <ThemeIcon variant="light" color="violet" size={42} radius="md">
+                    <IconShieldLock size={22} stroke={1.5} />
+                  </ThemeIcon>
+                  <Box style={{ flex: 1 }}>
+                    <Group gap={8} mb={2}>
+                      <Text size="sm" fw={600}>reCAPTCHA v3</Text>
+                      <MutedBadge tone={recaptchaEnabled ? "green" : "yellow"} size="sm">
+                        {recaptchaSource === "env" ? "Desde .env" : recaptchaEnabled ? "Activo" : "Sin captcha"}
+                      </MutedBadge>
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      Frena los intentos automatizados en el ingreso al panel y al portal. Las claves salen de
+                      google.com/recaptcha/admin, creando un sitio tipo v3. La clave secreta no se vuelve a mostrar.
+                    </Text>
+                  </Box>
+                </Group>
+                <Stack gap="sm">
+                  <Field
+                    label="Clave del sitio"
+                    description="La pública, la que usa el navegador."
+                    value={recaptcha.site_key}
+                    onChange={(v) => setRecaptcha((s) => ({ ...s, site_key: v }))}
+                    placeholder="6Lc…"
+                  />
+                  <PasswordInput
+                    label="Clave secreta"
+                    description={
+                      recaptchaSecretReady
+                        ? "Ya hay una clave cargada. Dejá vacío para conservarla."
+                        : "La privada, la que valida el servidor contra Google."
+                    }
+                    value={recaptcha.secret_key}
+                    onChange={(e) => setRecaptcha((s) => ({ ...s, secret_key: e.currentTarget.value }))}
+                    placeholder={recaptchaSecretReady ? "••••••••  (cargada)" : "6Lc…"}
+                  />
+                  <Text size="xs" c="dimmed">
+                    Mientras falte alguna de las dos, el captcha no se pide. El ingreso sigue protegido por el código
+                    que llega por email y por los límites de intentos.
+                  </Text>
+                </Stack>
+              </Paper>
+              <Group justify="flex-end">
+                <Button variant="primary" onClick={() => void confirmAndSave("security")}>Guardar seguridad</Button>
               </Group>
             </Stack>
           ) : null}
