@@ -1,5 +1,12 @@
+function defaultBaseUrl(): string {
+  // Servido desde un dominio real: la API vive en el mismo origen detrás del proxy,
+  // así que una URL relativa evita romperse si cambia el esquema o el puerto.
+  const host = typeof window === "undefined" ? "" : window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1" ? "http://localhost:5001" : "";
+}
+
 export const API_BASE_URL =
-  (process.env.REACT_APP_API_BASE_URL as string | undefined) ?? "http://localhost:5001";
+  ((process.env.REACT_APP_API_BASE_URL as string | undefined) ?? "").trim().replace(/\/+$/, "") || defaultBaseUrl();
 
 export type ApiError = { status: number; body: any };
 
