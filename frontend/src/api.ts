@@ -7,9 +7,9 @@ export type Permissions = Record<string, string[]>;
 
 export type LoginResponse = {
   access_token?: string;
-  code_skipped?: "no_email" | "smtp_not_configured";
   require_code?: boolean;
   challenge_id?: string;
+  challenge_token?: string;
   email_hint?: string;
   expires_in?: number;
   resend_in?: number;
@@ -18,6 +18,9 @@ export type LoginResponse = {
 export type StaffUser = {
   id: number;
   username: string;
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string;
   email: string | null;
   is_active: boolean;
   is_admin: boolean;
@@ -110,6 +113,37 @@ async function request(path: string, init: RequestInit = {}) {
   }
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  loadingStart();
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, { headers });
+    if (!res.ok) {
+      if (res.status === 401) {
+        setToken(null);
+        window.dispatchEvent(new CustomEvent("sc:unauthorized", { detail: { path } }));
+      }
+      let body: any = null;
+      try {
+        body = await res.json();
+      } catch {
+        body = { error: "download_failed", message: "No se pudo descargar el archivo." };
+      }
+      throw { status: res.status, body } as ApiError;
+    }
+    return res.blob();
+  } finally {
+    loadingEnd();
+  }
+}
+
+async function pdfObjectUrl(path: string): Promise<string> {
+  const blob = await requestBlob(path);
+  return URL.createObjectURL(blob);
+}
+
 async function requestForm(path: string, init: RequestInit = {}) {
   loadingStart();
   const headers = new Headers(init.headers || {});
@@ -158,28 +192,38 @@ export const api = {
   },
 
   // auth
-  bootstrap(username: string, password: string, email?: string) {
+  bootstrap(payload: {
+    username: string;
+    first_name: string;
+    last_name: string;
+    password: string;
+    email: string;
+    bootstrapToken: string;
+    recaptchaToken: string;
+  }) {
+    const { bootstrapToken, recaptchaToken, ...rest } = payload;
     return request("/api/auth/bootstrap", {
       method: "POST",
-      body: JSON.stringify({ username, password, email }),
+      headers: { "X-Bootstrap-Token": bootstrapToken },
+      body: JSON.stringify({ ...rest, recaptcha_token: recaptchaToken }),
     });
   },
-  login(identifier: string, password: string): Promise<LoginResponse> {
+  login(identifier: string, password: string, recaptchaToken: string): Promise<LoginResponse> {
     return request("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ identifier, password }),
+      body: JSON.stringify({ identifier, password, recaptcha_token: recaptchaToken }),
     });
   },
-  verifyLoginCode(challenge_id: string, code: string): Promise<LoginResponse> {
+  verifyLoginCode(challenge_id: string, challenge_token: string, code: string): Promise<LoginResponse> {
     return request("/api/auth/login/verify", {
       method: "POST",
-      body: JSON.stringify({ challenge_id, code }),
+      body: JSON.stringify({ challenge_id, challenge_token, code }),
     });
   },
-  resendLoginCode(challenge_id: string): Promise<{ ok: boolean; resend_in: number }> {
+  resendLoginCode(challenge_id: string, challenge_token: string): Promise<{ ok: boolean; resend_in: number }> {
     return request("/api/auth/login/resend", {
       method: "POST",
-      body: JSON.stringify({ challenge_id }),
+      body: JSON.stringify({ challenge_id, challenge_token }),
     });
   },
   logout() {
@@ -188,7 +232,13 @@ export const api = {
   me(): Promise<Me> {
     return request("/api/auth/me");
   },
-  updateMe(payload: { current_password: string; email?: string; new_password?: string }): Promise<Me> {
+  updateMe(payload: {
+    current_password: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    new_password?: string;
+  }): Promise<Me & { access_token?: string }> {
     return request("/api/auth/me", { method: "PUT", body: JSON.stringify(payload) });
   },
 
@@ -196,10 +246,29 @@ export const api = {
   listUsers(): Promise<StaffUser[]> {
     return request("/api/users");
   },
-  createUser(payload: { username: string; email: string; password: string; role_id: number; is_active?: boolean }) {
+  createUser(payload: {
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    password: string;
+    role_id: number;
+    is_active?: boolean;
+  }) {
     return request("/api/users", { method: "POST", body: JSON.stringify(payload) });
   },
-  updateUser(id: number, payload: Partial<{ username: string; email: string; password: string; role_id: number; is_active: boolean }>) {
+  updateUser(
+    id: number,
+    payload: Partial<{
+      username: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      password: string;
+      role_id: number;
+      is_active: boolean;
+    }>,
+  ) {
     return request(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(payload) });
   },
   deleteUser(id: number) {
@@ -512,8 +581,7 @@ export const api = {
 
   // invoice PDF & email
   getInvoicePdfUrl(id: number) {
-    const token = getToken();
-    return `${API_BASE_URL}/api/invoices/${id}/pdf${token ? `?jwt=${token}` : ""}`;
+    return pdfObjectUrl(`/api/invoices/${id}/pdf`);
   },
   sendInvoiceEmail(id: number, to?: string) {
     return request(`/api/invoices/${id}/send_email`, {
@@ -562,8 +630,7 @@ export const api = {
     return request(`/api/installations/${id}`, { method: "PUT", body: JSON.stringify(payload) });
   },
   getInstallationPdfUrl(id: number) {
-    const token = getToken();
-    return `${API_BASE_URL}/api/installations/${id}/pdf${token ? `?jwt=${token}` : ""}`;
+    return pdfObjectUrl(`/api/installations/${id}/pdf`);
   },
 };
 

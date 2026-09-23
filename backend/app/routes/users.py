@@ -18,6 +18,13 @@ def _error(code: str, message: str, status: int = 400):
     return jsonify({"error": code, "message": message}), status
 
 
+def _require_admin():
+    user = current_staff_user()
+    if user is None or not user.is_admin:
+        return _error("admin_required", "Solo un administrador puede realizar esta acción.", 403)
+    return None
+
+
 def _active_admins_excluding(user_id: int) -> int:
     return (
         User.query.join(Role, User.role_id == Role.id)
@@ -51,8 +58,13 @@ def list_users():
 
 @bp.post("")
 def create_user():
+    denied = _require_admin()
+    if denied:
+        return denied
     data = request.get_json(force=True) or {}
     username = (data.get("username") or "").strip()
+    first_name = (data.get("first_name") or "").strip()
+    last_name = (data.get("last_name") or "").strip()
     email = normalize_email(data.get("email"))
     password = data.get("password") or ""
     role = Role.query.get(int(data.get("role_id") or 0))
@@ -61,6 +73,8 @@ def create_user():
         return _error("username_required", "Completá el nombre de usuario.")
     if User.query.filter_by(username=username).first():
         return _error("username_taken", "Ese nombre de usuario ya existe.", 409)
+    if not first_name or not last_name:
+        return _error("name_required", "Completá el nombre y el apellido.")
     if not email:
         return _error("email_required", "El email es obligatorio: ahí llega el código de ingreso.")
     err = _validate_email(email)
@@ -73,6 +87,8 @@ def create_user():
 
     user = User(
         username=username,
+        first_name=first_name[:80],
+        last_name=last_name[:80],
         email=email,
         role="ADMIN" if role.is_admin else "OPERATOR",
         role_id=role.id,
@@ -86,6 +102,9 @@ def create_user():
 
 @bp.put("/<int:user_id>")
 def update_user(user_id: int):
+    denied = _require_admin()
+    if denied:
+        return denied
     user = User.query.get_or_404(user_id)
     me = current_staff_user()
     data = request.get_json(force=True) or {}
@@ -97,6 +116,15 @@ def update_user(user_id: int):
         if User.query.filter(User.username == username, User.id != user.id).first():
             return _error("username_taken", "Ese nombre de usuario ya existe.", 409)
         user.username = username
+
+    if "first_name" in data or "last_name" in data:
+        first_name = (data.get("first_name") if "first_name" in data else user.first_name) or ""
+        last_name = (data.get("last_name") if "last_name" in data else user.last_name) or ""
+        first_name, last_name = first_name.strip(), last_name.strip()
+        if not first_name or not last_name:
+            return _error("name_required", "Completá el nombre y el apellido.")
+        user.first_name = first_name[:80]
+        user.last_name = last_name[:80]
 
     if "email" in data:
         email = normalize_email(data.get("email"))
@@ -142,6 +170,9 @@ def update_user(user_id: int):
 
 @bp.delete("/<int:user_id>")
 def delete_user(user_id: int):
+    denied = _require_admin()
+    if denied:
+        return denied
     user = User.query.get_or_404(user_id)
     me = current_staff_user()
     if me and me.id == user.id:
@@ -210,6 +241,9 @@ def list_roles():
 
 @roles_bp.post("")
 def create_role():
+    denied = _require_admin()
+    if denied:
+        return denied
     data = request.get_json(force=True) or {}
     name = (data.get("name") or "").strip()
     if not name:
@@ -225,6 +259,9 @@ def create_role():
 
 @roles_bp.put("/<int:role_id>")
 def update_role(role_id: int):
+    denied = _require_admin()
+    if denied:
+        return denied
     role = Role.query.get_or_404(role_id)
     data = request.get_json(force=True) or {}
     if role.is_admin and "permissions" in data:
@@ -246,6 +283,9 @@ def update_role(role_id: int):
 
 @roles_bp.delete("/<int:role_id>")
 def delete_role(role_id: int):
+    denied = _require_admin()
+    if denied:
+        return denied
     role = Role.query.get_or_404(role_id)
     if role.is_admin:
         return _error("admin_role_locked", "El rol Administrador no se puede eliminar.")

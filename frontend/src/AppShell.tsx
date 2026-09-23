@@ -40,7 +40,6 @@ import { formatApiError } from "./format";
 import { BrandLogo } from "./BrandLogo";
 import { Button } from "./ui";
 import { canDo, MeProvider, RequirePermission } from "./auth";
-import { CODE_SKIPPED_KEY } from "./Login";
 import { ProfileModal } from "./components/ProfileModal";
 
 import ClientsPage from "./pages/ClientsPage";
@@ -91,15 +90,9 @@ const NAV_ITEMS: { to: string; id: string; label: string; icon: React.ComponentT
   { to: "/settings", id: "settings", label: "Configuración", icon: IconSettings },
 ];
 
-const CODE_SKIPPED_MESSAGES: Record<string, string> = {
-  no_email: "Tu usuario no tiene email, así que ingresaste sin código de verificación. Cargalo en Mi perfil.",
-  smtp_not_configured: "El SMTP no está configurado, así que el ingreso no pide código por email. Configuralo en Configuración → SMTP.",
-};
-
 export default function AppShell(props: { onLogout: () => void }) {
   const [me, setMe] = useState<Me | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [codeSkipped, setCodeSkipped] = useState(() => sessionStorage.getItem(CODE_SKIPPED_KEY));
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(0);
   const [safety, setSafety] = useState<{
@@ -144,8 +137,6 @@ export default function AppShell(props: { onLogout: () => void }) {
   const pageHeading = getPageHeading(loc.pathname);
   const visibleNav = NAV_ITEMS.filter((t) => canDo(me, t.id, "view"));
   const homePath = visibleNav[0]?.to ?? "/dashboard";
-  const skippedMessage =
-    (codeSkipped && CODE_SKIPPED_MESSAGES[codeSkipped]) || (me && !me.email ? CODE_SKIPPED_MESSAGES.no_email : null);
   const guard = (module: string, el: React.ReactElement) => <RequirePermission module={module}>{el}</RequirePermission>;
 
   const toggleCollapsed = () => {
@@ -204,7 +195,7 @@ export default function AppShell(props: { onLogout: () => void }) {
               <Group gap={6} wrap="nowrap">
                 <IconUserCircle size={20} />
                 <Stack gap={0}>
-                  <Text size="sm" fw={600} lh={1.1}>{me?.username ?? "..."}</Text>
+                  <Text size="sm" fw={600} lh={1.1}>{me?.full_name || me?.username || "..."}</Text>
                   {me?.role ? <Text size="xs" c="dimmed" lh={1.1}>{me.role.name}</Text> : null}
                 </Stack>
               </Group>
@@ -217,7 +208,6 @@ export default function AppShell(props: { onLogout: () => void }) {
                 } catch {
                   // la sesión se cierra igual
                 }
-                sessionStorage.removeItem(CODE_SKIPPED_KEY);
                 setToken(null);
                 props.onLogout();
               }}
@@ -332,22 +322,6 @@ export default function AppShell(props: { onLogout: () => void }) {
           </Alert>
         ) : null}
 
-        {skippedMessage ? (
-          <Alert
-            color="yellow"
-            variant="light"
-            mb="md"
-            title="Ingreso sin código de verificación"
-            withCloseButton
-            onClose={() => {
-              sessionStorage.removeItem(CODE_SKIPPED_KEY);
-              setCodeSkipped(null);
-            }}
-          >
-            {skippedMessage}
-          </Alert>
-        ) : null}
-
         <MeProvider value={me}>
           {me ? (
             <Routes>
@@ -375,10 +349,6 @@ export default function AppShell(props: { onLogout: () => void }) {
             onClose={() => setProfileOpen(false)}
             onSaved={(next) => {
               setMe(next);
-              if (next.email) {
-                sessionStorage.removeItem(CODE_SKIPPED_KEY);
-                setCodeSkipped(null);
-              }
             }}
           />
         </MeProvider>

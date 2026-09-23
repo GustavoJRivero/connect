@@ -15,17 +15,19 @@ import {
 import { api, LoginResponse, setToken } from "./api";
 import { formatApiError } from "./format";
 import { BrandLogo } from "./BrandLogo";
-
-export const CODE_SKIPPED_KEY = "sc.codeSkipped";
+import { getRecaptchaToken } from "./recaptcha";
 
 type Step = "login" | "bootstrap" | "code";
 
 export default function Login(props: { onLoggedIn: () => void }) {
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
+  const [bootstrapToken, setBootstrapToken] = useState("");
   const [step, setStep] = useState<Step>("login");
-  const [challenge, setChallenge] = useState<{ id: string; hint: string } | null>(null);
+  const [challenge, setChallenge] = useState<{ id: string; token: string; hint: string } | null>(null);
   const [code, setCode] = useState("");
   const [resendIn, setResendIn] = useState(0);
   const [info, setInfo] = useState<string | null>(null);
@@ -39,31 +41,38 @@ export default function Login(props: { onLoggedIn: () => void }) {
   }, [resendIn]);
 
   function finish(res: LoginResponse) {
-    if (!res.access_token) return false;
+    if (!res.access_token) return;
     setToken(res.access_token);
-    if (res.code_skipped) sessionStorage.setItem(CODE_SKIPPED_KEY, res.code_skipped);
-    else sessionStorage.removeItem(CODE_SKIPPED_KEY);
     props.onLoggedIn();
-    return true;
   }
 
   async function submitCredentials() {
     if (step === "bootstrap") {
-      await api.bootstrap(identifier.trim(), password, email.trim() || undefined);
+      const captcha = await getRecaptchaToken("staff_bootstrap");
+      await api.bootstrap({
+        username: identifier.trim(),
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        password,
+        email: email.trim(),
+        bootstrapToken,
+        recaptchaToken: captcha,
+      });
     }
-    const res = await api.login(identifier.trim(), password);
-    if (finish(res)) return;
-    if (res.require_code && res.challenge_id) {
-      setChallenge({ id: res.challenge_id, hint: res.email_hint || "tu email" });
-      setCode("");
-      setResendIn(res.resend_in ?? 30);
-      setStep("code");
+    const captcha = await getRecaptchaToken("staff_login");
+    const res = await api.login(identifier.trim(), password, captcha);
+    if (!res.require_code || !res.challenge_id || !res.challenge_token) {
+      throw new Error("El servidor no pidió el código de verificación. No se puede ingresar.");
     }
+    setChallenge({ id: res.challenge_id, token: res.challenge_token, hint: res.email_hint || "tu email" });
+    setCode("");
+    setResendIn(res.resend_in ?? 30);
+    setStep("code");
   }
 
   async function submitCode(value = code) {
     if (!challenge || value.length !== 6) return;
-    const res = await api.verifyLoginCode(challenge.id, value);
+    const res = await api.verifyLoginCode(challenge.id, challenge.token, value);
     finish(res);
   }
 
@@ -84,7 +93,7 @@ export default function Login(props: { onLoggedIn: () => void }) {
   async function resend() {
     if (!challenge || resendIn > 0) return;
     await run(async () => {
-      const res = await api.resendLoginCode(challenge.id);
+      const res = await api.resendLoginCode(challenge.id, challenge.token);
       setResendIn(res.resend_in ?? 30);
       setCode("");
       setInfo(`Te enviamos un código nuevo a ${challenge.hint}.`);
@@ -137,6 +146,17 @@ export default function Login(props: { onLoggedIn: () => void }) {
                   aria-label="Código de verificación"
                 />
                 <Text size="xs" c="dimmed">El código vence en 10 minutos.</Text>
+                <Text size="sm" c="dimmed" ta="center">
+                  ¿No te llegó? Revisá el correo no deseado o pedí uno nuevo.
+                </Text>
+                <UnstyledButton
+                  type="button"
+                  className="sc-login-alt"
+                  disabled={busy || resendIn > 0}
+                  onClick={() => void resend()}
+                >
+                  {resendIn > 0 ? `Reenviar código en ${resendIn}s` : "Reenviar código ahora"}
+                </UnstyledButton>
               </Stack>
             ) : (
               <Stack gap="sm">
@@ -153,17 +173,54 @@ export default function Login(props: { onLoggedIn: () => void }) {
                   className="sc-login-field"
                 />
                 {step === "bootstrap" ? (
-                  <TextInput
-                    aria-label="Email"
-                    placeholder="Email (para recibir el código de ingreso)"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.currentTarget.value)}
-                    size="md"
-                    radius="md"
-                    variant="filled"
-                    className="sc-login-field"
-                  />
+                  <>
+                    <Group grow gap="sm">
+                      <TextInput
+                        aria-label="Nombre"
+                        placeholder="Nombre"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.currentTarget.value)}
+                        autoComplete="given-name"
+                        size="md"
+                        radius="md"
+                        variant="filled"
+                        className="sc-login-field"
+                      />
+                      <TextInput
+                        aria-label="Apellido"
+                        placeholder="Apellido"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.currentTarget.value)}
+                        autoComplete="family-name"
+                        size="md"
+                        radius="md"
+                        variant="filled"
+                        className="sc-login-field"
+                      />
+                    </Group>
+                    <TextInput
+                      aria-label="Email"
+                      placeholder="Email (para recibir el código de ingreso)"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.currentTarget.value)}
+                      size="md"
+                      radius="md"
+                      variant="filled"
+                      className="sc-login-field"
+                    />
+                    <PasswordInput
+                      aria-label="Token de instalación"
+                      placeholder="Token de instalación"
+                      value={bootstrapToken}
+                      onChange={(e) => setBootstrapToken(e.currentTarget.value)}
+                      autoComplete="off"
+                      size="md"
+                      radius="md"
+                      variant="filled"
+                      className="sc-login-field"
+                    />
+                  </>
                 ) : null}
                 <PasswordInput
                   aria-label="Contraseña"
@@ -179,7 +236,16 @@ export default function Login(props: { onLoggedIn: () => void }) {
               </Stack>
             )}
 
-            <UnstyledButton type="submit" className="sc-login-go" disabled={busy || (step === "code" && code.length !== 6)}>
+            <UnstyledButton
+              type="submit"
+              className="sc-login-go"
+              disabled={
+                busy
+                || (step === "code" && code.length !== 6)
+                || (step === "bootstrap"
+                  && (!email.trim() || !bootstrapToken.trim() || !firstName.trim() || !lastName.trim()))
+              }
+            >
               {busy ? (
                 <Loader size="sm" color="white" />
               ) : step === "code" ? (
@@ -192,14 +258,9 @@ export default function Login(props: { onLoggedIn: () => void }) {
             </UnstyledButton>
 
             {step === "code" ? (
-              <Group justify="space-between">
-                <UnstyledButton type="button" className="sc-login-alt" disabled={busy} onClick={backToLogin}>
-                  Volver
-                </UnstyledButton>
-                <UnstyledButton type="button" className="sc-login-alt" disabled={busy || resendIn > 0} onClick={() => void resend()}>
-                  {resendIn > 0 ? `Reenviar código (${resendIn}s)` : "Reenviar código"}
-                </UnstyledButton>
-              </Group>
+              <UnstyledButton type="button" className="sc-login-alt" disabled={busy} onClick={backToLogin}>
+                Volver
+              </UnstyledButton>
             ) : (
               <UnstyledButton
                 type="button"

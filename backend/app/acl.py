@@ -33,12 +33,15 @@ MODULES: list[tuple[str, str, list[str]]] = [
     ("billing", "Cobranza", [VIEW, EDIT]),
     ("invoices", "Facturas", [VIEW, EDIT, DELETE]),
     ("payments", "Pagos", [VIEW, EDIT]),
-    ("network", "Red", [VIEW, EDIT, DELETE]),
+    # Credenciales/hosts de red: solo administradores pueden mutarlos.
+    ("network", "Red", [VIEW]),
     ("plans", "Planes", [VIEW, EDIT, DELETE]),
     ("jobs", "Tareas / Crons", [VIEW, EDIT]),
     ("logs", "Logs", [VIEW, EDIT]),
-    ("settings", "Configuración", [VIEW, EDIT]),
-    ("users", "Usuarios y roles", [VIEW, EDIT, DELETE]),
+    # Secrets, certificados y migraciones SQL: solo administradores mutan.
+    ("settings", "Configuración", [VIEW]),
+    # La mutación de usuarios y roles es exclusivamente administrativa.
+    ("users", "Usuarios y roles", [VIEW]),
 ]
 MODULE_LABELS = {m: label for m, label, _ in MODULES}
 MODULE_ACTIONS = {m: actions for m, _, actions in MODULES}
@@ -117,12 +120,12 @@ def _kv_requirement() -> list[str]:
     return ["settings.view"]
 
 
-# Lecturas cruzadas entre pantallas. `None` = cualquier usuario del panel;
-# una lista = alcanza con cualquiera de esos permisos.
+# Lecturas cruzadas entre pantallas. Una lista = alcanza con cualquiera de
+# esos permisos; nunca se deja una lectura sensible abierta a todo el panel.
 ENDPOINT_OVERRIDES: dict[str, Requirement] = {
-    "plans.list_plans": None,
-    "network.list_servers": None,
-    "settings.get_safety": None,
+    "plans.list_plans": ["plans.view", "clients.view", "billing.view", "invoices.view", "installations.view"],
+    "network.list_servers": ["network.view", "clients.edit", "installations.edit"],
+    "settings.get_safety": ["settings.view", "network.view"],
     "settings.get_kv": _kv_requirement,
     "clients.list_clients": ["clients.view", "invoices.view", "payments.view", "installations.view", "billing.view"],
     "clients.get_client": ["clients.view", "invoices.view", "payments.view", "installations.view"],
@@ -130,7 +133,7 @@ ENDPOINT_OVERRIDES: dict[str, Requirement] = {
     "invoices.afip_status": ["invoices.view", "settings.view"],
     "billing.billing_status": ["billing.view", "settings.view"],
     "installations.preview_coverage": ["installations.view", "clients.view"],
-    "logs.list_modules": None,
+    "logs.list_modules": ["logs.view"],
 }
 
 
@@ -186,13 +189,20 @@ def load_staff_user():
     from .models.user import User
 
     verify_jwt_in_request()
-    if (get_jwt() or {}).get("typ") != "staff":
+    claims = get_jwt() or {}
+    if claims.get("typ") != "staff":
         return None
     try:
         user = User.query.get(int(get_jwt_identity()))
     except (TypeError, ValueError):
         return None
     if not user or not user.is_active:
+        return None
+    try:
+        token_auth_version = int(claims.get("auth_version"))
+    except (TypeError, ValueError):
+        return None
+    if token_auth_version != int(user.auth_version or 0):
         return None
     return user
 
@@ -271,8 +281,7 @@ def _request_details() -> Optional[str]:
 
 
 def _client_ip() -> str:
-    fwd = request.headers.get("X-Forwarded-For", "")
-    return (fwd.split(",")[0].strip() if fwd else request.remote_addr or "")[:64]
+    return (request.remote_addr or "")[:64]
 
 
 def _describe_request() -> tuple[str, str, Optional[int]]:

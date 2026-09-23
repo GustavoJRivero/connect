@@ -25,10 +25,19 @@ import { formatApiError } from "../format";
 import { notifySuccess } from "../notify";
 import { Button, MutedBadge } from "../ui";
 
-type UserForm = { id?: number; username: string; email: string; password: string; role_id: string | null; is_active: boolean };
+type UserForm = {
+  id?: number;
+  username: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  password: string;
+  role_id: string | null;
+  is_active: boolean;
+};
 type RoleForm = { id?: number; name: string; description: string; permissions: Permissions; is_admin: boolean };
 
-const EMPTY_USER: UserForm = { username: "", email: "", password: "", role_id: null, is_active: true };
+const EMPTY_USER: UserForm = { username: "", first_name: "", last_name: "", email: "", password: "", role_id: null, is_active: true };
 const EMPTY_ROLE: RoleForm = { name: "", description: "", permissions: {}, is_admin: false };
 
 export default function UsersPage() {
@@ -82,6 +91,8 @@ export default function UsersPage() {
     if (!userForm) return;
     const payload = {
       username: userForm.username.trim(),
+      first_name: userForm.first_name.trim(),
+      last_name: userForm.last_name.trim(),
       email: userForm.email.trim(),
       role_id: Number(userForm.role_id || 0),
       is_active: userForm.is_active,
@@ -170,6 +181,7 @@ export default function UsersPage() {
             <Table highlightOnHover verticalSpacing="xs" horizontalSpacing="sm">
               <Table.Thead>
                 <Table.Tr>
+                  <Table.Th>Nombre</Table.Th>
                   <Table.Th>Usuario</Table.Th>
                   <Table.Th>Email</Table.Th>
                   <Table.Th>Rol</Table.Th>
@@ -182,8 +194,15 @@ export default function UsersPage() {
                 {users.map((u) => (
                   <Table.Tr key={u.id}>
                     <Table.Td>
-                      <Text fw={600} size="sm">{u.username}</Text>
+                      {u.full_name ? (
+                        <Text fw={600} size="sm">{u.full_name}</Text>
+                      ) : (
+                        <MutedBadge tone="yellow">Sin nombre</MutedBadge>
+                      )}
                       {me?.id === u.id ? <Text size="xs" c="dimmed">vos</Text> : null}
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{u.username}</Text>
                     </Table.Td>
                     <Table.Td>
                       {u.email ? <Text size="sm">{u.email}</Text> : <MutedBadge tone="yellow">Sin email</MutedBadge>}
@@ -198,16 +217,21 @@ export default function UsersPage() {
                       <Text size="sm" c="dimmed">{u.last_login_at ? fmtDateTime(u.last_login_at) : "Nunca"}</Text>
                     </Table.Td>
                     <Table.Td>
-                      <Group gap={4} justify="flex-end" wrap="nowrap">
+                      <Group gap={8} justify="flex-end" wrap="nowrap">
                         {canEdit ? (
                           <Tooltip label="Editar">
                             <ActionIcon
-                              variant="subtle"
+                              size="lg"
+                              variant="light"
+                              color="violet"
+                              aria-label={`Editar ${u.username}`}
                               onClick={() => {
                                 setFormError(null);
                                 setUserForm({
                                   id: u.id,
                                   username: u.username,
+                                  first_name: u.first_name ?? "",
+                                  last_name: u.last_name ?? "",
                                   email: u.email ?? "",
                                   password: "",
                                   role_id: u.role ? String(u.role.id) : null,
@@ -215,15 +239,17 @@ export default function UsersPage() {
                                 });
                               }}
                             >
-                              <IconPencil size={16} />
+                              <IconPencil size={18} />
                             </ActionIcon>
                           </Tooltip>
                         ) : null}
                         {canDelete && me?.id !== u.id ? (
                           <Tooltip label="Eliminar">
                             <ActionIcon
-                              variant="subtle"
+                              size="lg"
+                              variant="light"
                               color="red"
+                              aria-label={`Eliminar ${u.username}`}
                               onClick={() =>
                                 setConfirm({
                                   title: "¿Eliminar usuario?",
@@ -235,7 +261,7 @@ export default function UsersPage() {
                                 })
                               }
                             >
-                              <IconTrash size={16} />
+                              <IconTrash size={18} />
                             </ActionIcon>
                           </Tooltip>
                         ) : null}
@@ -284,11 +310,14 @@ export default function UsersPage() {
                       </Text>
                     ) : null}
                   </Stack>
-                  <Group gap={4} wrap="nowrap">
+                  <Group gap={8} wrap="nowrap">
                     {canEdit ? (
                       <Tooltip label="Editar">
                         <ActionIcon
-                          variant="subtle"
+                          size="lg"
+                          variant="light"
+                          color="violet"
+                          aria-label={`Editar rol ${r.name}`}
                           onClick={() => {
                             setFormError(null);
                             setRoleForm({
@@ -300,15 +329,17 @@ export default function UsersPage() {
                             });
                           }}
                         >
-                          <IconPencil size={16} />
+                          <IconPencil size={18} />
                         </ActionIcon>
                       </Tooltip>
                     ) : null}
                     {canDelete && !r.is_admin ? (
                       <Tooltip label="Eliminar">
                         <ActionIcon
-                          variant="subtle"
+                          size="lg"
+                          variant="light"
                           color="red"
+                          aria-label={`Eliminar rol ${r.name}`}
                           onClick={() =>
                             setConfirm({
                               title: "¿Eliminar rol?",
@@ -320,7 +351,7 @@ export default function UsersPage() {
                             })
                           }
                         >
-                          <IconTrash size={16} />
+                          <IconTrash size={18} />
                         </ActionIcon>
                       </Tooltip>
                     ) : null}
@@ -340,8 +371,23 @@ export default function UsersPage() {
       >
         {userForm ? (
           <Stack>
+            <Group grow align="flex-start">
+              <TextInput
+                label="Nombre"
+                value={userForm.first_name}
+                onChange={(e) => setUserForm({ ...userForm, first_name: e.currentTarget.value })}
+                withAsterisk
+              />
+              <TextInput
+                label="Apellido"
+                value={userForm.last_name}
+                onChange={(e) => setUserForm({ ...userForm, last_name: e.currentTarget.value })}
+                withAsterisk
+              />
+            </Group>
             <TextInput
               label="Usuario"
+              description="Con este nombre ingresa al panel."
               value={userForm.username}
               onChange={(e) => setUserForm({ ...userForm, username: e.currentTarget.value })}
               withAsterisk
@@ -364,7 +410,7 @@ export default function UsersPage() {
             />
             <PasswordInput
               label={userForm.id ? "Contraseña nueva (opcional)" : "Contraseña"}
-              description="Mínimo 8 caracteres."
+              description="Mínimo 12 caracteres."
               value={userForm.password}
               onChange={(e) => setUserForm({ ...userForm, password: e.currentTarget.value })}
               withAsterisk={!userForm.id}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Alert, Group, Modal, PasswordInput, Stack, Text } from "@mantine/core";
-import { api, Me } from "../api";
+import { api, Me, setToken } from "../api";
 import { useMe } from "../auth";
 import { formatApiError } from "../format";
 import { notifySuccess } from "../notify";
@@ -8,6 +8,8 @@ import { Button, Field } from "../ui";
 
 export function ProfileModal(props: { opened: boolean; onClose: () => void; onSaved: (me: Me) => void }) {
   const me = useMe();
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -17,12 +19,14 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
 
   useEffect(() => {
     if (!props.opened) return;
+    setFirstName(me?.first_name ?? "");
+    setLastName(me?.last_name ?? "");
     setEmail(me?.email ?? "");
     setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
     setError(null);
-  }, [props.opened, me?.email]);
+  }, [props.opened, me?.email, me?.first_name, me?.last_name]);
 
   async function save() {
     setError(null);
@@ -34,9 +38,12 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
     try {
       const next = await api.updateMe({
         current_password: currentPassword,
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
         email: email.trim(),
         new_password: newPassword || undefined,
       });
+      if (next.access_token) setToken(next.access_token);
       notifySuccess("Perfil actualizado.");
       props.onSaved(next);
       props.onClose();
@@ -52,8 +59,13 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
       <Stack>
         <Text size="sm" c="dimmed">
           Usuario <b>{me?.username}</b>
+          {me?.full_name ? ` · ${me.full_name}` : ""}
           {me?.role ? ` · rol ${me.role.name}` : ""}
         </Text>
+        <Group grow align="flex-start">
+          <Field label="Nombre" value={firstName} onChange={setFirstName} placeholder="Nombre" />
+          <Field label="Apellido" value={lastName} onChange={setLastName} placeholder="Apellido" />
+        </Group>
         <Field
           label="Email"
           description="Acá te llega el código de verificación cada vez que ingresás."
@@ -64,7 +76,7 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
         />
         <PasswordInput
           label="Contraseña nueva (opcional)"
-          description="Mínimo 8 caracteres. Dejala vacía para no cambiarla."
+          description="Mínimo 12 caracteres. Dejala vacía para no cambiarla."
           value={newPassword}
           onChange={(e) => setNewPassword(e.currentTarget.value)}
         />

@@ -4,6 +4,7 @@ import time as _time
 from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import get_config
 from .extensions import db, jwt, migrate
@@ -43,9 +44,11 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     app.config.from_mapping(get_config())
+    proxy_hops = int(app.config.get("PROXY_FIX_X_FOR", 0))
+    if proxy_hops:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=1, x_host=1)
 
-    # Dev-friendly: permitir al frontend consumir la API
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     db.init_app(app)
     migrate.init_app(app, db)

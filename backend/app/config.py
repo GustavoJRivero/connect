@@ -25,15 +25,67 @@ def get_config() -> dict:
     if jwt_access_minutes <= 0:
         jwt_access_minutes = 60
 
+    environment = os.getenv("FLASK_ENV", "development").strip().lower()
+    secret_key = os.getenv("SECRET_KEY", "change-me")
+    jwt_secret_key = os.getenv("JWT_SECRET_KEY", "change-me-too")
+    insecure_secrets = {
+        "change-me",
+        "change-me-too",
+        "change-me-in-production",
+        "genera-una-clave-segura-aqui",
+        "genera-otra-clave-segura-aqui",
+    }
+    if environment == "production" and (
+        secret_key in insecure_secrets
+        or jwt_secret_key in insecure_secrets
+        or len(secret_key) < 32
+        or len(jwt_secret_key) < 32
+    ):
+        raise ValueError("SECRET_KEY y JWT_SECRET_KEY deben ser claves únicas de al menos 32 caracteres en producción.")
+
+    cors_origins = [
+        value.strip()
+        for value in os.getenv("CORS_ORIGINS", "http://localhost:3000").split(",")
+        if value.strip()
+    ]
+    if environment == "production" and (not cors_origins or "*" in cors_origins):
+        raise ValueError("CORS_ORIGINS debe listar los orígenes permitidos y no puede contener '*' en producción.")
+    try:
+        proxy_fix_x_for = max(0, int(os.getenv("PROXY_FIX_X_FOR", "0")))
+    except ValueError:
+        proxy_fix_x_for = 0
+    recaptcha_site_key = os.getenv("RECAPTCHA_SITE_KEY", "").strip()
+    recaptcha_secret_key = os.getenv("RECAPTCHA_SECRET_KEY", "").strip()
+    bootstrap_token = os.getenv("BOOTSTRAP_TOKEN", "").strip()
+    mp_webhook_secret = os.getenv("MP_WEBHOOK_SECRET", "").strip()
+    try:
+        recaptcha_min_score = float(os.getenv("RECAPTCHA_MIN_SCORE", "0.5"))
+    except ValueError:
+        recaptcha_min_score = 0.5
+    recaptcha_min_score = max(0.0, min(recaptcha_min_score, 1.0))
+    if environment == "production":
+        if not recaptcha_site_key or len(recaptcha_secret_key) < 20:
+            raise ValueError("RECAPTCHA_SITE_KEY y RECAPTCHA_SECRET_KEY son obligatorios en producción.")
+        if len(bootstrap_token) < 32:
+            raise ValueError("BOOTSTRAP_TOKEN debe tener al menos 32 caracteres en producción.")
+        if len(mp_webhook_secret) < 32:
+            raise ValueError("MP_WEBHOOK_SECRET debe tener al menos 32 caracteres en producción.")
+
     return {
-        "SECRET_KEY": os.getenv("SECRET_KEY", "change-me"),
-        "JWT_SECRET_KEY": os.getenv("JWT_SECRET_KEY", "change-me-too"),
-        "JWT_TOKEN_LOCATION": ["headers", "query_string"],
-        "JWT_QUERY_STRING_NAME": "jwt",
+        "APP_ENV": environment,
+        "SECRET_KEY": secret_key,
+        "JWT_SECRET_KEY": jwt_secret_key,
+        "JWT_TOKEN_LOCATION": ["headers"],
         "JWT_ACCESS_TOKEN_EXPIRES": timedelta(minutes=jwt_access_minutes),
+        "CORS_ORIGINS": cors_origins,
+        "PROXY_FIX_X_FOR": proxy_fix_x_for,
+        "RECAPTCHA_SITE_KEY": recaptcha_site_key,
+        "RECAPTCHA_SECRET_KEY": recaptcha_secret_key,
+        "RECAPTCHA_MIN_SCORE": recaptcha_min_score,
+        "BOOTSTRAP_TOKEN": bootstrap_token,
         "SQLALCHEMY_DATABASE_URI": database_url,
         "SQLALCHEMY_TRACK_MODIFICATIONS": False,
-        "MAX_CONTENT_LENGTH": int(os.getenv("MAX_CONTENT_LENGTH", str(600 * 1024 * 1024))),
+        "MAX_CONTENT_LENGTH": int(os.getenv("MAX_CONTENT_LENGTH", str(50 * 1024 * 1024))),
         # AFIP
         "AFIP_ENV": os.getenv("AFIP_ENV", "HOMOLOGACION"),
         "AFIP_CUIT": os.getenv("AFIP_CUIT"),
@@ -56,6 +108,7 @@ def get_config() -> dict:
         "MP_ACCESS_TOKEN": os.getenv("MP_ACCESS_TOKEN", "").strip(),
         "MP_PUBLIC_KEY": os.getenv("MP_PUBLIC_KEY", "").strip(),
         "MP_WEBHOOK_URL": os.getenv("MP_WEBHOOK_URL", "").strip(),
+        "MP_WEBHOOK_SECRET": mp_webhook_secret,
         "API_PUBLIC_URL": os.getenv("API_PUBLIC_URL", "").strip(),
         "PORTAL_PUBLIC_URL": os.getenv("PORTAL_PUBLIC_URL", "http://localhost").strip(),
         # Staging: bloquear escrituras a Mikrotik (PPPoE, perfiles, cortes/restauraciones).

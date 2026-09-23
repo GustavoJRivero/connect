@@ -171,6 +171,19 @@ export default function InstallationsPage() {
     setEditNotes(o.notes ?? "");
   }
 
+  async function openPdf(id: number) {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await api.getInstallationPdfUrl(id);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: unknown) {
+      tab?.close();
+      setError(formatApiError(e));
+    }
+  }
+
   async function saveEdit() {
     if (!editing || savingEdit) return;
     setSavingEdit(true);
@@ -342,7 +355,7 @@ export default function InstallationsPage() {
                           size="lg"
                           variant="light"
                           color="violet"
-                          onClick={() => window.open(api.getInstallationPdfUrl(o.id), "_blank")}
+                          onClick={() => void openPdf(o.id)}
                           aria-label="PDF"
                         >
                           <IconFileTypePdf size={20} />
