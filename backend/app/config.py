@@ -68,8 +68,8 @@ def get_config() -> dict:
             raise ValueError("RECAPTCHA_SITE_KEY y RECAPTCHA_SECRET_KEY son obligatorios en producción.")
         if len(bootstrap_token) < 32:
             raise ValueError("BOOTSTRAP_TOKEN debe tener al menos 32 caracteres en producción.")
-        if len(mp_webhook_secret) < 32:
-            raise ValueError("MP_WEBHOOK_SECRET debe tener al menos 32 caracteres en producción.")
+        # MP_WEBHOOK_SECRET es opcional acá: se carga desde Configuración → Mercado Pago
+        # y el .env queda como respaldo. Sin secret el webhook rechaza todo (fail-closed).
 
     return {
         "APP_ENV": environment,

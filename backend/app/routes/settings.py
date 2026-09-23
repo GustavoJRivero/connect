@@ -18,7 +18,14 @@ from ..migration.legacy import (
 )
 from ..validation import ValidationError, normalize_cuit
 
-_HIDDEN_KV = ("afip.cert_pem", "afip.key_pem", "mp.access_token", "maps.api_key", "maps.webhook_secret")
+_HIDDEN_KV = (
+    "afip.cert_pem",
+    "afip.key_pem",
+    "mp.access_token",
+    "mp.webhook_secret",
+    "maps.api_key",
+    "maps.webhook_secret",
+)
 _MAX_CERT_BYTES = 80_000
 
 bp = Blueprint("settings", __name__, url_prefix="/api/settings")
@@ -72,7 +79,11 @@ def get_kv():
         from ..portal.mp import mp_credentials
 
         creds = mp_credentials()
+        webhook_secret, webhook_secret_src = _effective("mp.webhook_secret", "MP_WEBHOOK_SECRET")
         out.pop("mp.access_token", None)
+        out.pop("mp.webhook_secret", None)
+        out["mp.webhook_secret_ready"] = "true" if webhook_secret else "false"
+        out["mp.webhook_secret_source"] = webhook_secret_src
         out["mp.access_token_ready"] = "true" if creds["access_token"] else "false"
         out["mp.public_key_ready"] = "true" if creds["public_key"] else "false"
         out["mp.configured"] = "true" if (creds["access_token"] and creds["public_key"]) else "false"

@@ -289,8 +289,9 @@ export default function SettingsPage() {
   const [arcaKeyReady, setArcaKeyReady] = useState(false);
   const [arcaCertName, setArcaCertName] = useState("");
   const [arcaKeyName, setArcaKeyName] = useState("");
-  const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "", portal_url: "" });
+  const [mp, setMp] = useState({ access_token: "", public_key: "", webhook_url: "", webhook_secret: "", portal_url: "" });
   const [mpTokenReady, setMpTokenReady] = useState(false);
+  const [mpWebhookSecretReady, setMpWebhookSecretReady] = useState(false);
   const [mpSource, setMpSource] = useState("");
   const [mpCheckMsg, setMpCheckMsg] = useState<string | null>(null);
   const [issueDate, setIssueDate] = useState("");
@@ -356,14 +357,17 @@ export default function SettingsPage() {
           access_token: "",
           public_key: mpRes["mp.public_key"] ?? "",
           webhook_url: mpRes["mp.webhook_url"] ?? "",
+          webhook_secret: "",
           portal_url: mpRes["mp.portal_url"] ?? "",
         });
         setMpTokenReady(String(mpRes["mp.access_token_ready"] ?? "").toLowerCase() === "true");
+        setMpWebhookSecretReady(String(mpRes["mp.webhook_secret_ready"] ?? "").toLowerCase() === "true");
         setMpSource(mpRes["mp.source"] ?? "");
         setMpCheckMsg(null);
       } catch {
-        setMp({ access_token: "", public_key: "", webhook_url: "", portal_url: "" });
+        setMp({ access_token: "", public_key: "", webhook_url: "", webhook_secret: "", portal_url: "" });
         setMpTokenReady(false);
+        setMpWebhookSecretReady(false);
         setMpSource("");
         setMpCheckMsg(null);
       }
@@ -553,6 +557,7 @@ export default function SettingsPage() {
         "mp.portal_url": mp.portal_url.trim(),
       };
       if (mp.access_token.trim()) values["mp.access_token"] = mp.access_token.trim();
+      if (mp.webhook_secret.trim()) values["mp.webhook_secret"] = mp.webhook_secret.trim();
       await api.putSettings(values);
       setSuccess("Mercado Pago guardado.");
       notifySuccess("Mercado Pago guardado.");
@@ -1297,6 +1302,17 @@ export default function SettingsPage() {
                 value={mp.webhook_url}
                 onChange={(v) => setMp((s) => ({ ...s, webhook_url: v }))}
                 placeholder="https://tu-dominio/api/webhooks/mercadopago"
+              />
+              <PasswordInput
+                label="Firma secreta del webhook"
+                description={
+                  mpWebhookSecretReady
+                    ? "Ya hay un secret cargado. Dejá vacío para conservarlo."
+                    : "La misma clave secreta que configuraste en Webhooks de Mercado Pago. Sin esto el webhook rechaza las notificaciones."
+                }
+                value={mp.webhook_secret}
+                onChange={(e) => setMp((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
+                placeholder={mpWebhookSecretReady ? "••••••••  (cargado)" : "secret-largo"}
               />
               <Field
                 label="URL del portal (retorno del pago)"
