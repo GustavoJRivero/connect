@@ -3,8 +3,9 @@ import hmac
 import logging
 import re
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, jsonify, request
 
+from ..portal.mp import mp_webhook_secret
 from ..portal.mp_credit import credit_mp_payment
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,7 @@ def _payment_id_from_request() -> str | None:
 
 
 def _valid_signature(payment_id: str) -> bool:
-    secret = str(current_app.config.get("MP_WEBHOOK_SECRET") or "")
+    secret = mp_webhook_secret()
     signature = request.headers.get("X-Signature") or ""
     request_id = request.headers.get("X-Request-Id") or ""
     if not secret or not signature or not request_id:
