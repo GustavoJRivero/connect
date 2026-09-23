@@ -275,14 +275,25 @@ def login():
         )
         return _fake_challenge_response()
 
+    # La contraseña ya está validada, así que acá conviene decir la verdad en vez de
+    # mostrar la pantalla del código sin haber mandado nada.
     if not user.email:
         current_app.logger.warning("Login bloqueado: el usuario %s no tiene email", user.id)
-        return _fake_challenge_response()
+        return jsonify({
+            "error": "email_missing",
+            "message": "Tu usuario no tiene email cargado, así que no podemos enviarte el código. Pedile a un administrador que lo complete.",
+        }), 409
     if not smtp_configured():
         current_app.logger.error("Login bloqueado: SMTP no configurado")
-        return _fake_challenge_response()
+        return jsonify({
+            "error": "smtp_unavailable",
+            "message": "El servidor de correo no está configurado, no podemos enviarte el código.",
+        }), 503
     if _too_many_code_sends(user):
-        return _fake_challenge_response()
+        return jsonify({
+            "error": "too_many_codes",
+            "message": "Se enviaron demasiados códigos en los últimos 15 minutos. Esperá y probá de nuevo.",
+        }), 429
 
     challenge = LoginChallenge(
         id=str(uuid.uuid4()),
@@ -297,10 +308,16 @@ def login():
         _send_code(user, challenge)
     except SmtpNotConfigured:
         current_app.logger.error("Login bloqueado: SMTP no configurado durante el envío")
-        return _fake_challenge_response()
+        return jsonify({
+            "error": "smtp_unavailable",
+            "message": "El servidor de correo no está configurado, no podemos enviarte el código.",
+        }), 503
     except Exception as e:
         current_app.logger.warning("No se pudo enviar el código de ingreso a %s: %s", user.email, e)
-        return _fake_challenge_response()
+        return jsonify({
+            "error": "code_send_failed",
+            "message": "No pudimos enviar el código. Revisá la configuración de correo e intentá de nuevo.",
+        }), 502
     db.session.add(challenge)
     db.session.commit()
     log_activity(
