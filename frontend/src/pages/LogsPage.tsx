@@ -280,11 +280,12 @@ function SystemLogs() {
                 <Table.Tr
                   style={{
                     cursor: log.details ? "pointer" : "default",
+                    // Los tonos "-light" se adaptan al tema; los "-0" quedan ilegibles en oscuro.
                     backgroundColor:
                       log.level === "ERROR"
-                        ? "var(--mantine-color-red-0)"
+                        ? "var(--mantine-color-red-light)"
                         : log.level === "WARNING"
-                        ? "var(--mantine-color-yellow-0)"
+                        ? "var(--mantine-color-yellow-light)"
                         : undefined,
                   }}
                   onClick={() => {
@@ -302,9 +303,13 @@ function SystemLogs() {
                     </MutedBadge>
                   </Table.Td>
                   <Table.Td>
-                    <MutedBadge tone={badgeToneFromColor(MODULE_TONES[log.module])} size="sm">
-                      {log.module}
-                    </MutedBadge>
+                    {log.module ? (
+                      <MutedBadge tone={badgeToneFromColor(MODULE_TONES[log.module])} size="sm">
+                        {log.module}
+                      </MutedBadge>
+                    ) : (
+                      <Text size="xs" c="dimmed">—</Text>
+                    )}
                   </Table.Td>
                   <Table.Td>
                     <Code style={{ fontSize: "0.85em" }}>{log.action}</Code>
