@@ -4,6 +4,7 @@ import { api } from "../api";
 import { Button, MutedBadge } from "../ui";
 import { ClientSelect } from "../components/ClientSelect";
 import { PaymentModal } from "../components/PaymentModal";
+import { useCan } from "../auth";
 import { formatApiError, fmtMoney, paymentMethodLabel, todayISO, firstOfMonthISO, lastOfMonthISO } from "../format";
 import { fmtDate } from "../datetime";
 import { notifySuccess } from "../notify";
@@ -38,6 +39,7 @@ type PaymentRow = {
 type RangePreset = "today" | "month" | "year" | "all";
 
 export default function PaymentsPage() {
+  const canRegister = useCan()("payments", "edit");
   const [items, setItems] = useState<PaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -110,9 +112,11 @@ export default function PaymentsPage() {
           <Group justify="space-between">
             <Title order={5}>Pagos</Title>
             <Group gap="xs">
-              <Button variant="primaryLight" onClick={() => setShowNew(true)}>
-                Registrar pago
-              </Button>
+              {canRegister ? (
+                <Button variant="primaryLight" onClick={() => setShowNew(true)}>
+                  Registrar pago
+                </Button>
+              ) : null}
               <Tooltip label="Recargar">
                 <ActionIcon size="lg" variant="light" color="violet" onClick={reload} aria-label="Recargar">
                   <IconRefresh size={20} />

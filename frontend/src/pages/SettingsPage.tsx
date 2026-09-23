@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Button, Field, MutedBadge, type BadgeTone } from "../ui";
+import { useCan } from "../auth";
 import { formatApiError, formatArcaMessage } from "../format";
 import { notifySuccess } from "../notify";
 import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
@@ -275,6 +276,7 @@ function CertUploadRow(props: {
 }
 
 export default function SettingsPage() {
+  const canEditSettings = useCan()("settings", "edit");
   const [section, setSection] = useState<SectionId | null>(null);
 
   const [billing, setBilling] = useState<Record<string, string>>({});
@@ -751,6 +753,12 @@ export default function SettingsPage() {
     });
   }
 
+  /** Configuración solo la muta un administrador; al resto ni le mostramos el botón. */
+  function saveButton(kind: SaveKind, label: string) {
+    if (!canEditSettings) return null;
+    return <Button variant="primary" onClick={() => void confirmAndSave(kind)}>{label}</Button>;
+  }
+
   function confirmAndSave(kind: SaveKind) {
     const copy = SAVE_CONFIRM[kind];
     setConfirm({
@@ -978,7 +986,7 @@ export default function SettingsPage() {
               </Grid>
               <Group justify="flex-end" mt="xs">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("billing")}>Guardar cobranza</Button>
+                {saveButton("billing", "Guardar cobranza")}
               </Group>
             </Stack>
           ) : null}
@@ -1010,7 +1018,7 @@ export default function SettingsPage() {
                 maw={220}
               />
               <Group justify="flex-end">
-                <Button variant="primary" onClick={() => void confirmAndSave("automation")}>Guardar automatización</Button>
+                {saveButton("automation", "Guardar automatización")}
               </Group>
 
               <Divider label="Ejecutar ahora" labelPosition="center" />
@@ -1117,7 +1125,7 @@ export default function SettingsPage() {
               </Text>
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("services")}>Guardar servicios</Button>
+                {saveButton("services", "Guardar servicios")}
               </Group>
             </Stack>
           ) : null}
@@ -1160,7 +1168,7 @@ export default function SettingsPage() {
               </Grid>
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("issuerExtra")}>Guardar emisor</Button>
+                {saveButton("issuerExtra", "Guardar emisor")}
               </Group>
             </Stack>
           ) : null}
@@ -1306,7 +1314,7 @@ export default function SettingsPage() {
 
               <Group justify="space-between" mt="xs">
                 <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("fiscal")}>Guardar ARCA</Button>
+                {saveButton("fiscal", "Guardar ARCA")}
               </Group>
             </Stack>
           ) : null}
@@ -1412,7 +1420,7 @@ export default function SettingsPage() {
                   <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
                   <Button variant="default" onClick={() => void verifyMp()}>Verificar credenciales</Button>
                 </Group>
-                <Button variant="primary" onClick={() => void confirmAndSave("mp")}>Guardar Mercado Pago</Button>
+                {saveButton("mp", "Guardar Mercado Pago")}
               </Group>
             </Stack>
           ) : null}
@@ -1476,7 +1484,7 @@ export default function SettingsPage() {
               </Grid>
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("smtp")}>Guardar correo</Button>
+                {saveButton("smtp", "Guardar correo")}
               </Group>
             </Stack>
           ) : null}
@@ -1530,7 +1538,7 @@ export default function SettingsPage() {
                 </Stack>
               </Paper>
               <Group justify="flex-end">
-                <Button variant="primary" onClick={() => void confirmAndSave("security")}>Guardar seguridad</Button>
+                {saveButton("security", "Guardar seguridad")}
               </Group>
             </Stack>
           ) : null}
@@ -1634,7 +1642,7 @@ export default function SettingsPage() {
 
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button variant="primary" onClick={() => void confirmAndSave("maps")}>Guardar Maps</Button>
+                {saveButton("maps", "Guardar Maps")}
               </Group>
             </Stack>
           ) : null}
