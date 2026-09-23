@@ -1345,7 +1345,10 @@ export default function SettingsPage() {
                     : "APP_USR-… de Credenciales de prueba en Mercado Pago."
                 }
                 value={mp.access_token}
-                onChange={(e) => setMp((s) => ({ ...s, access_token: e.currentTarget.value }))}
+                onChange={(e) => {
+                  const value = e.currentTarget.value;
+                  setMp((s) => ({ ...s, access_token: value }));
+                }}
                 placeholder={mpTokenReady ? "••••••••  (cargado)" : "APP_USR-…"}
               />
               <Field
@@ -1370,7 +1373,10 @@ export default function SettingsPage() {
                     : "La misma clave secreta que configuraste en Webhooks de Mercado Pago. Sin esto el webhook rechaza las notificaciones."
                 }
                 value={mp.webhook_secret}
-                onChange={(e) => setMp((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
+                onChange={(e) => {
+                  const value = e.currentTarget.value;
+                  setMp((s) => ({ ...s, webhook_secret: value }));
+                }}
                 placeholder={mpWebhookSecretReady ? "••••••••  (cargado)" : "secret-largo"}
               />
               <Field
@@ -1442,7 +1448,10 @@ export default function SettingsPage() {
                   <PasswordInput
                     label="Contraseña"
                     value={smtp.password ?? ""}
-                    onChange={(e) => setSmtp((s) => ({ ...s, password: e.currentTarget.value }))}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setSmtp((s) => ({ ...s, password: value }));
+                    }}
                     placeholder="••••••••"
                   />
                 </Grid.Col>
@@ -1508,7 +1517,10 @@ export default function SettingsPage() {
                         : "La privada, la que valida el servidor contra Google."
                     }
                     value={recaptcha.secret_key}
-                    onChange={(e) => setRecaptcha((s) => ({ ...s, secret_key: e.currentTarget.value }))}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setRecaptcha((s) => ({ ...s, secret_key: value }));
+                    }}
                     placeholder={recaptchaSecretReady ? "••••••••  (cargada)" : "6Lc…"}
                   />
                   <Text size="xs" c="dimmed">
@@ -1559,7 +1571,10 @@ export default function SettingsPage() {
                         : "cmk_read_… o cmk_write_… (Write para reservar/liberar puertos)."
                     }
                     value={mapsApi.api_key}
-                    onChange={(e) => setMapsApi((s) => ({ ...s, api_key: e.currentTarget.value }))}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setMapsApi((s) => ({ ...s, api_key: value }));
+                    }}
                     placeholder={mapsApiKeyReady ? "••••••••  (cargada)" : "cmk_write_…"}
                   />
                   <PasswordInput
@@ -1570,7 +1585,10 @@ export default function SettingsPage() {
                         : "Secret compartido para POST /api/webhooks/maps/install-confirmed."
                     }
                     value={mapsApi.webhook_secret}
-                    onChange={(e) => setMapsApi((s) => ({ ...s, webhook_secret: e.currentTarget.value }))}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setMapsApi((s) => ({ ...s, webhook_secret: value }));
+                    }}
                     placeholder={mapsWebhookReady ? "••••••••  (cargado)" : "secret-largo"}
                   />
                 </Stack>
