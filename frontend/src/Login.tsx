@@ -5,7 +5,6 @@ import {
   PasswordInput,
   PinInput,
   Stack,
-  Alert,
   Paper,
   Anchor,
   Loader,
@@ -14,6 +13,7 @@ import {
 } from "@mantine/core";
 import { api, LoginResponse, setToken } from "./api";
 import { formatApiError } from "./format";
+import { notifyError, notifySuccess } from "./notify";
 import { BrandLogo } from "./BrandLogo";
 import { getRecaptchaToken, securityConfig } from "./recaptcha";
 
@@ -30,8 +30,6 @@ export default function Login(props: { onLoggedIn: () => void }) {
   const [challenge, setChallenge] = useState<{ id: string; token: string; hint: string } | null>(null);
   const [code, setCode] = useState("");
   const [resendIn, setResendIn] = useState(0);
-  const [info, setInfo] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [canBootstrap, setCanBootstrap] = useState(false);
 
@@ -91,13 +89,11 @@ export default function Login(props: { onLoggedIn: () => void }) {
 
   async function run(fn: () => Promise<void>) {
     if (busy) return;
-    setError(null);
-    setInfo(null);
     setBusy(true);
     try {
       await fn();
     } catch (e: unknown) {
-      setError(formatApiError(e));
+      notifyError(formatApiError(e));
     } finally {
       setBusy(false);
     }
@@ -109,7 +105,7 @@ export default function Login(props: { onLoggedIn: () => void }) {
       const res = await api.resendLoginCode(challenge.id, challenge.token);
       setResendIn(res.resend_in ?? 30);
       setCode("");
-      setInfo(`Te enviamos un código nuevo a ${challenge.hint}.`);
+      notifySuccess(`Te enviamos un código nuevo a ${challenge.hint}.`, "Código reenviado");
     });
   }
 
@@ -118,8 +114,6 @@ export default function Login(props: { onLoggedIn: () => void }) {
     setChallenge(null);
     setCode("");
     setPassword("");
-    setError(null);
-    setInfo(null);
   }
 
   const lead =
@@ -285,12 +279,6 @@ export default function Login(props: { onLoggedIn: () => void }) {
               </UnstyledButton>
             ) : null}
 
-            {info ? <Alert color="blue" variant="light">{info}</Alert> : null}
-            {error ? (
-              <Alert color="red" title="Error">
-                {error}
-              </Alert>
-            ) : null}
             <Text size="sm" c="dimmed" ta="center">
               ¿Sos cliente?{" "}
               <Anchor href="/portal" size="sm">
