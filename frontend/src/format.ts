@@ -115,8 +115,16 @@ type ApiErrorBody = {
 };
 
 const ERROR_CODE_MESSAGES: Record<string, (b: ApiErrorBody) => string> = {
-  invalid_credentials: () => "Usuario o contraseña incorrectos.",
+  invalid_credentials: () => "Email, usuario o contraseña incorrectos.",
   already_bootstrapped: () => "Ya existe un administrador. Iniciá sesión con tu usuario.",
+  email_required: () => "El email es obligatorio: ahí llega el código de ingreso.",
+  smtp_not_configured: () => "El correo saliente no está configurado. No se puede enviar el código de verificación.",
+  invalid_code: () => "Código incorrecto.",
+  code_expired: () => "El código venció. Pedí uno nuevo.",
+  invalid_challenge: () => "El código ya no es válido. Volvé a iniciar sesión.",
+  recaptcha_failed: () => "No pudimos validar que seas una persona. Reintentá.",
+  invalid_bootstrap_token: () => "El token de instalación no es válido.",
+  too_many_attempts: () => "Demasiados intentos. Esperá 15 minutos y probá de nuevo.",
   username_and_password_required: () => "Ingresá usuario y contraseña.",
   dni_already_exists: (b) => `El DNI ya está registrado${b.client_id ? ` (cliente #${b.client_id})` : ""}.`,
   cuit_already_exists: (b) => `El CUIT ya está registrado${b.client_id ? ` (cliente #${b.client_id})` : ""}.`,

@@ -3,7 +3,10 @@ import { api } from "../api";
 import { Card, MutedBadge, logLevelTone, badgeToneFromColor } from "../ui";
 import { formatApiError } from "../format";
 import { IconSettings, IconRefresh } from "@tabler/icons-react";
+import { useCan } from "../auth";
+import { UserActivityLog } from "../components/UserActivityLog";
 import {
+  Tabs,
   Stack,
   Alert,
   Group,
@@ -33,6 +36,25 @@ const MODULE_TONES: Record<string, string> = {
 };
 
 export default function LogsPage() {
+  return (
+    <Tabs defaultValue="system" keepMounted={false}>
+      <Tabs.List mb="md">
+        <Tabs.Tab value="system">Sistema</Tabs.Tab>
+        <Tabs.Tab value="users">Usuarios</Tabs.Tab>
+      </Tabs.List>
+      <Tabs.Panel value="system">
+        <SystemLogs />
+      </Tabs.Panel>
+      <Tabs.Panel value="users">
+        <UserActivityLog />
+      </Tabs.Panel>
+    </Tabs>
+  );
+}
+
+function SystemLogs() {
+  const can = useCan();
+  const canEditConfig = can("logs", "edit");
   const [items, setItems] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -100,13 +122,14 @@ export default function LogsPage() {
   }, [page, filterModule, filterLevel, filterQ, dateFrom, dateTo]);
 
   async function toggleMaster() {
-    if (!config) return;
+    if (!config || !canEditConfig) return;
     const next = !config.enabled;
     await api.updateLoggingConfig({ enabled: next });
     await loadConfig();
   }
 
   async function toggleModule(moduleId: string, current: boolean) {
+    if (!canEditConfig) return;
     await api.updateLoggingConfig({ modules: { [moduleId]: !current } });
     await loadConfig();
   }
@@ -163,6 +186,7 @@ export default function LogsPage() {
                 label="Master"
                 checked={config?.enabled ?? false}
                 onChange={toggleMaster}
+                disabled={!canEditConfig}
               />
             </Group>
             <SimpleGrid cols={{ base: 2, sm: 3, md: 4 }} spacing="xs">
@@ -179,7 +203,7 @@ export default function LogsPage() {
                   }
                   checked={m.enabled}
                   onChange={() => toggleModule(m.module, m.enabled)}
-                  disabled={!config?.enabled}
+                  disabled={!config?.enabled || !canEditConfig}
                   size="sm"
                 />
               ))}

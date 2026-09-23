@@ -3,6 +3,7 @@
 
 Estados: PENDIENTE / RESERVADO / SIN_COBERTURA / INSTALADA / VENCIDA / CANCELADA.
 """
+import hmac
 import json
 
 from flask import Blueprint, current_app, jsonify, request, send_file
@@ -301,7 +302,7 @@ def webhook_install_confirmed():
     if not secret:
         return jsonify({"error": "webhook_not_configured"}), 503
     provided = (request.headers.get("X-Webhook-Secret") or "").strip()
-    if provided != secret:
+    if not provided or not hmac.compare_digest(provided, secret):
         return jsonify({"error": "invalid_secret"}), 401
 
     data = request.get_json(silent=True) or {}

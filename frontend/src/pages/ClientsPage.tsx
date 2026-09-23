@@ -662,9 +662,17 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
   const [issuingId, setIssuingId] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
 
-  function openPdf(id: number) {
-    const url = api.getInvoicePdfUrl(id);
-    window.open(url, "_blank");
+  async function openPdf(id: number) {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await api.getInvoicePdfUrl(id);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: unknown) {
+      tab?.close();
+      setError(formatApiError(e));
+    }
   }
 
   async function issueDraft(id: number) {

@@ -27,8 +27,13 @@ services:
     environment:
       FLASK_ENV: ${FLASK_ENV:-production}
       FLASK_DEBUG: "0"
-      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production}
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY is required}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:?JWT_SECRET_KEY is required}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost}
+      RECAPTCHA_SITE_KEY: ${RECAPTCHA_SITE_KEY:-}
+      RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
+      RECAPTCHA_MIN_SCORE: ${RECAPTCHA_MIN_SCORE:-0.5}
+      BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
       JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-60}
       # Zona horaria de la app (lógica de negocio + serialización para el frontend).
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Argentina/Buenos_Aires}
@@ -51,6 +56,7 @@ services:
       MP_ACCESS_TOKEN: ${MP_ACCESS_TOKEN:-}
       MP_PUBLIC_KEY: ${MP_PUBLIC_KEY:-}
       MP_WEBHOOK_URL: ${MP_WEBHOOK_URL:-}
+      MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
       API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:5001}
       PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-http://localhost}
       # Staging: descomentar para bloquear escrituras a Mikrotik de producción.

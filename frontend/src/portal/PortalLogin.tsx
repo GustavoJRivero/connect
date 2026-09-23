@@ -3,6 +3,7 @@ import { Alert, Loader, Paper, PasswordInput, Stack, Text, TextInput, Anchor, Un
 import { Link } from "react-router-dom";
 import { formatApiError } from "../format";
 import { BrandLogo } from "../BrandLogo";
+import { getRecaptchaToken } from "../recaptcha";
 import { portalApi, setPortalToken } from "./api";
 import "./portal.css";
 
@@ -17,7 +18,8 @@ export function PortalLogin(props: { onLoggedIn: () => void }) {
     setError(null);
     setBusy(true);
     try {
-      const res = await portalApi.login(identifier.trim(), password);
+      const captcha = await getRecaptchaToken("portal_login");
+      const res = await portalApi.login(identifier.trim(), password, captcha);
       setPortalToken(res.access_token);
       props.onLoggedIn();
     } catch (e: unknown) {
