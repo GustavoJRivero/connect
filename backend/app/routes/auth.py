@@ -184,7 +184,12 @@ def _issue_session(user: User):
 
 @bp.get("/security-config")
 def security_config():
-    return jsonify(recaptcha_public_config())
+    body = recaptcha_public_config()
+    # El alta del primer admin solo tiene sentido con la base vacía y un token configurado.
+    body["bootstrap_available"] = bool(
+        User.query.count() == 0 and str(current_app.config.get("BOOTSTRAP_TOKEN") or "")
+    )
+    return jsonify(body)
 
 
 @bp.post("/bootstrap")

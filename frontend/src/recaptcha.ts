@@ -9,12 +9,12 @@ declare global {
   }
 }
 
-type SecurityConfig = { enabled: boolean; site_key?: string | null };
+export type SecurityConfig = { enabled: boolean; site_key?: string | null; bootstrap_available?: boolean };
 
 let configPromise: Promise<SecurityConfig> | null = null;
 let scriptPromise: Promise<void> | null = null;
 
-function securityConfig(): Promise<SecurityConfig> {
+export function securityConfig(): Promise<SecurityConfig> {
   if (!configPromise) {
     configPromise = fetch(`${API_BASE_URL}/api/auth/security-config`)
       .then(async (response) => {

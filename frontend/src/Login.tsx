@@ -15,7 +15,7 @@ import {
 import { api, LoginResponse, setToken } from "./api";
 import { formatApiError } from "./format";
 import { BrandLogo } from "./BrandLogo";
-import { getRecaptchaToken } from "./recaptcha";
+import { getRecaptchaToken, securityConfig } from "./recaptcha";
 
 type Step = "login" | "bootstrap" | "code";
 
@@ -33,6 +33,19 @@ export default function Login(props: { onLoggedIn: () => void }) {
   const [info, setInfo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [canBootstrap, setCanBootstrap] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    void securityConfig()
+      .then((cfg) => {
+        if (alive) setCanBootstrap(Boolean(cfg.bootstrap_available));
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -261,7 +274,7 @@ export default function Login(props: { onLoggedIn: () => void }) {
               <UnstyledButton type="button" className="sc-login-alt" disabled={busy} onClick={backToLogin}>
                 Volver
               </UnstyledButton>
-            ) : (
+            ) : canBootstrap || step === "bootstrap" ? (
               <UnstyledButton
                 type="button"
                 className="sc-login-alt"
@@ -270,7 +283,7 @@ export default function Login(props: { onLoggedIn: () => void }) {
               >
                 {step === "login" ? "Crear primer admin" : "Volver a iniciar sesión"}
               </UnstyledButton>
-            )}
+            ) : null}
 
             {info ? <Alert color="blue" variant="light">{info}</Alert> : null}
             {error ? (
