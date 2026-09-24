@@ -148,7 +148,6 @@ export default function AppShell(props: { onLogout: () => void }) {
   return (
     <MantineAppShell
       header={{ height: 56 }}
-      footer={{ height: 44 }}
       navbar={{
         width: collapsed ? 60 : 220,
         breakpoint: "sm",
@@ -354,12 +353,6 @@ export default function AppShell(props: { onLogout: () => void }) {
           />
         </MeProvider>
       </MantineAppShell.Main>
-
-      <MantineAppShell.Footer p="xs">
-        <Group justify="center">
-          <BrandLogo mark={20} wordmarkSize={14} />
-        </Group>
-      </MantineAppShell.Footer>
     </MantineAppShell>
   );
 }
