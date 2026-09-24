@@ -3,6 +3,7 @@ from flask_jwt_extended import jwt_required
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 import json
+import re
 from datetime import datetime, timezone
 
 from ..extensions import db
@@ -28,6 +29,7 @@ _HIDDEN_KV = (
     "security.recaptcha_secret_key",
 )
 _MAX_CERT_BYTES = 80_000
+_RECAPTCHA_KEY_RE = re.compile(r"6L[A-Za-z0-9_-]{38}")
 
 bp = Blueprint("settings", __name__, url_prefix="/api/settings")
 
@@ -144,6 +146,15 @@ def put_kv():
                 raw = normalize_cuit(raw) or raw
             except ValidationError as e:
                 return e.to_response()
+        if key in ("security.recaptcha_site_key", "security.recaptcha_secret_key") and raw.strip():
+            raw = raw.strip()
+            # Una clave mal copiada deja a todo el mundo afuera del panel: no se puede entrar
+            # a arreglarla porque el propio login exige el captcha.
+            if not _RECAPTCHA_KEY_RE.fullmatch(raw):
+                return jsonify({
+                    "error": "invalid_recaptcha_key",
+                    "message": "La clave de reCAPTCHA no tiene el formato correcto (40 caracteres, empieza con 6L). Copiala de nuevo desde Google.",
+                }), 400
         _set(key, raw)
 
     db.session.commit()

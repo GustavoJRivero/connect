@@ -353,12 +353,6 @@ export default function AppShell(props: { onLogout: () => void }) {
           />
         </MeProvider>
       </MantineAppShell.Main>
-
-      <MantineAppShell.Footer p="xs">
-        <Group justify="center">
-          <BrandLogo mark={20} wordmarkSize={14} />
-        </Group>
-      </MantineAppShell.Footer>
     </MantineAppShell>
   );
 }

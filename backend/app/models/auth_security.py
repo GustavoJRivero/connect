@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from ..extensions import db
 
@@ -17,6 +17,7 @@ class LoginChallenge(db.Model):
     attempts = db.Column(db.Integer, default=0, nullable=False)
     consumed_at = db.Column(db.DateTime, nullable=True)
     ip = db.Column(db.String(64), nullable=True)
+    method = db.Column(db.String(16), default="email", nullable=False)
 
 
 class UserActivity(db.Model):
@@ -39,3 +40,39 @@ class UserActivity(db.Model):
     ip = db.Column(db.String(64), nullable=True)
     user_agent = db.Column(db.String(255), nullable=True)
     details = db.Column(db.Text, nullable=True)
+
+
+class StaffTrustedIp(db.Model):
+    """Última verificación por código de un usuario desde una IP.
+
+    Si vuelve a entrar desde la misma IP dentro de 7 días, no se pide código.
+    """
+
+    __tablename__ = "staff_trusted_ips"
+    __table_args__ = (db.UniqueConstraint("user_id", "ip", name="uq_staff_trusted_ip"),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    ip = db.Column(db.String(64), nullable=False)
+    verified_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    @classmethod
+    def is_trusted(cls, user_id: int, ip: str, window: timedelta = timedelta(days=7)) -> bool:
+        if not ip:
+            return False
+        row = cls.query.filter_by(user_id=user_id, ip=ip).first()
+        return bool(row and row.verified_at and datetime.utcnow() - row.verified_at < window)
+
+    @classmethod
+    def remember(cls, user_id: int, ip: str) -> None:
+        if not ip:
+            return
+        row = cls.query.filter_by(user_id=user_id, ip=ip).first()
+        if row is None:
+            row = cls(user_id=user_id, ip=ip)
+            db.session.add(row)
+        row.verified_at = datetime.utcnow()
+
+    @classmethod
+    def forget_user(cls, user_id: int) -> None:
+        cls.query.filter_by(user_id=user_id).delete(synchronize_session=False)

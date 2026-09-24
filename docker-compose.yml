@@ -34,7 +34,7 @@ services:
       RECAPTCHA_SECRET_KEY: ${RECAPTCHA_SECRET_KEY:-}
       RECAPTCHA_MIN_SCORE: ${RECAPTCHA_MIN_SCORE:-0.5}
       BOOTSTRAP_TOKEN: ${BOOTSTRAP_TOKEN:-}
-      JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-60}
+      JWT_ACCESS_TOKEN_MINUTES: ${JWT_ACCESS_TOKEN_MINUTES:-720}
       # Zona horaria de la app (lógica de negocio + serialización para el frontend).
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Argentina/Buenos_Aires}
       TZ: ${APP_TIMEZONE:-America/Argentina/Buenos_Aires}
