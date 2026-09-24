@@ -149,7 +149,7 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
         ) : null}
         <PasswordInput
           label="Contraseña actual"
-          description="Necesaria para confirmar cualquier cambio."
+          description="Necesaria para guardar cambios y para activar o desactivar la app autenticadora."
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.currentTarget.value)}
           withAsterisk
@@ -161,6 +161,9 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
             <Button variant="dangerLight" onClick={() => void disableTotp()} loading={totpBusy} disabled={!currentPassword}>
               Desactivar app
             </Button>
+            {!currentPassword ? (
+              <Text size="xs" c="dimmed">Escribí tu contraseña actual acá arriba para poder desactivarla.</Text>
+            ) : null}
           </Stack>
         ) : totpSetup ? (
           <Stack gap="sm" align="center">
@@ -200,6 +203,9 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
             <Button variant="primaryLight" onClick={() => void startTotp()} loading={totpBusy} disabled={!currentPassword}>
               Activar con QR
             </Button>
+            {!currentPassword ? (
+              <Text size="xs" c="dimmed">Escribí tu contraseña actual acá arriba para poder activarla.</Text>
+            ) : null}
           </Stack>
         )}
         {error ? <Alert color="red">{error}</Alert> : null}
