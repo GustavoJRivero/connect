@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../api";
 import { ServerEditModal } from "../components/ServerEditModal";
 import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
+import { useCan } from "../auth";
 import { formatApiError, jobStatusLabel } from "../format";
 import { IconArrowLeft, IconPencil, IconRefresh, IconTrash, IconX } from "@tabler/icons-react";
 import { fmtDateTime, fmtTime } from "../datetime";
@@ -51,6 +52,10 @@ type JobRow = {
 export default function NetworkPage() {
   const params = useParams();
   const navigate = useNavigate();
+  const can = useCan();
+  // Red es de solo lectura para los roles: únicamente un admin puede tocar credenciales.
+  const canEdit = can("network", "edit");
+  const canManageJobs = can("jobs", "edit");
   const [items, setItems] = useState<ServerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -168,15 +173,17 @@ export default function NetworkPage() {
                 ) : null}
               </Group>
               <Group gap="xs">
-                <Button
-                  variant="primaryLight"
-                  onClick={() => {
-                    setServerModalId(null);
-                    setServerModalOpen(true);
-                  }}
-                >
-                  Agregar servidor
-                </Button>
+                {canEdit ? (
+                  <Button
+                    variant="primaryLight"
+                    onClick={() => {
+                      setServerModalId(null);
+                      setServerModalOpen(true);
+                    }}
+                  >
+                    Agregar servidor
+                  </Button>
+                ) : null}
                 <Tooltip label="Recargar">
                   <ActionIcon size="lg" variant="light" color="violet" onClick={reload} aria-label="Recargar">
                     <IconRefresh size={20} />
@@ -237,6 +244,9 @@ export default function NetworkPage() {
                       <Table.Td>{Number(s.pending_jobs) ?? 0}</Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={8} wrap="nowrap">
+                          {!canEdit ? <Text size="sm" c="dimmed">—</Text> : null}
+                          {canEdit ? (
+                          <>
                           <Tooltip label="Editar">
                             <ActionIcon
                               size="lg"
@@ -275,6 +285,8 @@ export default function NetworkPage() {
                               <IconTrash size={18} />
                             </ActionIcon>
                           </Tooltip>
+                          </>
+                          ) : null}
                         </Group>
                       </Table.Td>
                     </Table.Tr>
@@ -311,19 +323,21 @@ export default function NetworkPage() {
                   >
                     Probar conexión
                   </Button>
-                  <Tooltip label="Editar">
-                    <ActionIcon
-                      size="lg"
-                      variant="light"
-                      color="violet"
-                      aria-label="Editar"
-                      onClick={() =>
-                        serverId && (setServerModalId(Number(serverId)), setServerModalOpen(true))
-                      }
-                    >
-                      <IconPencil size={18} />
-                    </ActionIcon>
-                  </Tooltip>
+                  {canEdit ? (
+                    <Tooltip label="Editar">
+                      <ActionIcon
+                        size="lg"
+                        variant="light"
+                        color="violet"
+                        aria-label="Editar"
+                        onClick={() =>
+                          serverId && (setServerModalId(Number(serverId)), setServerModalOpen(true))
+                        }
+                      >
+                        <IconPencil size={18} />
+                      </ActionIcon>
+                    </Tooltip>
+                  ) : null}
                   <Tooltip label="Recargar jobs">
                     <ActionIcon
                       size="lg"
@@ -397,20 +411,22 @@ export default function NetworkPage() {
                   <Text size="sm">
                     {stuckJobs.length} job(s) en RUNNING hace más de 35 s.
                   </Text>
-                  <Button
-                    variant="warning"
-                    onClick={async () => {
-                      if (!serverId) return;
-                      try {
-                        const r = (await api.recoverStuckJobs(serverId)) as { count?: number };
-                        if (r?.count) await reloadJobs(serverId);
-                      } catch (e: unknown) {
-                        setError(formatApiError(e));
-                      }
-                    }}
-                  >
-                    Recuperar colgados
-                  </Button>
+                  {canManageJobs ? (
+                    <Button
+                      variant="warning"
+                      onClick={async () => {
+                        if (!serverId) return;
+                        try {
+                          const r = (await api.recoverStuckJobs(serverId)) as { count?: number };
+                          if (r?.count) await reloadJobs(serverId);
+                        } catch (e: unknown) {
+                          setError(formatApiError(e));
+                        }
+                      }}
+                    >
+                      Recuperar colgados
+                    </Button>
+                  ) : null}
                 </Group>
               </Alert>
             ) : null}
@@ -470,7 +486,7 @@ export default function NetworkPage() {
                         <Table.Td style={{ maxWidth: 380, whiteSpace: "pre-wrap" }}>{j.last_error ?? "-"}</Table.Td>
                         <Table.Td>
                           <Group gap={8} wrap="nowrap">
-                            {j.status === "FAILED" || (j.status === "RUNNING" && isStuck(j)) ? (
+                            {canManageJobs && (j.status === "FAILED" || (j.status === "RUNNING" && isStuck(j))) ? (
                               <Tooltip label={j.status === "RUNNING" ? "Recuperar" : "Reintentar"}>
                                 <ActionIcon
                                   size="lg"
@@ -491,7 +507,7 @@ export default function NetworkPage() {
                                 </ActionIcon>
                               </Tooltip>
                             ) : null}
-                            {j.status === "PENDING" ? (
+                            {canManageJobs && j.status === "PENDING" ? (
                               <Tooltip label="Cancelar">
                                 <ActionIcon
                                   size="lg"

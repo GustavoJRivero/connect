@@ -43,6 +43,11 @@ def mp_credentials() -> dict[str, str]:
     }
 
 
+def mp_webhook_secret() -> str:
+    """Firma secreta del webhook: primero el panel, después el .env."""
+    return _mp_value("mp.webhook_secret", "MP_WEBHOOK_SECRET")
+
+
 def portal_base_url() -> str:
     """URL pública del portal para las back_urls del checkout.
 

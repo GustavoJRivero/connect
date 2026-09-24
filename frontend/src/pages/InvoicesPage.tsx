@@ -6,6 +6,7 @@ import { InvoiceModal } from "../components/InvoiceModal";
 import { PaymentModal } from "../components/PaymentModal";
 import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
 import { ClientSelect } from "../components/ClientSelect";
+import { useCan } from "../auth";
 import { formatApiError, fmtMoney } from "../format";
 import { fmtDate } from "../datetime";
 import { notifySuccess } from "../notify";
@@ -42,6 +43,10 @@ type InvoiceRow = {
 };
 
 export default function InvoicesPage() {
+  const can = useCan();
+  const canEdit = can("invoices", "edit");
+  const canDelete = can("invoices", "delete");
+  const canRegisterPayments = can("payments", "edit");
   const [items, setItems] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,9 +105,17 @@ export default function InvoicesPage() {
     });
   }
 
-  function openPdf(id: number) {
-    const url = api.getInvoicePdfUrl(id);
-    window.open(url, "_blank");
+  async function openPdf(id: number) {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await api.getInvoicePdfUrl(id);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: unknown) {
+      tab?.close();
+      setError(formatApiError(e));
+    }
   }
 
   async function sendEmail(id: number) {
@@ -152,15 +165,17 @@ export default function InvoicesPage() {
           <Group justify="space-between">
             <Title order={5}>Facturas</Title>
             <Group gap="xs">
-              <Button
-                variant="primaryLight"
-                onClick={() => {
-                  setShowNewInvoice(true);
-                  setError(null);
-                }}
-              >
-                Nueva factura
-              </Button>
+              {canEdit ? (
+                <Button
+                  variant="primaryLight"
+                  onClick={() => {
+                    setShowNewInvoice(true);
+                    setError(null);
+                  }}
+                >
+                  Nueva factura
+                </Button>
+              ) : null}
               <Tooltip label="Recargar">
                 <ActionIcon size="lg" variant="light" color="violet" onClick={reload} aria-label="Recargar">
                   <IconRefresh size={20} />
@@ -239,7 +254,7 @@ export default function InvoicesPage() {
                     </Table.Td>
                     <Table.Td>
                       <Group gap={4} wrap="nowrap">
-                        {x.status === "DRAFT" ? (
+                        {canEdit && x.status === "DRAFT" ? (
                           <Tooltip label="Emitir">
                             <ActionIcon variant="light" color="orange" onClick={() => issue(x.id)} aria-label="Emitir">
                               <IconFileCheck size={16} />
@@ -262,18 +277,20 @@ export default function InvoicesPage() {
                             <IconMail size={16} />
                           </ActionIcon>
                         </Tooltip>
-                        {(x.status === "ISSUED" || x.status === "DRAFT") ? (
+                        {canRegisterPayments && (x.status === "ISSUED" || x.status === "DRAFT") ? (
                           <Tooltip label="Registrar pago">
                             <ActionIcon variant="light" color="green" onClick={() => setPaying(x)} aria-label="Registrar pago">
                               <IconCash size={16} />
                             </ActionIcon>
                           </Tooltip>
                         ) : null}
-                        <Tooltip label="Eliminar">
-                          <ActionIcon variant="light" color="red" onClick={() => removeInvoice(x.id)} aria-label="Eliminar">
-                            <IconTrash size={16} />
-                          </ActionIcon>
-                        </Tooltip>
+                        {canDelete ? (
+                          <Tooltip label="Eliminar">
+                            <ActionIcon variant="light" color="red" onClick={() => removeInvoice(x.id)} aria-label="Eliminar">
+                              <IconTrash size={16} />
+                            </ActionIcon>
+                          </Tooltip>
+                        ) : null}
                       </Group>
                     </Table.Td>
                   </Table.Tr>

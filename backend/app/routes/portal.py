@@ -6,7 +6,9 @@ from flask import Blueprint, jsonify, make_response, request
 from flask_jwt_extended import create_access_token, get_jwt, jwt_required
 from sqlalchemy import func, or_
 
+from ..acl import log_activity
 from ..extensions import db
+from ..models.auth_security import UserActivity
 from ..models.client import Client
 from ..models.client_portal import ClientNotification, ClientPortalAccount, MpCheckout
 from ..models.complaint import Complaint
@@ -14,11 +16,15 @@ from ..models.connection import Connection
 from ..models.invoice import Invoice
 from ..portal.mp import create_preference, mp_configured, mp_public_key, preference_checkout_url
 from ..portal.mp_credit import credit_mp_payment
+from ..recaptcha import verify_recaptcha
 from ..routes.complaints import _complaint_to_dict
 from ..routes.invoices import _invoice_to_dict, _payment_status
 from ..timezone import iso_utc
 
 bp = Blueprint("portal", __name__, url_prefix="/api/portal")
+FAILED_WINDOW = timedelta(minutes=15)
+MAX_FAILED_PER_IDENTIFIER = 5
+MAX_FAILED_PER_IP = 20
 
 
 def _digits(s: str) -> str:
@@ -36,6 +42,37 @@ def _find_client(ident: str) -> Client | None:
     if digits:
         return q.filter(or_(Client.dni == digits, Client.cuit == digits, Client.dni == ident, Client.cuit == ident)).first()
     return None
+
+
+def _client_ip() -> str:
+    return (request.remote_addr or "")[:64]
+
+
+def _too_many_login_failures(identifier: str, client: Client | None) -> bool:
+    since = datetime.utcnow() - FAILED_WINDOW
+    base = UserActivity.query.filter(
+        UserActivity.action == "PORTAL_LOGIN_FAILED",
+        UserActivity.created_at >= since,
+    )
+    who = func.lower(UserActivity.username) == identifier.lower()
+    if client is not None:
+        who = who | (UserActivity.ref_id == client.id)
+    return (
+        base.filter(who).count() >= MAX_FAILED_PER_IDENTIFIER
+        or base.filter(UserActivity.ip == _client_ip()).count() >= MAX_FAILED_PER_IP
+    )
+
+
+def _portal_token(client: Client, account: ClientPortalAccount) -> str:
+    return create_access_token(
+        identity=f"portal:{client.id}",
+        additional_claims={
+            "typ": "portal",
+            "cid": int(client.id),
+            "auth_version": account.auth_version,
+        },
+        expires_delta=timedelta(hours=12),
+    )
 
 
 def _portal_client_id() -> int | None:
@@ -58,6 +95,12 @@ def _require_client() -> tuple[Client | None, tuple | None]:
     acc = ClientPortalAccount.query.get(cid)
     if not acc or not acc.is_enabled:
         return None, (jsonify({"error": "portal_disabled", "message": "El portal está deshabilitado."}), 403)
+    try:
+        token_auth_version = int((get_jwt() or {}).get("auth_version"))
+    except (TypeError, ValueError):
+        return None, (jsonify({"error": "forbidden", "message": "Sesión de portal inválida."}), 403)
+    if token_auth_version != int(acc.auth_version or 0):
+        return None, (jsonify({"error": "forbidden", "message": "Sesión de portal inválida."}), 403)
     return client, None
 
 
@@ -76,27 +119,40 @@ def _conn_to_portal(x: Connection) -> dict:
 @bp.post("/login")
 def login():
     data = request.get_json(force=True) or {}
+    if not verify_recaptcha(str(data.get("recaptcha_token") or ""), "portal_login"):
+        return jsonify({"error": "recaptcha_failed", "message": "No pudimos validar que seas una persona."}), 400
     ident = (data.get("identifier") or data.get("email") or data.get("username") or "").strip()
     password = data.get("password") or ""
     if not ident or not password:
         return jsonify({"error": "identifier_and_password_required", "message": "Ingresá DNI/CUIT/email y contraseña."}), 400
 
     client = _find_client(ident)
-    if not client:
+    if _too_many_login_failures(ident, client):
+        return jsonify({"error": "too_many_attempts", "message": "Demasiados intentos. Esperá 15 minutos."}), 429
+    acc = ClientPortalAccount.query.get(client.id) if client else None
+    valid = bool(
+        client
+        and acc
+        and acc.is_enabled
+        and acc.check_password(password)
+        and client.is_active
+        and getattr(client, "status", "ACTIVE") != "RETIRED"
+    )
+    if not valid:
+        log_activity(
+            action="PORTAL_LOGIN_FAILED",
+            module="portal",
+            summary="Intento fallido de ingreso al portal",
+            username=ident.lower(),
+            status_code=401,
+            ref_id=client.id if client else None,
+            details={"identifier": ident},
+        )
         return jsonify({"error": "invalid_credentials", "message": "Datos incorrectos."}), 401
-    acc = ClientPortalAccount.query.get(client.id)
-    if not acc or not acc.is_enabled or not acc.check_password(password):
-        return jsonify({"error": "invalid_credentials", "message": "Datos incorrectos."}), 401
-    if not client.is_active or getattr(client, "status", "ACTIVE") == "RETIRED":
-        return jsonify({"error": "inactive", "message": "Tu cuenta no está activa."}), 403
 
     acc.last_login_at = datetime.utcnow()
     db.session.commit()
-    token = create_access_token(
-        identity=f"portal:{client.id}",
-        additional_claims={"typ": "portal", "cid": int(client.id)},
-        expires_delta=timedelta(hours=12),
-    )
+    token = _portal_token(client, acc)
     return jsonify({"access_token": token, "client": {"id": client.id, "full_name": client.full_name}})
 
 
@@ -131,14 +187,14 @@ def change_password():
     data = request.get_json(force=True) or {}
     current = data.get("current_password") or ""
     new = data.get("new_password") or ""
-    if len(new) < 6:
-        return jsonify({"error": "weak_password", "message": "La contraseña nueva debe tener al menos 6 caracteres."}), 400
+    if len(new) < 12:
+        return jsonify({"error": "weak_password", "message": "La contraseña nueva debe tener al menos 12 caracteres."}), 400
     acc = ClientPortalAccount.query.get(client.id)
     if not acc or not acc.check_password(current):
         return jsonify({"error": "invalid_password", "message": "La contraseña actual no es correcta."}), 400
     acc.set_password(new)
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "access_token": _portal_token(client, acc)})
 
 
 @bp.get("/summary")

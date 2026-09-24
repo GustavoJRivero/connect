@@ -1,7 +1,58 @@
+function defaultBaseUrl(): string {
+  // Servido desde un dominio real: la API vive en el mismo origen detrás del proxy,
+  // así que una URL relativa evita romperse si cambia el esquema o el puerto.
+  const host = typeof window === "undefined" ? "" : window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1" ? "http://localhost:5001" : "";
+}
+
 export const API_BASE_URL =
-  (process.env.REACT_APP_API_BASE_URL as string | undefined) ?? "http://localhost:5001";
+  ((process.env.REACT_APP_API_BASE_URL as string | undefined) ?? "").trim().replace(/\/+$/, "") || defaultBaseUrl();
 
 export type ApiError = { status: number; body: any };
+
+export type Permissions = Record<string, string[]>;
+
+export type LoginResponse = {
+  access_token?: string;
+  require_code?: boolean;
+  method?: "email" | "totp";
+  challenge_id?: string;
+  challenge_token?: string;
+  email_hint?: string;
+  expires_in?: number;
+  resend_in?: number;
+};
+
+export type StaffUser = {
+  id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string;
+  email: string | null;
+  is_active: boolean;
+  is_admin: boolean;
+  role: { id: number; name: string; is_admin: boolean } | null;
+  last_login_at: string | null;
+  created_at: string | null;
+  totp_enabled?: boolean;
+};
+
+export type Me = StaffUser & { permissions: Permissions; smtp_configured: boolean; totp_enabled?: boolean };
+
+export type RoleItem = {
+  id: number;
+  name: string;
+  description: string | null;
+  is_admin: boolean;
+  permissions: Permissions;
+  users_count: number;
+};
+
+export type PermissionsCatalog = {
+  modules: { id: string; label: string; actions: string[] }[];
+  actions: { id: string; label: string }[];
+};
 
 let _pendingRequests = 0;
 
@@ -71,6 +122,37 @@ async function request(path: string, init: RequestInit = {}) {
   }
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  loadingStart();
+  const headers = new Headers();
+  const token = getToken();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  try {
+    const res = await fetch(`${API_BASE_URL}${path}`, { headers });
+    if (!res.ok) {
+      if (res.status === 401) {
+        setToken(null);
+        window.dispatchEvent(new CustomEvent("sc:unauthorized", { detail: { path } }));
+      }
+      let body: any = null;
+      try {
+        body = await res.json();
+      } catch {
+        body = { error: "download_failed", message: "No se pudo descargar el archivo." };
+      }
+      throw { status: res.status, body } as ApiError;
+    }
+    return res.blob();
+  } finally {
+    loadingEnd();
+  }
+}
+
+async function pdfObjectUrl(path: string): Promise<string> {
+  const blob = await requestBlob(path);
+  return URL.createObjectURL(blob);
+}
+
 async function requestForm(path: string, init: RequestInit = {}) {
   loadingStart();
   const headers = new Headers(init.headers || {});
@@ -119,20 +201,111 @@ export const api = {
   },
 
   // auth
-  bootstrap(username: string, password: string) {
+  bootstrap(payload: {
+    username: string;
+    first_name: string;
+    last_name: string;
+    password: string;
+    email: string;
+    bootstrapToken: string;
+    recaptchaToken: string;
+  }) {
+    const { bootstrapToken, recaptchaToken, ...rest } = payload;
     return request("/api/auth/bootstrap", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      headers: { "X-Bootstrap-Token": bootstrapToken },
+      body: JSON.stringify({ ...rest, recaptcha_token: recaptchaToken }),
     });
   },
-  async login(username: string, password: string): Promise<{ access_token: string }> {
+  login(identifier: string, password: string, recaptchaToken: string): Promise<LoginResponse> {
     return request("/api/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ identifier, password, recaptcha_token: recaptchaToken }),
     });
   },
-  me() {
+  verifyLoginCode(challenge_id: string, challenge_token: string, code: string): Promise<LoginResponse> {
+    return request("/api/auth/login/verify", {
+      method: "POST",
+      body: JSON.stringify({ challenge_id, challenge_token, code }),
+    });
+  },
+  resendLoginCode(challenge_id: string, challenge_token: string): Promise<{ ok: boolean; resend_in: number; method?: string }> {
+    return request("/api/auth/login/resend", {
+      method: "POST",
+      body: JSON.stringify({ challenge_id, challenge_token }),
+    });
+  },
+  logout() {
+    return request("/api/auth/logout", { method: "POST", body: "{}" });
+  },
+  me(): Promise<Me> {
     return request("/api/auth/me");
+  },
+  updateMe(payload: {
+    current_password: string;
+    first_name?: string;
+    last_name?: string;
+    email?: string;
+    new_password?: string;
+  }): Promise<Me & { access_token?: string }> {
+    return request("/api/auth/me", { method: "PUT", body: JSON.stringify(payload) });
+  },
+  startTotp(current_password: string): Promise<{ secret: string; otpauth_url: string; qr_svg: string }> {
+    return request("/api/auth/me/totp/start", { method: "POST", body: JSON.stringify({ current_password }) });
+  },
+  confirmTotp(code: string): Promise<Me> {
+    return request("/api/auth/me/totp/confirm", { method: "POST", body: JSON.stringify({ code }) });
+  },
+  disableTotp(current_password: string): Promise<Me> {
+    return request("/api/auth/me/totp/disable", { method: "POST", body: JSON.stringify({ current_password }) });
+  },
+
+  // usuarios y roles
+  listUsers(): Promise<StaffUser[]> {
+    return request("/api/users");
+  },
+  createUser(payload: {
+    username: string;
+    first_name: string;
+    last_name: string;
+    email: string;
+    password: string;
+    role_id: number;
+    is_active?: boolean;
+  }) {
+    return request("/api/users", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateUser(
+    id: number,
+    payload: Partial<{
+      username: string;
+      first_name: string;
+      last_name: string;
+      email: string;
+      password: string;
+      role_id: number;
+      is_active: boolean;
+    }>,
+  ) {
+    return request(`/api/users/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteUser(id: number) {
+    return request(`/api/users/${id}`, { method: "DELETE" });
+  },
+  getPermissionsCatalog(): Promise<PermissionsCatalog> {
+    return request("/api/roles/catalog");
+  },
+  listRoles(): Promise<RoleItem[]> {
+    return request("/api/roles");
+  },
+  createRole(payload: { name: string; description?: string; permissions: Permissions }) {
+    return request("/api/roles", { method: "POST", body: JSON.stringify(payload) });
+  },
+  updateRole(id: number, payload: Partial<{ name: string; description: string; permissions: Permissions }>) {
+    return request(`/api/roles/${id}`, { method: "PUT", body: JSON.stringify(payload) });
+  },
+  deleteRole(id: number) {
+    return request(`/api/roles/${id}`, { method: "DELETE" });
   },
 
   // clients
@@ -393,6 +566,30 @@ export const api = {
   getLogModules() {
     return request("/api/logs/modules");
   },
+  getUserActivity(opts?: {
+    user_id?: number | null;
+    module?: string | null;
+    action?: string | null;
+    q?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  }) {
+    const params = new URLSearchParams();
+    Object.entries(opts || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") params.set(k, String(v));
+    });
+    const qs = params.toString();
+    return request(`/api/logs/activity${qs ? `?${qs}` : ""}`);
+  },
+  getUserActivityMeta(): Promise<{
+    users: { id: number; username: string }[];
+    modules: { id: string; label: string }[];
+    actions: { id: string; label: string }[];
+  }> {
+    return request("/api/logs/activity/meta");
+  },
   getLoggingConfig() {
     return request("/api/logs/config");
   },
@@ -402,8 +599,7 @@ export const api = {
 
   // invoice PDF & email
   getInvoicePdfUrl(id: number) {
-    const token = getToken();
-    return `${API_BASE_URL}/api/invoices/${id}/pdf${token ? `?jwt=${token}` : ""}`;
+    return pdfObjectUrl(`/api/invoices/${id}/pdf`);
   },
   sendInvoiceEmail(id: number, to?: string) {
     return request(`/api/invoices/${id}/send_email`, {
@@ -452,8 +648,7 @@ export const api = {
     return request(`/api/installations/${id}`, { method: "PUT", body: JSON.stringify(payload) });
   },
   getInstallationPdfUrl(id: number) {
-    const token = getToken();
-    return `${API_BASE_URL}/api/installations/${id}/pdf${token ? `?jwt=${token}` : ""}`;
+    return pdfObjectUrl(`/api/installations/${id}/pdf`);
   },
 };
 

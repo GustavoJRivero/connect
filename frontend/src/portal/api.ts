@@ -47,10 +47,10 @@ async function request(path: string, init: RequestInit = {}) {
 }
 
 export const portalApi = {
-  login(identifier: string, password: string) {
+  login(identifier: string, password: string, recaptchaToken: string) {
     return request("/api/portal/login", {
       method: "POST",
-      body: JSON.stringify({ identifier, password }),
+      body: JSON.stringify({ identifier, password, recaptcha_token: recaptchaToken }),
     });
   },
   me() {
@@ -60,6 +60,9 @@ export const portalApi = {
     return request("/api/portal/me/password", {
       method: "PUT",
       body: JSON.stringify({ current_password, new_password }),
+    }).then((res) => {
+      if (res?.access_token) setPortalToken(res.access_token);
+      return res;
     });
   },
   summary() {

@@ -13,9 +13,11 @@ class ClientPortalAccount(db.Model):
     password_hash = db.Column(db.String(255), nullable=False)
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     last_login_at = db.Column(db.DateTime, nullable=True)
+    auth_version = db.Column(db.Integer, default=1, nullable=False)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
+        self.auth_version = int(self.auth_version or 0) + 1
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)

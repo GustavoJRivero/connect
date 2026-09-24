@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { Button, Card, MutedBadge, installationStatusTone } from "../ui";
 import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
+import { useCan } from "../auth";
 import { formatApiError } from "../format";
 import { fmtDateTime } from "../datetime";
 import { notifyError, notifySuccess } from "../notify";
@@ -107,6 +108,7 @@ function whatsappHref(phone?: string | null): string | null {
 
 export default function InstallationsPage() {
   const navigate = useNavigate();
+  const canEdit = useCan()("installations", "edit");
   const [searchParams, setSearchParams] = useSearchParams();
   // La solapa activa vive en la URL (?tab=...) para poder compartir el link.
   const tabParam = searchParams.get("tab");
@@ -169,6 +171,19 @@ export default function InstallationsPage() {
     setEditing(o);
     setEditTech(o.technician ?? "");
     setEditNotes(o.notes ?? "");
+  }
+
+  async function openPdf(id: number) {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await api.getInstallationPdfUrl(id);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: unknown) {
+      tab?.close();
+      setError(formatApiError(e));
+    }
   }
 
   async function saveEdit() {
@@ -342,18 +357,20 @@ export default function InstallationsPage() {
                           size="lg"
                           variant="light"
                           color="violet"
-                          onClick={() => window.open(api.getInstallationPdfUrl(o.id), "_blank")}
+                          onClick={() => void openPdf(o.id)}
                           aria-label="PDF"
                         >
                           <IconFileTypePdf size={20} />
                         </ActionIcon>
                       </Tooltip>
-                      <Tooltip label="Editar">
-                        <ActionIcon size="lg" variant="light" color="violet" onClick={() => openEdit(o)} aria-label="Editar">
-                          <IconPencil size={20} />
-                        </ActionIcon>
-                      </Tooltip>
-                      {(o.status === "RESERVADO" || o.status === "PENDIENTE" || o.status === "VENCIDA") ? (
+                      {canEdit ? (
+                        <Tooltip label="Editar">
+                          <ActionIcon size="lg" variant="light" color="violet" onClick={() => openEdit(o)} aria-label="Editar">
+                            <IconPencil size={20} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ) : null}
+                      {canEdit && (o.status === "RESERVADO" || o.status === "PENDIENTE" || o.status === "VENCIDA") ? (
                         <Tooltip label="Confirmar">
                           <ActionIcon
                             size="lg"
@@ -366,7 +383,7 @@ export default function InstallationsPage() {
                           </ActionIcon>
                         </Tooltip>
                       ) : null}
-                      {(o.status === "PENDIENTE" || o.status === "SIN_COBERTURA" || o.status === "VENCIDA") ? (
+                      {canEdit && (o.status === "PENDIENTE" || o.status === "SIN_COBERTURA" || o.status === "VENCIDA") ? (
                         <Tooltip label="Re-chequear">
                           <ActionIcon
                             size="lg"
@@ -379,7 +396,7 @@ export default function InstallationsPage() {
                           </ActionIcon>
                         </Tooltip>
                       ) : null}
-                      {o.status !== "INSTALADA" && o.status !== "CANCELADA" ? (
+                      {canEdit && o.status !== "INSTALADA" && o.status !== "CANCELADA" ? (
                         <Tooltip label="Cancelar orden">
                           <ActionIcon
                             size="lg"

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "../api";
 import { Button, MutedBadge } from "../ui";
+import { useCan } from "../auth";
 import { formatApiError, fmtMoney } from "../format";
 import { IconPencil, IconRefresh, IconTrash } from "@tabler/icons-react";
 import {
@@ -70,6 +71,9 @@ export default function PlansPage() {
   const [saving, setSaving] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<Plan | null>(null);
+  const can = useCan();
+  const canEdit = can("plans", "edit");
+  const canDelete = can("plans", "delete");
   const [deleting, setDeleting] = useState(false);
 
   async function loadPlans() {
@@ -153,7 +157,7 @@ export default function PlansPage() {
 
       <Card withBorder padding="md" radius="md">
         <Group justify="flex-end" mb="sm">
-          <Button variant="primaryLight" onClick={openCreate}>Nuevo plan</Button>
+          {canEdit ? <Button variant="primaryLight" onClick={openCreate}>Nuevo plan</Button> : null}
           <Tooltip label="Recargar">
             <ActionIcon size="lg" variant="light" color="violet" onClick={loadPlans} aria-label="Recargar">
               <IconRefresh size={20} />
@@ -204,23 +208,28 @@ export default function PlansPage() {
                   </Table.Td>
                   <Table.Td>
                     <Group gap={8} wrap="nowrap">
-                      <Tooltip label="Editar">
-                        <ActionIcon variant="light" color="violet" size="lg" onClick={() => openEdit(plan)} aria-label="Editar plan">
-                          <IconPencil size={18} />
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label={plan.connections_count > 0 ? "Tiene conexiones asignadas" : "Eliminar"}>
-                        <ActionIcon
-                          variant="light"
-                          color="red"
-                          size="lg"
-                          disabled={plan.connections_count > 0}
-                          onClick={() => setDeleteTarget(plan)}
-                          aria-label="Eliminar plan"
-                        >
-                          <IconTrash size={18} />
-                        </ActionIcon>
-                      </Tooltip>
+                      {canEdit ? (
+                        <Tooltip label="Editar">
+                          <ActionIcon variant="light" color="violet" size="lg" onClick={() => openEdit(plan)} aria-label="Editar plan">
+                            <IconPencil size={18} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ) : null}
+                      {canDelete ? (
+                        <Tooltip label={plan.connections_count > 0 ? "Tiene conexiones asignadas" : "Eliminar"}>
+                          <ActionIcon
+                            variant="light"
+                            color="red"
+                            size="lg"
+                            disabled={plan.connections_count > 0}
+                            onClick={() => setDeleteTarget(plan)}
+                            aria-label="Eliminar plan"
+                          >
+                            <IconTrash size={18} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ) : null}
+                      {!canEdit && !canDelete ? <Text size="sm" c="dimmed">—</Text> : null}
                     </Group>
                   </Table.Td>
                 </Table.Tr>

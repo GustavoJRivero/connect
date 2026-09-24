@@ -4,6 +4,7 @@ import time as _time
 from dotenv import load_dotenv
 from flask import Flask
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import get_config
 from .extensions import db, jwt, migrate
@@ -25,6 +26,9 @@ from .routes.plans import bp as plans_bp
 from .routes.settings import bp as settings_bp
 from .routes.portal import bp as portal_bp
 from .routes.mp_webhook import bp as mp_webhook_bp
+from .routes.users import bp as users_bp, roles_bp
+
+
 def create_app() -> Flask:
     load_dotenv()
 
@@ -40,9 +44,11 @@ def create_app() -> Flask:
 
     app = Flask(__name__)
     app.config.from_mapping(get_config())
+    proxy_hops = int(app.config.get("PROXY_FIX_X_FOR", 0))
+    if proxy_hops:
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=proxy_hops, x_proto=1, x_host=1)
 
-    # Dev-friendly: permitir al frontend consumir la API
-    CORS(app, resources={r"/api/*": {"origins": "*"}})
+    CORS(app, resources={r"/api/*": {"origins": app.config["CORS_ORIGINS"]}})
 
     db.init_app(app)
     migrate.init_app(app, db)
@@ -68,6 +74,12 @@ def create_app() -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(portal_bp)
     app.register_blueprint(mp_webhook_bp)
+    app.register_blueprint(users_bp)
+    app.register_blueprint(roles_bp)
+
+    from .acl import init_acl
+
+    init_acl(app)
 
     from sqlalchemy.exc import DataError, IntegrityError
     from flask import jsonify

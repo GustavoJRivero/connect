@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { MutedBadge, jobStatusTone } from "../ui";
+import { useCan } from "../auth";
 import { formatApiError, jobStatusLabel } from "../format";
 import { IconRefresh, IconX } from "@tabler/icons-react";
 import {
@@ -53,6 +54,7 @@ function duration(created: string | null, finished: string | null): string {
 }
 
 export default function JobsPage() {
+  const canEdit = useCan()("jobs", "edit");
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -230,7 +232,7 @@ export default function JobsPage() {
                       </Table.Td>
                       <Table.Td onClick={(e) => e.stopPropagation()}>
                         <Group gap={4}>
-                          {(j.status === "FAILED" || j.status === "RUNNING") && (
+                          {canEdit && (j.status === "FAILED" || j.status === "RUNNING") && (
                             <Tooltip label="Reintentar">
                               <ActionIcon
                                 variant="light"
@@ -242,7 +244,7 @@ export default function JobsPage() {
                               </ActionIcon>
                             </Tooltip>
                           )}
-                          {j.status === "PENDING" && (
+                          {canEdit && j.status === "PENDING" && (
                             <Tooltip label="Cancelar">
                               <ActionIcon
                                 variant="light"

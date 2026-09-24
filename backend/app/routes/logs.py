@@ -158,6 +158,109 @@ def update_logging_config():
     return jsonify({"ok": True})
 
 
+# ─────────────────────────────────────────────
+# Actividad de usuarios
+# ─────────────────────────────────────────────
+
+ACTIVITY_ACTIONS = [
+    {"id": "CREATE", "label": "Alta"},
+    {"id": "UPDATE", "label": "Edición"},
+    {"id": "DELETE", "label": "Eliminación"},
+    {"id": "ACTION", "label": "Acción"},
+    {"id": "LOGIN", "label": "Ingreso"},
+    {"id": "LOGIN_CODE_SENT", "label": "Código enviado"},
+    {"id": "LOGIN_FAILED", "label": "Ingreso fallido"},
+    {"id": "LOGOUT", "label": "Salida"},
+    {"id": "DENIED", "label": "Acceso denegado"},
+]
+
+
+@bp.get("/activity")
+def list_activity():
+    """
+    Acciones de usuarios del panel.
+
+    Query params: user_id, module, action, q, from, to (YYYY-MM-DD), limit, offset
+    """
+    from ..models.auth_security import UserActivity
+
+    query = UserActivity.query
+    user_id = request.args.get("user_id")
+    module = request.args.get("module")
+    action = request.args.get("action")
+    q = (request.args.get("q") or "").strip()
+    date_from = request.args.get("from")
+    date_to = request.args.get("to")
+
+    if user_id:
+        query = query.filter(UserActivity.user_id == int(user_id))
+    if module:
+        query = query.filter(UserActivity.module == module)
+    if action:
+        query = query.filter(UserActivity.action == action.upper())
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            UserActivity.summary.ilike(like) | UserActivity.path.ilike(like) | UserActivity.username.ilike(like)
+        )
+    if date_from:
+        query = query.filter(UserActivity.created_at >= date_from)
+    if date_to:
+        query = query.filter(UserActivity.created_at <= f"{date_to} 23:59:59")
+
+    limit = min(int(request.args.get("limit", "50")), 200)
+    offset = max(int(request.args.get("offset", "0")), 0)
+    total = query.count()
+    items = query.order_by(UserActivity.id.desc()).offset(offset).limit(limit).all()
+    return jsonify({
+        "items": [_activity_to_dict(x) for x in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    })
+
+
+@bp.get("/activity/meta")
+def activity_meta():
+    """Opciones de filtro: usuarios, módulos y tipos de acción."""
+    from ..acl import MODULES
+    from ..models.user import User
+
+    users = User.query.order_by(User.username.asc()).all()
+    return jsonify({
+        "users": [{"id": u.id, "username": u.username} for u in users],
+        "modules": [{"id": "auth", "label": "Acceso"}] + [{"id": m, "label": label} for m, label, _ in MODULES],
+        "actions": ACTIVITY_ACTIONS,
+    })
+
+
+def _activity_to_dict(x) -> dict:
+    import json as _json
+
+    details = None
+    if x.details:
+        try:
+            details = _json.loads(x.details)
+        except (ValueError, TypeError):
+            details = x.details
+    return {
+        "id": x.id,
+        "created_at": iso_utc(x.created_at),
+        "user_id": x.user_id,
+        "username": x.username,
+        "action": x.action,
+        "module": x.module,
+        "summary": x.summary,
+        "method": x.method,
+        "path": x.path,
+        "status_code": x.status_code,
+        "ref_id": x.ref_id,
+        "ip": x.ip,
+        "user_agent": x.user_agent,
+        "details": details,
+    }
+
+
 def _set_setting(key: str, value: str):
     s = Setting.query.get(key)
     if s:

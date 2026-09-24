@@ -13,6 +13,7 @@ import { IpPoolPicker } from "../components/IpPoolPicker";
 import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
 import { CoverageCheck, CoveragePreview } from "../components/CoverageCheck";
 import { CoverageMap } from "../components/CoverageMap";
+import { useCan } from "../auth";
 import { formatApiError, fmtMoney, connectionStatusLabel, complaintStatusLabel } from "../format";
 import { fmtDate } from "../datetime";
 import { notifySuccess, notifyError } from "../notify";
@@ -60,6 +61,9 @@ export default function ClientsPage() {
   const params = useParams();
   const navigate = useNavigate();
   const loc = useLocation();
+  const can = useCan();
+  const canEdit = can("clients", "edit");
+  const canDelete = can("clients", "delete");
   const [searchParams, setSearchParams] = useSearchParams();
   const [mode, setMode] = useState<"list" | "create" | "detail">("list");
   const [items, setItems] = useState<Record<string, unknown>[]>([]);
@@ -402,7 +406,9 @@ export default function ClientsPage() {
             <TextInput placeholder="nombre, dni/cuit, tel, email, id..." value={q} onChange={(e) => { setQ(e.currentTarget.value); setPage(1); }} style={{ minWidth: 260 }} />
             <Select value={String(pageSize)} onChange={(v) => { setPageSize(Number(v ?? 10)); setPage(1); }} data={["10", "50", "100"]} style={{ width: 120 }} />
             <Group gap="xs">
-              <Button variant="primaryLight" onClick={() => navigate("/clients/new")}>Nuevo cliente</Button>
+              {canEdit ? (
+                <Button variant="primaryLight" onClick={() => navigate("/clients/new")}>Nuevo cliente</Button>
+              ) : null}
               <Tooltip label="Recargar">
                 <ActionIcon size="lg" variant="light" color="violet" onClick={reloadList} aria-label="Recargar">
                   <IconRefresh size={20} />
@@ -488,38 +494,44 @@ export default function ClientsPage() {
                     </Table.Td>
                     <Table.Td onClick={(e) => e.stopPropagation()}>
                       <Group gap={8} wrap="nowrap">
-                        <Tooltip label="Editar">
-                          <ActionIcon variant="light" color="violet" size="lg" onClick={() => setEditingClientId(Number(c.id))} aria-label="Editar">
-                            <IconPencil size={18} />
-                          </ActionIcon>
-                        </Tooltip>
+                        {canEdit ? (
+                          <Tooltip label="Editar">
+                            <ActionIcon variant="light" color="violet" size="lg" onClick={() => setEditingClientId(Number(c.id))} aria-label="Editar">
+                              <IconPencil size={18} />
+                            </ActionIcon>
+                          </Tooltip>
+                        ) : null}
                         <Menu position="bottom-end" withinPortal>
                           <Menu.Target>
                             <ActionIcon variant="subtle" color="gray" size="lg" aria-label="Más acciones"><IconDots size={18} /></ActionIcon>
                           </Menu.Target>
                           <Menu.Dropdown>
                             <Menu.Item onClick={() => navigate(`/clients/${c.id}`)}>Ver detalle</Menu.Item>
-                            <Menu.Divider />
-                            <Menu.Item
-                              color="red"
-                              onClick={() => setConfirm({
-                                title: `Eliminar cliente #${c.id}`,
-                                message: `Se eliminará el cliente "${String(c.full_name ?? "")}" junto con sus conexiones. Esta acción no se puede deshacer.`,
-                                confirmLabel: "Eliminar",
-                                danger: true,
-                                onConfirm: async () => {
-                                  try {
-                                    await api.deleteClient(Number(c.id));
-                                    if (items.length === 1 && page > 1) setPage(page - 1);
-                                    else await reloadList();
-                                  } catch (e: unknown) {
-                                    setError(formatApiError(e));
-                                  }
-                                },
-                              })}
-                            >
-                              Eliminar cliente
-                            </Menu.Item>
+                            {canDelete ? (
+                              <>
+                                <Menu.Divider />
+                                <Menu.Item
+                                  color="red"
+                                  onClick={() => setConfirm({
+                                    title: `Eliminar cliente #${c.id}`,
+                                    message: `Se eliminará el cliente "${String(c.full_name ?? "")}" junto con sus conexiones. Esta acción no se puede deshacer.`,
+                                    confirmLabel: "Eliminar",
+                                    danger: true,
+                                    onConfirm: async () => {
+                                      try {
+                                        await api.deleteClient(Number(c.id));
+                                        if (items.length === 1 && page > 1) setPage(page - 1);
+                                        else await reloadList();
+                                      } catch (e: unknown) {
+                                        setError(formatApiError(e));
+                                      }
+                                    },
+                                  })}
+                                >
+                                  Eliminar cliente
+                                </Menu.Item>
+                              </>
+                            ) : null}
                           </Menu.Dropdown>
                         </Menu>
                       </Group>
@@ -637,6 +649,11 @@ function QuietTh(props: { children: React.ReactNode; align?: "left" | "right" })
 type DetailTab = "connections" | "billing" | "complaints";
 
 function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () => void; servers: { id: number; name: string; host: string; port: number }[]; planOptions: string[] }) {
+  const can = useCan();
+  const canEdit = can("clients", "edit");
+  const canEditInvoices = can("invoices", "edit");
+  const canDeleteInvoices = can("invoices", "delete");
+  const canRegisterPayments = can("payments", "edit");
   const [client, setClient] = useState<ClientDetailData | null>(null);
   const [invoices, setInvoices] = useState<Record<string, unknown>[]>([]);
   const [complaints, setComplaints] = useState<Record<string, unknown>[]>([]);
@@ -662,9 +679,17 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
   const [issuingId, setIssuingId] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
 
-  function openPdf(id: number) {
-    const url = api.getInvoicePdfUrl(id);
-    window.open(url, "_blank");
+  async function openPdf(id: number) {
+    const tab = window.open("", "_blank");
+    try {
+      const url = await api.getInvoicePdfUrl(id);
+      if (tab) tab.location.href = url;
+      else window.open(url, "_blank");
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (e: unknown) {
+      tab?.close();
+      setError(formatApiError(e));
+    }
   }
 
   async function issueDraft(id: number) {
@@ -952,15 +977,19 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                   </div>
                 </Group>
                 <Group gap="xs" wrap="nowrap">
-                  <Button variant="default" onClick={props.onEdit}>Editar</Button>
+                  {canEdit ? <Button variant="default" onClick={props.onEdit}>Editar</Button> : null}
                   <Menu position="bottom-end" withinPortal>
                     <Menu.Target>
                       <ActionIcon variant="subtle" color="gray" size="lg" aria-label="Más acciones"><IconDots size={18} /></ActionIcon>
                     </Menu.Target>
                     <Menu.Dropdown>
                       <Menu.Item onClick={reloadDetail}>Recargar</Menu.Item>
-                      <Menu.Divider />
-                      <Menu.Item color="red" onClick={suspendAllServices}>Suspender todos los servicios</Menu.Item>
+                      {canEdit ? (
+                        <>
+                          <Menu.Divider />
+                          <Menu.Item color="red" onClick={suspendAllServices}>Suspender todos los servicios</Menu.Item>
+                        </>
+                      ) : null}
                     </Menu.Dropdown>
                   </Menu>
                 </Group>
@@ -1040,13 +1069,13 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 <Tabs.Tab value="complaints">Reclamos</Tabs.Tab>
               </Tabs.List>
               {tab === "connections" ? (
-                <Button variant="primaryLight" onClick={() => setShowNewConnection(true)}>Nueva conexión</Button>
+                canEdit ? <Button variant="primaryLight" onClick={() => setShowNewConnection(true)}>Nueva conexión</Button> : null
               ) : null}
               {tab === "billing" ? (
-                <Button variant="primaryLight" onClick={() => setShowNewInvoice(true)}>Nueva factura</Button>
+                canEditInvoices ? <Button variant="primaryLight" onClick={() => setShowNewInvoice(true)}>Nueva factura</Button> : null
               ) : null}
               {tab === "complaints" ? (
-                <Button variant="primaryLight" onClick={() => setShowNewComplaint(true)}>Nuevo reclamo</Button>
+                canEdit ? <Button variant="primaryLight" onClick={() => setShowNewComplaint(true)}>Nuevo reclamo</Button> : null
               ) : null}
             </Group>
             <Tabs.Panel value="connections" pt="md">
@@ -1102,6 +1131,10 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                         </Table.Td>
                         <Table.Td onClick={(e) => e.stopPropagation()}>
                           <Group gap={8} wrap="nowrap">
+                            {!canEdit ? (
+                              <Text size="sm" c="dimmed">—</Text>
+                            ) : (
+                            <>
                             <Tooltip label="Editar">
                               <ActionIcon size="lg" variant="light" color="violet" onClick={() => setEditingConn(conn)} aria-label="Editar">
                                 <IconPencil size={20} />
@@ -1125,6 +1158,8 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                                   <IconPlugConnectedX size={20} />
                                 </ActionIcon>
                               </Tooltip>
+                            )}
+                            </>
                             )}
                           </Group>
                         </Table.Td>
@@ -1168,7 +1203,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                         <Table.Td>{fmtMoney(x.paid_total ?? 0)}</Table.Td>
                         <Table.Td>
                           <Group gap={4} wrap="nowrap">
-                            {String(x.status).toUpperCase() === "DRAFT" ? (
+                            {canEditInvoices && String(x.status).toUpperCase() === "DRAFT" ? (
                               <Tooltip label="Emitir">
                                 <ActionIcon
                                   variant="light"
@@ -1197,18 +1232,20 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                                 <IconMail size={16} />
                               </ActionIcon>
                             </Tooltip>
-                            {(x.status === "ISSUED" || x.status === "DRAFT") ? (
+                            {canRegisterPayments && (x.status === "ISSUED" || x.status === "DRAFT") ? (
                               <Tooltip label="Registrar pago">
                                 <ActionIcon variant="light" color="green" onClick={() => setPaying(x)} aria-label="Registrar pago">
                                   <IconCash size={16} />
                                 </ActionIcon>
                               </Tooltip>
                             ) : null}
-                            <Tooltip label="Eliminar">
-                              <ActionIcon variant="light" color="red" onClick={() => deleteInvoice(Number(x.id))} aria-label="Eliminar">
-                                <IconTrash size={16} />
-                              </ActionIcon>
-                            </Tooltip>
+                            {canDeleteInvoices ? (
+                              <Tooltip label="Eliminar">
+                                <ActionIcon variant="light" color="red" onClick={() => deleteInvoice(Number(x.id))} aria-label="Eliminar">
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            ) : null}
                           </Group>
                         </Table.Td>
                       </Table.Tr>
@@ -1256,7 +1293,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                         <Table.Td>
                           <Select
                             value={String(x.status)}
-                            disabled={x.status === "SOLVED"}
+                            disabled={!canEdit || x.status === "SOLVED"}
                             data={[{ value: "TODO", label: "Pendiente" }, { value: "WIP", label: "En curso" }, { value: "SOLVED", label: "Resuelto" }]}
                             onChange={async (v) => {
                               if (!v) return;
