@@ -4,6 +4,17 @@ body,
   height: 100%;
 }
 
+/* El script de reCAPTCHA inyecta su badge fijo y, al ser una SPA, queda flotando en
+   todas las pantallas aunque solo se use en el login. Google permite ocultarlo si el
+   aviso legal queda visible (ver .sc-login-legal). */
+.grecaptcha-badge {
+  visibility: hidden;
+}
+
+.sc-login-legal a {
+  color: inherit;
+}
+
 .sc-wordmark-slot {
   display: inline-flex;
   align-items: center;

@@ -285,6 +285,18 @@ export default function Login(props: { onLoggedIn: () => void }) {
                 Entrar al portal
               </Anchor>
             </Text>
+
+            <Text className="sc-login-legal" size="xs" c="dimmed" ta="center">
+              Protegido por reCAPTCHA. Aplican la{" "}
+              <Anchor href="https://policies.google.com/privacy" target="_blank" size="xs">
+                política de privacidad
+              </Anchor>{" "}
+              y los{" "}
+              <Anchor href="https://policies.google.com/terms" target="_blank" size="xs">
+                términos
+              </Anchor>{" "}
+              de Google.
+            </Text>
           </Stack>
         </form>
       </Paper>
