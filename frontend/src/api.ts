@@ -15,6 +15,7 @@ export type Permissions = Record<string, string[]>;
 export type LoginResponse = {
   access_token?: string;
   require_code?: boolean;
+  method?: "email" | "totp";
   challenge_id?: string;
   challenge_token?: string;
   email_hint?: string;
@@ -34,9 +35,10 @@ export type StaffUser = {
   role: { id: number; name: string; is_admin: boolean } | null;
   last_login_at: string | null;
   created_at: string | null;
+  totp_enabled?: boolean;
 };
 
-export type Me = StaffUser & { permissions: Permissions; smtp_configured: boolean };
+export type Me = StaffUser & { permissions: Permissions; smtp_configured: boolean; totp_enabled?: boolean };
 
 export type RoleItem = {
   id: number;
@@ -227,7 +229,7 @@ export const api = {
       body: JSON.stringify({ challenge_id, challenge_token, code }),
     });
   },
-  resendLoginCode(challenge_id: string, challenge_token: string): Promise<{ ok: boolean; resend_in: number }> {
+  resendLoginCode(challenge_id: string, challenge_token: string): Promise<{ ok: boolean; resend_in: number; method?: string }> {
     return request("/api/auth/login/resend", {
       method: "POST",
       body: JSON.stringify({ challenge_id, challenge_token }),
@@ -247,6 +249,15 @@ export const api = {
     new_password?: string;
   }): Promise<Me & { access_token?: string }> {
     return request("/api/auth/me", { method: "PUT", body: JSON.stringify(payload) });
+  },
+  startTotp(current_password: string): Promise<{ secret: string; otpauth_url: string; qr_svg: string }> {
+    return request("/api/auth/me/totp/start", { method: "POST", body: JSON.stringify({ current_password }) });
+  },
+  confirmTotp(code: string): Promise<Me> {
+    return request("/api/auth/me/totp/confirm", { method: "POST", body: JSON.stringify({ code }) });
+  },
+  disableTotp(current_password: string): Promise<Me> {
+    return request("/api/auth/me/totp/disable", { method: "POST", body: JSON.stringify({ current_password }) });
   },
 
   // usuarios y roles

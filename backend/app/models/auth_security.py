@@ -17,6 +17,7 @@ class LoginChallenge(db.Model):
     attempts = db.Column(db.Integer, default=0, nullable=False)
     consumed_at = db.Column(db.DateTime, nullable=True)
     ip = db.Column(db.String(64), nullable=True)
+    method = db.Column(db.String(16), default="email", nullable=False)
 
 
 class UserActivity(db.Model):

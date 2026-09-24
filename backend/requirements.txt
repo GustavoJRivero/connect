@@ -12,4 +12,5 @@ routeros-api==0.21.0
 reportlab==4.1.0
 croniter==2.0.5
 python-stdnum==1.20
-mercadopago==2.3.0
+pyotp==2.9.0
+qrcode==8.0

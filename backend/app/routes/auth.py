@@ -28,6 +28,7 @@ from ..models.role import Role
 from ..models.user import User
 from ..recaptcha import recaptcha_public_config, verify_recaptcha
 from ..timezone import iso_utc
+from .. import totp as totp_mod
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
@@ -58,6 +59,7 @@ def user_to_dict(user: User) -> dict:
         "role": {"id": role.id, "name": role.name, "is_admin": bool(role.is_admin)} if role else None,
         "last_login_at": iso_utc(user.last_login_at) if user.last_login_at else None,
         "created_at": iso_utc(user.created_at) if user.created_at else None,
+        "totp_enabled": bool(user.totp_enabled),
     }
 
 
@@ -106,12 +108,13 @@ def _valid_challenge_proof(challenge_id: str, proof: str) -> bool:
     return bool(proof) and hmac.compare_digest(_challenge_proof(challenge_id), proof)
 
 
-def _challenge_response(challenge_id: str):
+def _challenge_response(challenge_id: str, method: str = "email"):
     return jsonify({
         "require_code": True,
+        "method": method,
         "challenge_id": challenge_id,
         "challenge_token": _challenge_proof(challenge_id),
-        "email_hint": "tu email registrado",
+        "email_hint": "tu aplicación autenticadora" if method == "totp" else "tu email registrado",
         "expires_in": int(CODE_TTL.total_seconds()),
         "resend_in": int(RESEND_COOLDOWN.total_seconds()),
     })
@@ -292,6 +295,21 @@ def login():
     if StaffTrustedIp.is_trusted(user.id, _client_ip(), TRUST_WINDOW):
         return _issue_session(user, "remembered_ip")
 
+    if user.totp_enabled:
+        challenge = LoginChallenge(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            code_hash="totp",
+            method="totp",
+            expires_at=datetime.utcnow() + CODE_TTL,
+            last_sent_at=datetime.utcnow(),
+            attempts=0,
+            ip=_client_ip(),
+        )
+        db.session.add(challenge)
+        db.session.commit()
+        return _challenge_response(challenge.id, "totp")
+
     # La contraseña ya está validada, así que acá conviene decir la verdad en vez de
     # mostrar la pantalla del código sin haber mandado nada.
     if not user.email:
@@ -320,6 +338,7 @@ def login():
         last_sent_at=datetime.utcnow(),
         attempts=0,
         ip=_client_ip(),
+        method="email",
     )
     try:
         _send_code(user, challenge)
@@ -374,7 +393,12 @@ def verify_login_code():
     if challenge.attempts >= MAX_CODE_ATTEMPTS:
         return jsonify({"error": "too_many_attempts", "message": "Superaste los intentos. Volvé a iniciar sesión."}), 429
 
-    if len(code) != 6 or not hmac.compare_digest(challenge.code_hash, _hash_code(challenge.id, code)):
+    method = (challenge.method or "email")
+    if method == "totp":
+        ok = totp_mod.verify_code(totp_mod.decrypt_secret(user.totp_secret), code)
+    else:
+        ok = len(code) == 6 and hmac.compare_digest(challenge.code_hash, _hash_code(challenge.id, code))
+    if not ok:
         challenge.attempts += 1
         db.session.commit()
         left = MAX_CODE_ATTEMPTS - challenge.attempts
@@ -384,7 +408,7 @@ def verify_login_code():
             summary="Código de ingreso incorrecto",
             user=user,
             status_code=401,
-            details={"intentos_restantes": left},
+            details={"intentos_restantes": left, "method": method},
         )
         return jsonify({
             "error": "invalid_code",
@@ -392,7 +416,7 @@ def verify_login_code():
         }), 401
 
     challenge.consumed_at = datetime.utcnow()
-    return _issue_session(user)
+    return _issue_session(user, "totp" if method == "totp" else "email_code")
 
 
 @bp.post("/login/resend")
@@ -417,8 +441,14 @@ def resend_login_code():
             "error": "resend_too_soon",
             "message": f"Esperá {int(wait.total_seconds()) + 1} segundos para pedir otro código.",
         }), 429
+    if not user.email:
+        return jsonify({
+            "error": "email_missing",
+            "message": "No hay un email cargado para enviarte el código.",
+        }), 409
     try:
         _send_code(user, challenge)
+        challenge.method = "email"
     except Exception as e:
         current_app.logger.warning("No se pudo reenviar el código de ingreso a %s: %s", user.email, e)
         return jsonify({
@@ -434,7 +464,7 @@ def resend_login_code():
         status_code=200,
         details={"email": _mask_email(user.email)},
     )
-    return jsonify({"ok": True, "resend_in": int(RESEND_COOLDOWN.total_seconds())})
+    return jsonify({"ok": True, "method": "email", "resend_in": int(RESEND_COOLDOWN.total_seconds())})
 
 
 def _require_staff():
@@ -522,4 +552,79 @@ def update_me():
     body["smtp_configured"] = smtp_configured()
     if password_changed:
         body["access_token"] = _create_staff_token(user)
+    return jsonify(body)
+
+
+def _issuer_name() -> str:
+    from ..models.setting import Setting
+    row = Setting.query.get("issuer.name")
+    return (str(row.value).strip() if row and row.value else "") or "Connect"
+
+
+@bp.post("/me/totp/start")
+def totp_start():
+    user, err = _require_staff()
+    if err:
+        return err
+    if user.totp_enabled:
+        return jsonify({"error": "totp_already_enabled", "message": "La app ya está activa. Desactivala si querés configurar otra."}), 409
+    data = request.get_json(force=True) or {}
+    if not user.check_password(data.get("current_password") or ""):
+        return jsonify({"error": "invalid_password", "message": "La contraseña actual no es correcta."}), 400
+    secret = totp_mod.new_secret()
+    user.totp_secret = totp_mod.encrypt_secret(secret)
+    user.totp_enabled = False
+    db.session.commit()
+    uri = totp_mod.otpauth_uri(secret=secret, username=user.username, issuer=_issuer_name())
+    return jsonify({"secret": secret, "otpauth_url": uri, "qr_svg": totp_mod.qr_svg(uri)})
+
+
+@bp.post("/me/totp/confirm")
+def totp_confirm():
+    user, err = _require_staff()
+    if err:
+        return err
+    data = request.get_json(force=True) or {}
+    code = "".join(ch for ch in str(data.get("code") or "") if ch.isdigit())
+    secret = totp_mod.decrypt_secret(user.totp_secret)
+    if not secret or not totp_mod.verify_code(secret, code):
+        return jsonify({"error": "invalid_code", "message": "Ese código no coincide. Escaneá de nuevo o esperá el próximo."}), 400
+    user.totp_enabled = True
+    db.session.commit()
+    log_activity(
+        action="UPDATE",
+        module="auth",
+        summary="Activó la app autenticadora",
+        user=user,
+        status_code=200,
+        ref_id=user.id,
+    )
+    body = user_to_dict(user)
+    body["permissions"] = user_permissions(user)
+    body["smtp_configured"] = smtp_configured()
+    return jsonify(body)
+
+
+@bp.post("/me/totp/disable")
+def totp_disable():
+    user, err = _require_staff()
+    if err:
+        return err
+    data = request.get_json(force=True) or {}
+    if not user.check_password(data.get("current_password") or ""):
+        return jsonify({"error": "invalid_password", "message": "La contraseña actual no es correcta."}), 400
+    user.totp_secret = None
+    user.totp_enabled = False
+    db.session.commit()
+    log_activity(
+        action="UPDATE",
+        module="auth",
+        summary="Desactivó la app autenticadora",
+        user=user,
+        status_code=200,
+        ref_id=user.id,
+    )
+    body = user_to_dict(user)
+    body["permissions"] = user_permissions(user)
+    body["smtp_configured"] = smtp_configured()
     return jsonify(body)

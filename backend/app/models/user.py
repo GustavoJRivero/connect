@@ -22,6 +22,8 @@ class User(db.Model):
     is_active = db.Column(db.Boolean, default=True, nullable=False)
     last_login_at = db.Column(db.DateTime, nullable=True)
     auth_version = db.Column(db.Integer, default=1, nullable=False)
+    totp_secret = db.Column(db.String(255), nullable=True)
+    totp_enabled = db.Column(db.Boolean, default=False, nullable=False)
 
     role_ref = db.relationship("Role", lazy="joined")
 

@@ -27,7 +27,7 @@ export default function Login(props: { onLoggedIn: () => void }) {
   const [email, setEmail] = useState("");
   const [bootstrapToken, setBootstrapToken] = useState("");
   const [step, setStep] = useState<Step>("login");
-  const [challenge, setChallenge] = useState<{ id: string; token: string; hint: string } | null>(null);
+  const [challenge, setChallenge] = useState<{ id: string; token: string; hint: string; method: "email" | "totp" } | null>(null);
   const [code, setCode] = useState("");
   const [resendIn, setResendIn] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -79,7 +79,12 @@ export default function Login(props: { onLoggedIn: () => void }) {
     if (!res.require_code || !res.challenge_id || !res.challenge_token) {
       throw new Error("El servidor no pidió el código de verificación. No se puede ingresar.");
     }
-    setChallenge({ id: res.challenge_id, token: res.challenge_token, hint: res.email_hint || "tu email" });
+    setChallenge({
+      id: res.challenge_id,
+      token: res.challenge_token,
+      hint: res.email_hint || "tu email",
+      method: res.method === "totp" ? "totp" : "email",
+    });
     setCode("");
     setResendIn(res.resend_in ?? 30);
     setStep("code");
@@ -109,7 +114,8 @@ export default function Login(props: { onLoggedIn: () => void }) {
       const res = await api.resendLoginCode(challenge.id, challenge.token);
       setResendIn(res.resend_in ?? 30);
       setCode("");
-      notifySuccess(`Te enviamos un código nuevo a ${challenge.hint}.`, "Código reenviado");
+      setChallenge({ ...challenge, method: "email", hint: challenge.hint || "tu email" });
+      notifySuccess("Te enviamos un código al mail.", "Código reenviado");
     });
   }
 
@@ -122,7 +128,9 @@ export default function Login(props: { onLoggedIn: () => void }) {
 
   const lead =
     step === "code"
-      ? `Te enviamos un código de 6 dígitos a ${challenge?.hint}.`
+      ? challenge?.method === "totp"
+        ? "Abrí Google Authenticator, Authy o similar y escribí el código de 6 dígitos."
+        : `Te enviamos un código de 6 dígitos a ${challenge?.hint}.`
       : step === "login"
         ? "Ingresá con tu email o usuario y tu contraseña."
         : "Creá el primer usuario administrador del sistema.";
@@ -156,17 +164,29 @@ export default function Login(props: { onLoggedIn: () => void }) {
                   onComplete={(v) => void run(() => submitCode(v))}
                   aria-label="Código de verificación"
                 />
-                <Text size="xs" c="dimmed">El código vence en 10 minutos.</Text>
-                <Text size="sm" c="dimmed" ta="center">
-                  ¿No te llegó? Revisá el correo no deseado o pedí uno nuevo.
+                <Text size="xs" c="dimmed">
+                  {challenge?.method === "totp" ? "El código cambia cada 30 segundos." : "El código vence en 10 minutos."}
                 </Text>
+                {challenge?.method === "totp" ? (
+                  <Text size="sm" c="dimmed" ta="center">
+                    Si no tenés el celular, te podemos mandar el código al mail.
+                  </Text>
+                ) : (
+                  <Text size="sm" c="dimmed" ta="center">
+                    ¿No te llegó? Revisá el correo no deseado o pedí uno nuevo.
+                  </Text>
+                )}
                 <UnstyledButton
                   type="button"
                   className="sc-login-alt"
                   disabled={busy || resendIn > 0}
                   onClick={() => void resend()}
                 >
-                  {resendIn > 0 ? `Reenviar código en ${resendIn}s` : "Reenviar código ahora"}
+                  {resendIn > 0
+                    ? `Reenviar código en ${resendIn}s`
+                    : challenge?.method === "totp"
+                      ? "Enviar código al mail"
+                      : "Reenviar código ahora"}
                 </UnstyledButton>
               </Stack>
             ) : (
