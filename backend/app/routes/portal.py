@@ -17,6 +17,7 @@ from ..models.invoice import Invoice
 from ..portal.mp import create_preference, mp_configured, mp_public_key, preference_checkout_url
 from ..portal.mp_credit import credit_mp_payment
 from ..recaptcha import verify_recaptcha
+from ..routes.auth import MIN_PASSWORD_LENGTH
 from ..routes.complaints import _complaint_to_dict
 from ..routes.invoices import _invoice_to_dict, _payment_status
 from ..timezone import iso_utc
@@ -187,8 +188,11 @@ def change_password():
     data = request.get_json(force=True) or {}
     current = data.get("current_password") or ""
     new = data.get("new_password") or ""
-    if len(new) < 12:
-        return jsonify({"error": "weak_password", "message": "La contraseña nueva debe tener al menos 12 caracteres."}), 400
+    if len(new) < MIN_PASSWORD_LENGTH:
+        return jsonify({
+            "error": "weak_password",
+            "message": f"La contraseña nueva debe tener al menos {MIN_PASSWORD_LENGTH} caracteres.",
+        }), 400
     acc = ClientPortalAccount.query.get(client.id)
     if not acc or not acc.check_password(current):
         return jsonify({"error": "invalid_password", "message": "La contraseña actual no es correcta."}), 400

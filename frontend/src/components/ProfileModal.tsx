@@ -1,10 +1,24 @@
 import React, { useEffect, useState } from "react";
-import { Alert, Box, Code, Divider, Group, Modal, PasswordInput, PinInput, Stack, Text } from "@mantine/core";
+import {
+  Alert,
+  Box,
+  Code,
+  Divider,
+  Group,
+  Modal,
+  Paper,
+  PasswordInput,
+  PinInput,
+  Stack,
+  Text,
+  ThemeIcon,
+} from "@mantine/core";
+import { IconDeviceMobile, IconShieldCheck } from "@tabler/icons-react";
 import { api, Me, setToken } from "../api";
 import { useMe } from "../auth";
 import { formatApiError } from "../format";
 import { notifySuccess } from "../notify";
-import { Button, Field } from "../ui";
+import { Button, Field, MutedBadge } from "../ui";
 
 export function ProfileModal(props: { opened: boolean; onClose: () => void; onSaved: (me: Me) => void }) {
   const me = useMe();
@@ -136,7 +150,7 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
         />
         <PasswordInput
           label="Contraseña nueva (opcional)"
-          description="Mínimo 12 caracteres. Dejala vacía para no cambiarla."
+          description="Mínimo 10 caracteres. Dejala vacía para no cambiarla."
           value={newPassword}
           onChange={(e) => setNewPassword(e.currentTarget.value)}
         />
@@ -156,57 +170,113 @@ export function ProfileModal(props: { opened: boolean; onClose: () => void; onSa
         />
         <Divider label="App autenticadora" labelPosition="left" />
         {me?.totp_enabled ? (
-          <Stack gap="xs">
-            <Text size="sm">Ya está activa. En el login te pide el código del celular, no espera el mail.</Text>
-            <Button variant="dangerLight" onClick={() => void disableTotp()} loading={totpBusy} disabled={!currentPassword}>
-              Desactivar app
-            </Button>
-            {!currentPassword ? (
-              <Text size="xs" c="dimmed">Escribí tu contraseña actual acá arriba para poder desactivarla.</Text>
-            ) : null}
-          </Stack>
+          <Paper withBorder radius="md" p="md">
+            <Group gap="sm" wrap="nowrap" align="flex-start">
+              <ThemeIcon size={42} radius="md" variant="light" color="teal">
+                <IconShieldCheck size={24} />
+              </ThemeIcon>
+              <Stack gap={6} style={{ flex: 1 }}>
+                <Group gap={8}>
+                  <Text fw={600} size="sm">App autenticadora activa</Text>
+                  <MutedBadge tone="green" size="sm">Activa</MutedBadge>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  Al ingresar te pedimos el código de 6 dígitos de tu celular, sin esperar el mail.
+                </Text>
+                <Text size="xs" c="dimmed">
+                  Si no tenés el teléfono a mano, desde el login podés pedir que el código llegue a{" "}
+                  <b>{me?.email || "tu email"}</b>.
+                </Text>
+                <Group gap="xs" mt={4}>
+                  <Button
+                    variant="dangerLight"
+                    onClick={() => void disableTotp()}
+                    loading={totpBusy}
+                    disabled={!currentPassword}
+                  >
+                    Desactivar app
+                  </Button>
+                  {!currentPassword ? (
+                    <Text size="xs" c="dimmed">Necesitás tu contraseña actual.</Text>
+                  ) : null}
+                </Group>
+              </Stack>
+            </Group>
+          </Paper>
         ) : totpSetup ? (
-          <Stack gap="sm" align="center">
-            <Text size="sm" ta="center">
-              Escaneá este QR con Google Authenticator, Authy o Microsoft Authenticator.
-            </Text>
-            <Box
-              className="sc-totp-qr"
-              w={180}
-              h={180}
-              bg="white"
-              p={8}
-              style={{ borderRadius: 8, overflow: "hidden" }}
-              dangerouslySetInnerHTML={{ __html: totpSetup.qr_svg }}
-            />
-            <Text size="xs" c="dimmed">Si no podés escanear, cargá esta clave:</Text>
-            <Code>{totpSetup.secret}</Code>
-            <PinInput
-              length={6}
-              type="number"
-              oneTimeCode
-              autoFocus
-              value={totpCode}
-              onChange={setTotpCode}
-              onComplete={(v) => void confirmTotp(v)}
-              aria-label="Código de la app"
-            />
-            <Button variant="primary" onClick={() => void confirmTotp()} loading={totpBusy} disabled={totpCode.length !== 6}>
-              Confirmar código
-            </Button>
-          </Stack>
+          <Paper withBorder radius="md" p="md">
+            <Stack gap="sm" align="center">
+              <Text size="sm" ta="center">
+                <b>1.</b> Escaneá este QR con Google Authenticator, Authy o Microsoft Authenticator.
+              </Text>
+              <Box
+                className="sc-totp-qr"
+                w={180}
+                h={180}
+                bg="white"
+                p={8}
+                style={{ borderRadius: 8, overflow: "hidden" }}
+                dangerouslySetInnerHTML={{ __html: totpSetup.qr_svg }}
+              />
+              <Text size="xs" c="dimmed" ta="center">
+                ¿No podés escanear? Cargá esta clave a mano:
+              </Text>
+              <Code>{totpSetup.secret}</Code>
+              <Divider w="100%" />
+              <Text size="sm" ta="center">
+                <b>2.</b> Escribí el código de 6 dígitos que muestra la app.
+              </Text>
+              <PinInput
+                length={6}
+                type="number"
+                oneTimeCode
+                autoFocus
+                value={totpCode}
+                onChange={setTotpCode}
+                onComplete={(v) => void confirmTotp(v)}
+                aria-label="Código de la app"
+              />
+              <Button
+                variant="primary"
+                onClick={() => void confirmTotp()}
+                loading={totpBusy}
+                disabled={totpCode.length !== 6}
+              >
+                Confirmar y activar
+              </Button>
+            </Stack>
+          </Paper>
         ) : (
-          <Stack gap="xs">
-            <Text size="sm" c="dimmed">
-              En vez de esperar el mail, usá el código que genera el celular. El mail queda como respaldo.
-            </Text>
-            <Button variant="primaryLight" onClick={() => void startTotp()} loading={totpBusy} disabled={!currentPassword}>
-              Activar con QR
-            </Button>
-            {!currentPassword ? (
-              <Text size="xs" c="dimmed">Escribí tu contraseña actual acá arriba para poder activarla.</Text>
-            ) : null}
-          </Stack>
+          <Paper withBorder radius="md" p="md">
+            <Group gap="sm" wrap="nowrap" align="flex-start">
+              <ThemeIcon size={42} radius="md" variant="light" color="violet">
+                <IconDeviceMobile size={24} />
+              </ThemeIcon>
+              <Stack gap={6} style={{ flex: 1 }}>
+                <Group gap={8}>
+                  <Text fw={600} size="sm">Ingresá sin esperar el mail</Text>
+                  <MutedBadge tone="gray" size="sm">Inactiva</MutedBadge>
+                </Group>
+                <Text size="xs" c="dimmed">
+                  Usá el código que genera tu celular con Google Authenticator, Authy o similar.
+                  El mail queda como respaldo.
+                </Text>
+                <Group gap="xs" mt={4}>
+                  <Button
+                    variant="primaryLight"
+                    onClick={() => void startTotp()}
+                    loading={totpBusy}
+                    disabled={!currentPassword}
+                  >
+                    Activar con QR
+                  </Button>
+                  {!currentPassword ? (
+                    <Text size="xs" c="dimmed">Necesitás tu contraseña actual.</Text>
+                  ) : null}
+                </Group>
+              </Stack>
+            </Group>
+          </Paper>
         )}
         {error ? <Alert color="red">{error}</Alert> : null}
         <Group justify="flex-end">

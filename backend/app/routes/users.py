@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ..acl import ACTION_LABELS, MODULES, MODULE_ACTIONS, current_staff_user
 from ..extensions import db
+from ..models.auth_security import LoginChallenge, StaffTrustedIp
 from ..models.role import Role
 from ..models.user import User
 from .auth import MIN_PASSWORD_LENGTH, normalize_email, user_to_dict, valid_email
@@ -150,7 +151,6 @@ def update_user(user_id: int):
             return _error("cannot_disable_self", "No podés desactivar tu propio usuario.")
         losing_admin = losing_admin or (user.is_admin and user.is_active and not active)
         if user.is_active and not active:
-            from ..models.auth_security import StaffTrustedIp
             StaffTrustedIp.forget_user(user.id)
         user.is_active = active
 
@@ -183,6 +183,10 @@ def delete_user(user_id: int):
     if user.is_admin and user.is_active and _active_admins_excluding(user.id) == 0:
         return _error("last_admin", "Tiene que quedar al menos un administrador activo.")
     try:
+        # Son rastros de sesión, no historial: si quedan, la FK impide borrar el usuario
+        # y el error se confunde con "tiene pagos o facturas".
+        LoginChallenge.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+        StaffTrustedIp.forget_user(user.id)
         db.session.delete(user)
         db.session.commit()
     except IntegrityError:

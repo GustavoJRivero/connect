@@ -86,7 +86,9 @@ export default function Login(props: { onLoggedIn: () => void }) {
       method: res.method === "totp" ? "totp" : "email",
     });
     setCode("");
-    setResendIn(res.resend_in ?? 30);
+    // Con la app autenticadora no se mandó ningún mail, así que no hay que esperar
+    // para pedir el de respaldo.
+    setResendIn(res.method === "totp" ? 0 : (res.resend_in ?? 30));
     setStep("code");
   }
 
@@ -310,17 +312,20 @@ export default function Login(props: { onLoggedIn: () => void }) {
               </Anchor>
             </Text>
 
-            <Text className="sc-login-legal" size="xs" c="dimmed" ta="center">
-              Protegido por reCAPTCHA. Aplican la{" "}
-              <Anchor href="https://policies.google.com/privacy" target="_blank" size="xs">
-                política de privacidad
-              </Anchor>{" "}
-              y los{" "}
-              <Anchor href="https://policies.google.com/terms" target="_blank" size="xs">
-                términos
-              </Anchor>{" "}
-              de Google.
-            </Text>
+            <Group className="sc-login-legal" gap={8} wrap="nowrap" justify="center" align="center">
+              <img src="/brands/recaptcha.png" alt="reCAPTCHA" width={24} height={24} />
+              <Text size="xs" c="dimmed">
+                Protegido por reCAPTCHA. Aplican la{" "}
+                <Anchor href="https://policies.google.com/privacy" target="_blank" size="xs">
+                  política de privacidad
+                </Anchor>{" "}
+                y los{" "}
+                <Anchor href="https://policies.google.com/terms" target="_blank" size="xs">
+                  términos
+                </Anchor>{" "}
+                de Google.
+              </Text>
+            </Group>
           </Stack>
         </form>
       </Paper>
