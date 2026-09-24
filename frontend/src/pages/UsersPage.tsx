@@ -410,7 +410,7 @@ export default function UsersPage() {
             />
             <PasswordInput
               label={userForm.id ? "Contraseña nueva (opcional)" : "Contraseña"}
-              description="Mínimo 12 caracteres."
+              description="Mínimo 10 caracteres."
               value={userForm.password}
               onChange={(e) => setUserForm({ ...userForm, password: e.currentTarget.value })}
               withAsterisk={!userForm.id}

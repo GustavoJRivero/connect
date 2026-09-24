@@ -40,7 +40,7 @@ MAX_CODE_SENDS_PER_IP = 20
 FAILED_WINDOW = timedelta(minutes=15)
 MAX_FAILED_PER_IDENTIFIER = 5
 MAX_FAILED_PER_IP = 20
-MIN_PASSWORD_LENGTH = 12
+MIN_PASSWORD_LENGTH = 10
 TRUST_WINDOW = timedelta(days=7)
 DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(32))
 
