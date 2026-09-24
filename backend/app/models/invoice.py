@@ -36,6 +36,13 @@ class Invoice(db.Model):
     total = db.Column(db.Numeric(12, 2), nullable=False, default=0)
     paid_total = db.Column(db.Numeric(12, 2), nullable=False, default=0)
 
+    # Desglose de IVA congelado al emitir (ver `_emit_invoice` / `engine.py`).
+    # Nulo en facturas emitidas antes de este campo: el PDF cae al cálculo en
+    # vivo (plan actual / %IVA por defecto) para esos casos.
+    iva_percent = db.Column(db.Numeric(5, 2), nullable=True)
+    net_amount = db.Column(db.Numeric(12, 2), nullable=True)
+    iva_amount = db.Column(db.Numeric(12, 2), nullable=True)
+
     status = db.Column(db.String(16), nullable=False, default="DRAFT")  # DRAFT / ISSUED / PAID / VOID
 
     # Concepto / descripción libre (para facturas manuales)

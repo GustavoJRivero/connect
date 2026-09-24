@@ -17,6 +17,7 @@ from ..models.payment import PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
 from ..afip.wsfe import AfipWsfeClient, AfipIntegrationError
+from ..afip.util import client_doc_for_afip
 from ..logging_utils import slog
 from ..timezone import iso_utc, today_local
 
@@ -72,27 +73,9 @@ def _afip_config() -> dict:
     }
 
 
-def _client_doc_for_afip(client: Client | None) -> tuple[int, int]:
-    """
-    Devuelve (doc_tipo, doc_nro) para AFIP.
-    - CUIT empresa/persona: tipo 80
-    - DNI persona: tipo 96
-    - sin datos: consumidor final (99, 0)
-    """
-    if not client:
-        return 99, 0
-    try:
-        if client.cuit:
-            raw = "".join(ch for ch in str(client.cuit) if ch.isdigit())
-            if raw:
-                return 80, int(raw)
-        if client.dni:
-            raw = "".join(ch for ch in str(client.dni) if ch.isdigit())
-            if raw:
-                return 96, int(raw)
-    except Exception:
-        pass
-    return 99, 0
+# Alias local: la lógica vive en app.afip.util para poder reutilizarla
+# también desde la generación del PDF (QR AFIP).
+_client_doc_for_afip = client_doc_for_afip
 
 
 def _next_cbte_number(*, point_of_sale: int, invoice_type: str) -> int:
@@ -226,13 +209,24 @@ def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
     afip_cfg = _afip_config()
     should_use_afip = bool(afip_cfg["enabled"]) and x.invoice_type in ("A", "B")
 
+    try:
+        iva_percent_default = Decimal(str(afip_cfg["iva_percent_default"]))
+    except InvalidOperation:
+        iva_percent_default = Decimal("21")
+
+    # Congela neto/IVA sobre el total al momento de emitir, para que el
+    # comprobante no cambie si después se edita el plan/precio.
+    if x.net_amount is None or x.iva_amount is None:
+        total = Decimal(str(x.total or 0))
+        divisor = Decimal("1") + (iva_percent_default / Decimal("100"))
+        net_amount = (total / divisor).quantize(Decimal("0.01"))
+        x.iva_percent = iva_percent_default
+        x.net_amount = net_amount
+        x.iva_amount = total - net_amount
+
     if should_use_afip:
         client = Client.query.get(x.client_id) if x.client_id else None
         doc_type, doc_number = _client_doc_for_afip(client)
-        try:
-            iva_percent_default = Decimal(str(afip_cfg["iva_percent_default"]))
-        except InvalidOperation:
-            iva_percent_default = Decimal("21")
 
         slog(
             module="AFIP",
