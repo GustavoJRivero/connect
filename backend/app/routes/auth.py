@@ -1,12 +1,11 @@
 """Autenticación del panel: email o usuario + contraseña + código por email.
 
 Flujo:
-  1. POST /login con identificador y contraseña. Si las credenciales son
-     válidas se envía un código al email y se devuelve `challenge_id`.
-  2. POST /login/verify con `challenge_id` y el código → token de sesión.
+  1. POST /login con identificador y contraseña.
+  2. Si ya verificó código desde la misma IP en los últimos 7 días, emite sesión.
+  3. Si no, envía un código al email y pide POST /login/verify.
 
-Nunca se emite sesión sin verificar el código. Si el usuario no tiene email
-o el SMTP no está configurado, el ingreso se rechaza.
+La sesión dura 12 horas. Cambio de contraseña invalida tokens y las IPs de confianza.
 """
 
 import hashlib
@@ -24,7 +23,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from ..acl import load_staff_user, log_activity, user_permissions
 from ..extensions import db
 from ..mailer import SmtpNotConfigured, send_mail, smtp_configured
-from ..models.auth_security import LoginChallenge, UserActivity
+from ..models.auth_security import LoginChallenge, StaffTrustedIp, UserActivity
 from ..models.role import Role
 from ..models.user import User
 from ..recaptcha import recaptcha_public_config, verify_recaptcha
@@ -41,6 +40,7 @@ FAILED_WINDOW = timedelta(minutes=15)
 MAX_FAILED_PER_IDENTIFIER = 5
 MAX_FAILED_PER_IP = 20
 MIN_PASSWORD_LENGTH = 12
+TRUST_WINDOW = timedelta(days=7)
 DUMMY_PASSWORD_HASH = generate_password_hash(secrets.token_urlsafe(32))
 
 
@@ -175,17 +175,18 @@ def _create_staff_token(user: User) -> str:
     )
 
 
-def _issue_session(user: User):
+def _issue_session(user: User, verified_by: str = "email_code"):
+    StaffTrustedIp.remember(user.id, _client_ip())
     user.last_login_at = datetime.utcnow()
     db.session.commit()
     token = _create_staff_token(user)
     log_activity(
         action="LOGIN",
         module="auth",
-        summary="Inició sesión con código por email",
+        summary="Inició sesión" + (" con código por email" if verified_by == "email_code" else " desde una IP de confianza"),
         user=user,
         status_code=200,
-        details={"verified_by": "email_code"},
+        details={"verified_by": verified_by},
     )
     return jsonify({"access_token": token})
 
@@ -287,6 +288,9 @@ def login():
         }), 401
 
     _clear_failed_logins(identifier, user)
+
+    if StaffTrustedIp.is_trusted(user.id, _client_ip(), TRUST_WINDOW):
+        return _issue_session(user, "remembered_ip")
 
     # La contraseña ya está validada, así que acá conviene decir la verdad en vez de
     # mostrar la pantalla del código sin haber mandado nada.

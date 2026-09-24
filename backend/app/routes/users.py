@@ -149,6 +149,9 @@ def update_user(user_id: int):
         if not active and me and me.id == user.id:
             return _error("cannot_disable_self", "No podés desactivar tu propio usuario.")
         losing_admin = losing_admin or (user.is_admin and user.is_active and not active)
+        if user.is_active and not active:
+            from ..models.auth_security import StaffTrustedIp
+            StaffTrustedIp.forget_user(user.id)
         user.is_active = active
 
     if losing_admin and _active_admins_excluding(user.id) == 0:

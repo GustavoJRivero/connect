@@ -17,13 +17,13 @@ def get_config() -> dict:
         raise ValueError(
             "Este proyecto usa solo MySQL. Configurá DATABASE_URL con mysql+pymysql://..."
         )
-    # Duración del access token JWT (minutos). Default: 60.
+    # Duración del access token JWT (minutos). Default: 12 horas.
     try:
-        jwt_access_minutes = int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "60"))
+        jwt_access_minutes = int(os.getenv("JWT_ACCESS_TOKEN_MINUTES", "720"))
     except ValueError:
-        jwt_access_minutes = 60
+        jwt_access_minutes = 720
     if jwt_access_minutes <= 0:
-        jwt_access_minutes = 60
+        jwt_access_minutes = 720
 
     environment = os.getenv("FLASK_ENV", "development").strip().lower()
     secret_key = os.getenv("SECRET_KEY", "change-me")

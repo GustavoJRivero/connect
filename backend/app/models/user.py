@@ -26,8 +26,12 @@ class User(db.Model):
     role_ref = db.relationship("Role", lazy="joined")
 
     def set_password(self, password: str) -> None:
+        from .auth_security import StaffTrustedIp
+
         self.password_hash = generate_password_hash(password)
         self.auth_version = int(self.auth_version or 0) + 1
+        if self.id:
+            StaffTrustedIp.forget_user(self.id)
 
     def check_password(self, password: str) -> bool:
         return check_password_hash(self.password_hash, password)

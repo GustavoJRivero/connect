@@ -72,6 +72,10 @@ export default function Login(props: { onLoggedIn: () => void }) {
     }
     const captcha = await getRecaptchaToken("staff_login");
     const res = await api.login(identifier.trim(), password, captcha);
+    if (res.access_token) {
+      finish(res);
+      return;
+    }
     if (!res.require_code || !res.challenge_id || !res.challenge_token) {
       throw new Error("El servidor no pidió el código de verificación. No se puede ingresar.");
     }
