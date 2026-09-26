@@ -15,6 +15,7 @@ from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer,
 
 from ..models.installation_order import InstallationOrder
 from ..models.setting import Setting
+from ..timezone import to_local
 
 
 def _get_setting(key: str, default: str = "") -> str:
@@ -25,7 +26,7 @@ def _get_setting(key: str, default: str = "") -> str:
 def _fmt_dt(dt) -> str:
     if not dt:
         return "-"
-    return dt.strftime("%d/%m/%Y %H:%M")
+    return to_local(dt).strftime("%d/%m/%Y %H:%M")
 
 
 STATUS_LABELS = {
