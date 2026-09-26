@@ -26,6 +26,8 @@ KNOWN_MODULES = [
     {"id": "PAYMENT", "label": "Pagos"},
     {"id": "INVOICE", "label": "Facturas"},
     {"id": "NETWORK", "label": "Red / Mikrotik"},
+    {"id": "AFIP", "label": "ARCA"},
+    {"id": "INSTALL", "label": "Instalaciones"},
     {"id": "AUTH", "label": "Autenticación"},
     {"id": "SYSTEM", "label": "Sistema"},
 ]
@@ -99,8 +101,11 @@ def list_logs():
 @bp.get("/modules")
 @jwt_required(optional=True)
 def list_modules():
-    """Retorna los módulos de logging conocidos."""
-    return jsonify(KNOWN_MODULES)
+    """Módulos conocidos más cualquier otro que ya tenga registros guardados."""
+    known_ids = {m["id"] for m in KNOWN_MODULES}
+    stored = db.session.query(SystemLog.module).distinct().order_by(SystemLog.module).all()
+    extra = [{"id": m, "label": m} for (m,) in stored if m and m not in known_ids]
+    return jsonify(KNOWN_MODULES + extra)
 
 
 @bp.get("/config")
