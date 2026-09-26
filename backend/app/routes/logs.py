@@ -101,11 +101,8 @@ def list_logs():
 @bp.get("/modules")
 @jwt_required(optional=True)
 def list_modules():
-    """Módulos conocidos más cualquier otro que ya tenga registros guardados."""
-    known_ids = {m["id"] for m in KNOWN_MODULES}
-    stored = db.session.query(SystemLog.module).distinct().order_by(SystemLog.module).all()
-    extra = [{"id": m, "label": m} for (m,) in stored if m and m not in known_ids]
-    return jsonify(KNOWN_MODULES + extra)
+    """Retorna los módulos de logging conocidos."""
+    return jsonify(KNOWN_MODULES)
 
 
 @bp.get("/config")
