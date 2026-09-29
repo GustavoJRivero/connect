@@ -28,6 +28,7 @@ from ..models.invoice import Invoice
 from ..models.plan import Plan
 from ..models.setting import Setting
 from ..timezone import today_local
+from ..afip.util import invoice_type_for_iva_condition
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +100,7 @@ def _plan_iva_percent(conn: Connection) -> Decimal:
 
 
 def _default_invoice_type(client: Client) -> str:
-    return "A" if client.kind == "COMPANY" else "B"
+    return invoice_type_for_iva_condition(client.iva_condition) or ("A" if client.kind == "COMPANY" else "B")
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +356,7 @@ def run_billing(
                     iva_percent=iva_pct,
                     net_amount=net_amount,
                     iva_amount=iva_amount,
+                    iva_condition=client.iva_condition,
                     issue_date=billing_date,
                     due_date=billing_date + timedelta(days=due_days) if issue else None,
                     total=total,

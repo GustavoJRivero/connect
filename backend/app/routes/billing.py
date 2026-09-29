@@ -13,6 +13,7 @@ from ..models.plan import Plan
 from ..models.setting import Setting
 from ..models.billing_run import BillingRun
 from ..timezone import iso_utc, today_local
+from ..afip.util import invoice_type_for_iva_condition
 
 bp = Blueprint("billing", __name__, url_prefix="/api/billing")
 
@@ -38,7 +39,7 @@ def _plan_price(profile: str) -> Decimal:
 
 
 def _default_invoice_type(client: Client) -> str:
-    return "A" if client.kind == "COMPANY" else "B"
+    return invoice_type_for_iva_condition(client.iva_condition) or ("A" if client.kind == "COMPANY" else "B")
 
 
 @bp.get("/status")
@@ -153,6 +154,7 @@ def generate_monthly_invoices():
             invoice_type=_default_invoice_type(client),
             issuer_cuit=str(issuer["cuit"]),
             point_of_sale=int(issuer["point_of_sale"]),
+            iva_condition=client.iva_condition,
             issue_date=issue_date,
             due_date=due_date,
             total=total,

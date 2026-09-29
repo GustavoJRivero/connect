@@ -15,6 +15,7 @@ from ..models.client_portal import ClientPortalAccount, ClientNotification, MpCh
 from ..maps.service import parse_latlng_text
 from ..network.ip_pool import PoolError, resolve_ip_for_connection
 from ..timezone import iso_utc
+from ..afip.util import IVA_CONDITION_LABELS, DEFAULT_IVA_CONDITION_COMPANY, DEFAULT_IVA_CONDITION_PERSON
 from ..tasks.queue import (
     JOB_MT_CREATE_PPP_SECRET,
     JOB_MT_DELETE_PPP_SECRET,
@@ -136,6 +137,8 @@ def _client_to_dict(c: Client) -> dict:
     return {
         "id": c.id,
         "kind": c.kind,
+        "iva_condition": c.iva_condition,
+        "iva_condition_label": IVA_CONDITION_LABELS.get(c.iva_condition, "Consumidor Final"),
         "status": getattr(c, "status", "ACTIVE"),
         "services_status": services_status,
         "credit_balance": str(c.credit_balance or 0),
@@ -176,6 +179,8 @@ def _client_to_list_dict(
     return {
         "id": c.id,
         "kind": c.kind,
+        "iva_condition": c.iva_condition,
+        "iva_condition_label": IVA_CONDITION_LABELS.get(c.iva_condition, "Consumidor Final"),
         "status": getattr(c, "status", "ACTIVE"),
         "credit_balance": str(c.credit_balance or 0),
         "full_name": c.full_name,
@@ -417,6 +422,16 @@ def create_client():
     if kind not in ("PERSON", "COMPANY"):
         return jsonify({"error": "invalid_kind"}), 400
 
+    if "iva_condition" in data and data.get("iva_condition") is not None:
+        try:
+            iva_condition = int(data.get("iva_condition"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid_iva_condition"}), 400
+        if iva_condition not in IVA_CONDITION_LABELS:
+            return jsonify({"error": "invalid_iva_condition"}), 400
+    else:
+        iva_condition = DEFAULT_IVA_CONDITION_COMPANY if kind == "COMPANY" else DEFAULT_IVA_CONDITION_PERSON
+
     try:
         full_name = validate_full_name(data.get("full_name"))
         dni = normalize_dni(data.get("dni")) if kind == "PERSON" else None
@@ -438,6 +453,7 @@ def create_client():
 
     c = Client(
         kind=kind,
+        iva_condition=iva_condition,
         status="ACTIVE",
         full_name=full_name,
         dni=dni,
@@ -572,6 +588,15 @@ def update_client(client_id: int):
         if kind not in ("PERSON", "COMPANY"):
             return jsonify({"error": "invalid_kind"}), 400
         c.kind = kind
+
+    if "iva_condition" in data and data.get("iva_condition") is not None:
+        try:
+            new_iva_condition = int(data.get("iva_condition"))
+        except (TypeError, ValueError):
+            return jsonify({"error": "invalid_iva_condition"}), 400
+        if new_iva_condition not in IVA_CONDITION_LABELS:
+            return jsonify({"error": "invalid_iva_condition"}), 400
+        c.iva_condition = new_iva_condition
 
     full_name_changed = False
     if "full_name" in data:

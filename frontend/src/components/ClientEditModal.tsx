@@ -15,6 +15,7 @@ export function ClientEditModal(props: {
   const [error, setError] = useState<string | null>(null);
   const [client, setClient] = useState<unknown>(null);
   const [kind, setKind] = useState<"PERSON" | "COMPANY">("PERSON");
+  const [ivaCondition, setIvaCondition] = useState<string>("5");
   const [fullName, setFullName] = useState("");
   const [dni, setDni] = useState("");
   const [cuit, setCuit] = useState("");
@@ -37,9 +38,10 @@ export function ClientEditModal(props: {
       api.getClientPortal(Number(props.clientId)).catch(() => ({ enabled: false })),
     ])
       .then(([c, portal]: [any, any]) => {
-        const x = c as { kind?: string; full_name?: string; dni?: string; cuit?: string; phone?: string; email?: string; address?: string; is_active?: boolean; portal?: { enabled?: boolean } };
+        const x = c as { kind?: string; iva_condition?: number; full_name?: string; dni?: string; cuit?: string; phone?: string; email?: string; address?: string; is_active?: boolean; portal?: { enabled?: boolean } };
         setClient(c);
         setKind((x?.kind ?? "PERSON").toUpperCase() === "COMPANY" ? "COMPANY" : "PERSON");
+        setIvaCondition(String(x?.iva_condition ?? 5));
         setFullName(String(x?.full_name ?? ""));
         setDni(String(x?.dni ?? ""));
         setCuit(String(x?.cuit ?? ""));
@@ -74,6 +76,7 @@ export function ClientEditModal(props: {
     try {
       await api.updateClient(Number(props.clientId), {
         kind,
+        iva_condition: Number(ivaCondition),
         full_name: fullName.trim(),
         dni: kind === "PERSON" ? (dni.trim() || null) : null,
         cuit: kind === "COMPANY" ? (cuit.trim() || null) : null,
@@ -131,6 +134,18 @@ export function ClientEditModal(props: {
               />
               <Field label="Nombre / Razón social" required value={fullName} onChange={setFullName} maxLength={200} />
               {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} maxLength={32} /> : <Field label="CUIT" value={cuit} onChange={setCuit} maxLength={32} />}
+              <Select
+                label="Condición frente al IVA"
+                description="Determina si corresponde Factura A o B ante ARCA."
+                value={ivaCondition}
+                onChange={(v) => setIvaCondition(v || "5")}
+                data={[
+                  { value: "1", label: "Responsable Inscripto (Factura A)" },
+                  { value: "6", label: "Monotributo (Factura A)" },
+                  { value: "4", label: "Exento (Factura B)" },
+                  { value: "5", label: "Consumidor Final (Factura B)" },
+                ]}
+              />
               <Grid>
                 <Grid.Col span={6}><Field label="Tel/Cel" value={phone} onChange={setPhone} maxLength={50} /></Grid.Col>
                 <Grid.Col span={6}><Field label="Email" value={email} onChange={setEmail} maxLength={200} /></Grid.Col>

@@ -17,7 +17,7 @@ from ..models.payment import PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
 from ..afip.wsfe import AfipWsfeClient, AfipIntegrationError
-from ..afip.util import client_doc_for_afip
+from ..afip.util import client_doc_for_afip, IVA_CONDITION_LABELS, invoice_type_for_iva_condition
 from ..logging_utils import slog
 from ..timezone import iso_utc, today_local
 
@@ -148,7 +148,8 @@ def _invoice_to_dict(x: Invoice) -> dict:
 @jwt_required(optional=True)
 def create_invoice_draft():
     """
-    Crea y emite una factura (ISSUED). Si AFIP falla, queda DRAFT.
+    Crea una factura en borrador (DRAFT). Se emite aparte, con
+    POST /<id>/issue.
 
     Body:
     {
@@ -176,6 +177,10 @@ def create_invoice_draft():
     except Exception:
         return jsonify({"error": "invalid_total"}), 400
 
+    type_error = _invoice_type_error(invoice_type, Client.query.get(int(client_id)))
+    if type_error:
+        return jsonify(type_error[0]), type_error[1]
+
     issuer = _issuer()
 
     x = Invoice(
@@ -191,12 +196,24 @@ def create_invoice_draft():
     )
 
     db.session.add(x)
-    db.session.flush()
-    err, err_status = _emit_invoice(x)
     db.session.commit()
-    if err:
-        return jsonify({**err, "invoice_id": x.id}), err_status
     return jsonify(_invoice_to_dict(x)), 201
+
+
+def _invoice_type_error(invoice_type: str, client: Client | None) -> tuple[dict, int] | None:
+    """Valida el tipo de comprobante contra la Condición frente al IVA del cliente antes de emitir."""
+    if invoice_type not in ("A", "B") or client is None:
+        return None
+    required = invoice_type_for_iva_condition(client.iva_condition)
+    if required and required != invoice_type:
+        label = IVA_CONDITION_LABELS.get(client.iva_condition, "Consumidor Final")
+        return {
+            "error": "invoice_type_not_allowed",
+            "message": (
+                f"{client.full_name} está registrado como {label}: corresponde Factura {required}."
+            ),
+        }, 400
+    return None
 
 
 def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
@@ -208,14 +225,15 @@ def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
 
     afip_cfg = _afip_config()
     should_use_afip = bool(afip_cfg["enabled"]) and x.invoice_type in ("A", "B")
+    client = Client.query.get(x.client_id) if x.client_id else None
 
     try:
         iva_percent_default = Decimal(str(afip_cfg["iva_percent_default"]))
     except InvalidOperation:
         iva_percent_default = Decimal("21")
 
-    # Congela neto/IVA sobre el total al momento de emitir, para que el
-    # comprobante no cambie si después se edita el plan/precio.
+    # Congela neto/IVA y la condición de IVA para que el comprobante ya
+    # emitido no cambie si el plan o el cliente se editan después.
     if x.net_amount is None or x.iva_amount is None:
         total = Decimal(str(x.total or 0))
         divisor = Decimal("1") + (iva_percent_default / Decimal("100"))
@@ -223,9 +241,10 @@ def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
         x.iva_percent = iva_percent_default
         x.net_amount = net_amount
         x.iva_amount = total - net_amount
+    if x.iva_condition is None:
+        x.iva_condition = client.iva_condition if client else 5
 
     if should_use_afip:
-        client = Client.query.get(x.client_id) if x.client_id else None
         doc_type, doc_number = _client_doc_for_afip(client)
 
         slog(
@@ -265,6 +284,7 @@ def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
                 concept=2,
                 doc_type=doc_type,
                 doc_number=doc_number,
+                iva_condition_receptor=int(x.iva_condition),
             )
             x.cbte_number = int(issued.cbte_number)
             x.cae = str(issued.cae)
@@ -333,6 +353,10 @@ def issue_invoice(invoice_id: int):
         return jsonify({"error": "invoice_deleted"}), 409
     if x.status != "DRAFT":
         return jsonify({"error": "invalid_status"}), 409
+
+    type_error = _invoice_type_error(x.invoice_type, Client.query.get(x.client_id))
+    if type_error:
+        return jsonify(type_error[0]), type_error[1]
 
     err, err_status = _emit_invoice(x)
     db.session.commit()

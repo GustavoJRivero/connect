@@ -43,6 +43,9 @@ class Invoice(db.Model):
     net_amount = db.Column(db.Numeric(12, 2), nullable=True)
     iva_amount = db.Column(db.Numeric(12, 2), nullable=True)
 
+    # Condición frente al IVA del cliente al emitir (ver afip.util.IVA_CONDITION_LABELS).
+    iva_condition = db.Column(db.SmallInteger, nullable=True)
+
     status = db.Column(db.String(16), nullable=False, default="DRAFT")  # DRAFT / ISSUED / PAID / VOID
 
     # Concepto / descripción libre (para facturas manuales)

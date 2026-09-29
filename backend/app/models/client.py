@@ -12,6 +12,10 @@ class Client(db.Model):
     # Persona vs Empresa
     kind = db.Column(db.String(16), nullable=False, default="PERSON")  # PERSON / COMPANY
 
+    # Condición frente al IVA (código AFIP/ARCA): determina si corresponde
+    # Factura A o B (ver afip.util.IVA_CONDITION_LABELS).
+    iva_condition = db.Column(db.SmallInteger, nullable=False, default=5)
+
     # Datos básicos (titular)
     full_name = db.Column(db.String(200), nullable=False)  # o razón social
     dni = db.Column(db.String(32), nullable=True, unique=True, index=True)  # persona

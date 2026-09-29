@@ -90,6 +90,7 @@ export default function ClientsPage() {
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [saving, setSaving] = useState(false);
   const [kind, setKind] = useState<"PERSON" | "COMPANY">("PERSON");
+  const [ivaCondition, setIvaCondition] = useState<string>("5");
   const [fullName, setFullName] = useState("");
   const [dni, setDni] = useState("");
   const [cuit, setCuit] = useState("");
@@ -208,6 +209,7 @@ export default function ClientsPage() {
     try {
       const res = await api.createClient({
         kind,
+        iva_condition: Number(ivaCondition),
         full_name: fullName,
         dni: kind === "PERSON" ? dni || null : null,
         cuit: kind === "COMPANY" ? cuit || null : null,
@@ -305,11 +307,23 @@ export default function ClientsPage() {
           <Stepper active={createStep} onStepClick={setCreateStep} size="sm" mb="md">
             <Stepper.Step label="Cliente" description="Datos personales">
               <Group mb="sm" mt="md">
-                <Button variant={kind === "PERSON" ? "primary" : "default"} onClick={() => { setKind("PERSON"); setCuit(""); }}>Persona</Button>
-                <Button variant={kind === "COMPANY" ? "primary" : "default"} onClick={() => { setKind("COMPANY"); setDni(""); }}>Empresa</Button>
+                <Button variant={kind === "PERSON" ? "primary" : "default"} onClick={() => { setKind("PERSON"); setCuit(""); setIvaCondition("5"); }}>Persona</Button>
+                <Button variant={kind === "COMPANY" ? "primary" : "default"} onClick={() => { setKind("COMPANY"); setDni(""); setIvaCondition("1"); }}>Empresa</Button>
               </Group>
               <Field label="Nombre / Razón social" required value={fullName} onChange={setFullName} maxLength={200} />
               {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} maxLength={32} /> : <Field label="CUIT" value={cuit} onChange={setCuit} maxLength={32} />}
+              <Select
+                label="Condición frente al IVA"
+                description="Determina si corresponde Factura A o B ante ARCA."
+                value={ivaCondition}
+                onChange={(v) => setIvaCondition(v || "5")}
+                data={[
+                  { value: "1", label: "Responsable Inscripto (Factura A)" },
+                  { value: "6", label: "Monotributo (Factura A)" },
+                  { value: "4", label: "Exento (Factura B)" },
+                  { value: "5", label: "Consumidor Final (Factura B)" },
+                ]}
+              />
               <Grid><Grid.Col span={{ base: 12, md: 6 }}><Field label="Tel/Cel" value={phone} onChange={setPhone} maxLength={50} /></Grid.Col><Grid.Col span={{ base: 12, md: 6 }}><Field label="Email" value={email} onChange={setEmail} maxLength={200} /></Grid.Col></Grid>
               <Field label="Dirección (facturación / principal)" value={address} onChange={setAddress} maxLength={255} />
             </Stepper.Step>
