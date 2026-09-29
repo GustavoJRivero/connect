@@ -1,39 +1,20 @@
 import logging
 from decimal import Decimal
-from datetime import date, timedelta
+from datetime import date
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
+from ..billing.allocate import allocate_payment, apply_client_credit
 from ..models.invoice import Invoice
 from ..models.payment import Payment, PaymentAllocation
-from ..models.setting import Setting
 from ..models.user import User
 from ..timezone import iso_utc, today_local
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("payments", __name__, url_prefix="/api/payments")
-
-
-def _invoice_balance(x: Invoice) -> Decimal:
-    return Decimal(str(x.total)) - Decimal(str(x.paid_total))
-
-def _get_setting(key: str, default=None):
-    s = Setting.query.get(key)
-    return s.value if s else default
-
-
-def _next_cbte_number(*, point_of_sale: int, invoice_type: str) -> int:
-    """
-    Numeración interna simple por PV + tipo (A/B/X).
-    Mantener consistente con /api/invoices.
-    """
-    key = f"invoice.next.{point_of_sale}.{invoice_type}"
-    current = int(_get_setting(key, "1"))
-    db.session.merge(Setting(key=key, value=str(current + 1)))
-    return current
 
 
 def _payment_to_dict(p: Payment) -> dict:
@@ -62,16 +43,18 @@ def _payment_to_dict(p: Payment) -> dict:
 def create_payment():
     """
     Registra un pago y lo imputa automáticamente a las facturas más viejas en estado ISSUED.
+    Opcionalmente, también aplica el saldo a favor del cliente a esas mismas facturas.
 
     Body:
     {
       "client_id": 1,
-      "amount": "5000",
-      "method": "TRANSFER" | "MERCADOPAGO" | "CASH" | "CARD",
+      "amount": "5000",                // opcional si use_credit=true (default 0)
+      "method": "TRANSFER" | "MERCADOPAGO" | "CASH" | "CARD",  // requerido si amount > 0
       "reference": "op123",
       "note": "...",
       "paid_at": "2026-01-31",        // opcional (por defecto hoy)
-      "invoice_ids": [10, 11]         // opcional (si no viene, imputa FIFO)
+      "invoice_ids": [10, 11],        // opcional (si no viene, imputa FIFO)
+      "use_credit": true              // opcional: aplica el saldo a favor disponible
     }
     """
     data = request.get_json(force=True) or {}
@@ -79,35 +62,44 @@ def create_payment():
     if not client_id:
         return jsonify({"error": "client_id_required"}), 400
 
+    use_credit = bool(data.get("use_credit"))
+
     amount_raw = data.get("amount")
     if amount_raw is None:
-        return jsonify({"error": "amount_required"}), 400
-    try:
-        amount = Decimal(str(amount_raw))
-    except Exception:
+        if not use_credit:
+            return jsonify({"error": "amount_required"}), 400
+        amount = Decimal("0")
+    else:
+        try:
+            amount = Decimal(str(amount_raw))
+        except Exception:
+            return jsonify({"error": "invalid_amount"}), 400
+    if amount < 0:
         return jsonify({"error": "invalid_amount"}), 400
-    if amount <= 0:
+    if amount == 0 and not use_credit:
         return jsonify({"error": "amount_must_be_positive"}), 400
 
-    # Medio de pago (normalizado)
-    method_raw = (data.get("method") or "").strip()
-    if not method_raw:
-        return jsonify({"error": "method_required"}), 400
-    method_upper = method_raw.upper()
-    method_map = {
-        "TRANSFER": {"TRANSFER", "TRANSFERENCIA", "TRANSFERENCIA_BANCARIA", "BANK_TRANSFER", "TRANSFERENCIA BANCARIA"},
-        "MERCADOPAGO": {"MERCADOPAGO", "MP", "MERCADO_PAGO"},
-        "CASH": {"CASH", "EFECTIVO"},
-        "CARD": {"CARD", "TARJETA", "CREDIT_CARD", "DEBIT_CARD", "TARJETA DE CREDITO", "TARJETA DE DEBITO"},
-    }
+    # Medio de pago (normalizado). Sin pago en efectivo/transferencia (solo saldo a favor), no aplica.
     method_norm = None
-    if method_raw:
+    if amount > 0:
+        method_raw = (data.get("method") or "").strip()
+        if not method_raw:
+            return jsonify({"error": "method_required"}), 400
+        method_upper = method_raw.upper()
+        method_map = {
+            "TRANSFER": {"TRANSFER", "TRANSFERENCIA", "TRANSFERENCIA_BANCARIA", "BANK_TRANSFER", "TRANSFERENCIA BANCARIA"},
+            "MERCADOPAGO": {"MERCADOPAGO", "MP", "MERCADO_PAGO"},
+            "CASH": {"CASH", "EFECTIVO"},
+            "CARD": {"CARD", "TARJETA", "CREDIT_CARD", "DEBIT_CARD", "TARJETA DE CREDITO", "TARJETA DE DEBITO"},
+        }
         for k, vals in method_map.items():
             if method_upper in {v.upper() for v in vals}:
                 method_norm = k
                 break
         if not method_norm:
             return jsonify({"error": "invalid_method"}), 400
+    else:
+        method_norm = "CREDIT"
 
     paid_at = today_local()
     if data.get("paid_at"):
@@ -136,9 +128,8 @@ def create_payment():
     db.session.add(p)
     db.session.commit()
 
-    remaining = amount
     invoice_ids = data.get("invoice_ids")
-    invoices = []
+    wanted: list[int] | None = None
     if invoice_ids is not None:
         if not isinstance(invoice_ids, list) or not invoice_ids:
             return jsonify({"error": "invalid_invoice_ids"}), 400
@@ -158,46 +149,19 @@ def create_payment():
         if missing:
             return jsonify({"error": "invoice_not_found", "invoice_ids": missing}), 404
 
-        invoices = [found_map[x] for x in wanted]  # respeta orden pedido
-        invalid = [int(x.id) for x in invoices if x.status in ("VOID", "PAID")]
+        invalid = [int(x.id) for x in found_map.values() if x.status in ("VOID", "PAID")]
         if invalid:
             return jsonify({"error": "invoice_not_payable", "invoice_ids": invalid}), 409
-    else:
-        invoices = (
-            Invoice.query.filter_by(client_id=int(client_id))
-            .filter(Invoice.status.in_(["ISSUED"]))
-            .order_by(Invoice.issue_date.asc(), Invoice.id.asc())
-            .all()
-        )
 
-    for inv in invoices:
-        if remaining <= 0:
-            break
-        # Permitir pagar DRAFT: primero la emitimos internamente.
-        if inv.status == "DRAFT":
-            inv.cbte_number = inv.cbte_number or _next_cbte_number(
-                point_of_sale=int(inv.point_of_sale),
-                invoice_type=str(inv.invoice_type),
-            )
-            inv.status = "ISSUED"
-            if not inv.due_date:
-                due_days = int(_get_setting("billing.due_days", "10"))
-                inv.due_date = today_local() + timedelta(days=due_days)
+    allocate_payment(p, wanted)
 
-        if inv.status != "ISSUED":
-            continue
-        bal = _invoice_balance(inv)
-        if bal <= 0:
-            continue
-        applied = remaining if remaining <= bal else bal
-
-        inv.paid_total = Decimal(str(inv.paid_total)) + applied
-        remaining -= applied
-
-        db.session.add(PaymentAllocation(payment_id=p.id, invoice_id=inv.id, amount=applied))
-
-        if _invoice_balance(inv) <= 0:
-            inv.status = "PAID"
+    credit_applied = Decimal("0")
+    if use_credit:
+        if wanted:
+            for inv_id in wanted:
+                credit_applied += apply_client_credit(int(client_id), invoice=found_map[inv_id])
+        else:
+            credit_applied += apply_client_credit(int(client_id))
 
     db.session.commit()
 
@@ -209,7 +173,7 @@ def create_payment():
     )
     logger.info("Pago #%d registrado, actualización de servicios encolada para cliente #%s", p.id, client_id)
 
-    return jsonify(_payment_to_dict(p)), 201
+    return jsonify({**_payment_to_dict(p), "credit_applied": str(credit_applied)}), 201
 
 
 @bp.get("")

@@ -331,6 +331,7 @@ def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
     else:
         x.cbte_number = _next_cbte_number(point_of_sale=x.point_of_sale, invoice_type=x.invoice_type)
         x.status = "ISSUED"
+
     try:
         from ..portal.notify import notify_invoice_issued
         notify_invoice_issued(x)
