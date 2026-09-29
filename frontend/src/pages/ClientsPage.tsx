@@ -423,7 +423,7 @@ export default function ClientsPage() {
                 <Table.Tr>
                   <SortTh col="full_name">Cliente</SortTh>
                   <Table.Th>Plan</Table.Th>
-                  <SortTh col="debt_total">Saldo</SortTh>
+                  <SortTh col="debt_total">Deuda</SortTh>
                   <SortTh col="services_status">Estado</SortTh>
                   <Table.Th>Acciones</Table.Th>
                 </Table.Tr>
@@ -574,15 +574,17 @@ function displayOrDash(value?: string | null): string {
 }
 
 function DebtAmount(props: { value: unknown; creditValue?: unknown }) {
-  const debt = Number(props.value ?? 0) || 0;
-  const credit = Number(props.creditValue ?? 0) || 0;
-  const balance = credit - debt;
-  if (balance === 0) {
+  const n = Number(props.value ?? 0);
+  const credit = Number(props.creditValue ?? 0);
+  if (!Number.isFinite(n) || n <= 0) {
+    if (Number.isFinite(credit) && credit > 0) {
+      return <Text size="sm" c="teal" fw={600}>Saldo a favor: {fmtMoney(credit)}</Text>;
+    }
     return <Text size="sm" c="dimmed">Al día</Text>;
   }
   return (
-    <Text size="sm" fw={600} c={balance > 0 ? "teal" : "red"}>
-      {fmtMoney(balance)}
+    <Text size="sm" fw={600}>
+      {fmtMoney(n)}
     </Text>
   );
 }
@@ -827,7 +829,6 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
     const rem = Number(x.total ?? 0) - Number(x.paid_total ?? 0);
     return acc + Math.max(0, rem);
   }, 0);
-  const clientBalance = Number(client?.credit_balance ?? 0) - debt;
   const unpaidCount = invoices.filter((x) => {
     const st = String(x.status ?? "").toUpperCase();
     const pay = String(x.payment_status ?? "").toUpperCase();
@@ -1022,11 +1023,16 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
               <Group justify="space-between" align="center" wrap="wrap" gap="sm">
                 <div>
                   <Text size="md" c="dimmed" fw={500}>
-                    {clientBalance > 0 ? "Saldo a favor" : clientBalance < 0 ? "Pendiente de cobro" : "Cuenta al día"}
+                    {debt > 0 ? "Pendiente de cobro" : "Cuenta al día"}
                   </Text>
-                  <Text size="xl" fw={600} lh={1.25} mt={2} c={clientBalance > 0 ? "teal" : clientBalance < 0 ? "red" : undefined}>
-                    {fmtMoney(clientBalance)}
+                  <Text size="xl" fw={600} lh={1.25} mt={2}>
+                    {fmtMoney(debt)}
                   </Text>
+                  {Number(client.credit_balance ?? 0) > 0 ? (
+                    <Text size="sm" c="teal" fw={600} mt={4}>
+                      Saldo a favor: {fmtMoney(Number(client.credit_balance))}
+                    </Text>
+                  ) : null}
                 </div>
                 <Group gap={28} wrap="wrap" justify="center" style={{ flex: 1 }}>
                   {connections.length > 0 ? (
