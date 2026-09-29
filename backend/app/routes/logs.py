@@ -26,6 +26,8 @@ KNOWN_MODULES = [
     {"id": "PAYMENT", "label": "Pagos"},
     {"id": "INVOICE", "label": "Facturas"},
     {"id": "NETWORK", "label": "Red / Mikrotik"},
+    {"id": "AFIP", "label": "ARCA"},
+    {"id": "INSTALL", "label": "Instalaciones"},
     {"id": "AUTH", "label": "Autenticación"},
     {"id": "SYSTEM", "label": "Sistema"},
 ]
