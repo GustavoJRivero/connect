@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
 
 from ..extensions import db
+from ..billing.allocate import apply_client_credit
 from ..logging_utils import slog
 from ..models.client import Client
 from ..models.connection import Connection
@@ -161,6 +162,10 @@ def generate_monthly_invoices():
         )
         db.session.add(inv)
         created += 1
+
+        if issue and Decimal(str(client.credit_balance or 0)) > 0:
+            db.session.flush()
+            apply_client_credit(client.id, invoice=inv)
 
     db.session.commit()
 

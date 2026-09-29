@@ -469,7 +469,7 @@ export default function ClientsPage() {
                       {connCount > 1 ? <Text size="xs" c="dimmed">{connCount} conex.</Text> : null}
                     </Table.Td>
                     <Table.Td>
-                      <DebtAmount value={c.debt_total} />
+                      <DebtAmount value={c.debt_total} creditValue={c.credit_balance} />
                     </Table.Td>
                     <Table.Td>
                       <Group gap={6} wrap="nowrap">
@@ -573,9 +573,13 @@ function displayOrDash(value?: string | null): string {
   return s || "—";
 }
 
-function DebtAmount(props: { value: unknown }) {
+function DebtAmount(props: { value: unknown; creditValue?: unknown }) {
   const n = Number(props.value ?? 0);
+  const credit = Number(props.creditValue ?? 0);
   if (!Number.isFinite(n) || n <= 0) {
+    if (Number.isFinite(credit) && credit > 0) {
+      return <Text size="sm" c="teal" fw={600}>Saldo a favor: {fmtMoney(credit)}</Text>;
+    }
     return <Text size="sm" c="dimmed">Al día</Text>;
   }
   return (
@@ -1024,6 +1028,11 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                   <Text size="xl" fw={600} lh={1.25} mt={2}>
                     {fmtMoney(debt)}
                   </Text>
+                  {Number(client.credit_balance ?? 0) > 0 ? (
+                    <Text size="sm" c="teal" fw={600} mt={4}>
+                      Saldo a favor: {fmtMoney(Number(client.credit_balance))}
+                    </Text>
+                  ) : null}
                 </div>
                 <Group gap={28} wrap="wrap" justify="center" style={{ flex: 1 }}>
                   {connections.length > 0 ? (
