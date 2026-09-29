@@ -45,39 +45,29 @@ def client_doc_for_afip(client: "Client | None") -> tuple[int, int]:
     return 99, 0
 
 
-# Códigos AFIP/ARCA de "Condición IVA Receptor" (RG 5616) y su etiqueta legible
-# para mostrar en el comprobante impreso.
+# Códigos AFIP/ARCA de "Condición IVA Receptor" (RG 5616) que usa el sistema.
 IVA_CONDITION_LABELS = {
-    1: "IVA Responsable Inscripto",
-    4: "IVA Sujeto Exento",
-    5: "Consumidor Final",
+    1: "Responsable Inscripto",
     6: "Monotributo",
-    13: "Monotributista Social",
-    16: "Monotributo Trabajador Independiente Promovido",
+    4: "Exento",
+    5: "Consumidor Final",
+}
+
+DEFAULT_IVA_CONDITION_COMPANY = 1  # Responsable Inscripto
+DEFAULT_IVA_CONDITION_PERSON = 5  # Consumidor Final
+
+# ARCA sólo admite Responsable Inscripto y Monotributo en Factura A, y el
+# resto en Factura B; nunca los dos (FEParamGetCondicionIvaReceptor).
+INVOICE_TYPE_BY_IVA_CONDITION = {
+    1: "A",
+    6: "A",
+    4: "B",
+    5: "B",
 }
 
 
-def iva_condition_receptor_id(invoice_type: str, doc_type: int) -> int:
-    """
-    Código AFIP/ARCA de Condición IVA del receptor (RG 5616).
-    - Factura A → sólo Responsable Inscripto (1).
-    - Factura B/otros: consumidor final o DNI → 5; CUIT → 6 (Monotributo,
-      caso más común entre clientes de un ISP).
-    """
-    if (invoice_type or "").upper() == "A":
-        return 1
-    if doc_type in (99, 96):
-        return 5
-    return 6
+def invoice_type_for_iva_condition(iva_condition: int | None) -> str | None:
+    """Tipo de comprobante (A/B) que corresponde a esa condición de IVA, o None si no se reconoce."""
+    return INVOICE_TYPE_BY_IVA_CONDITION.get(int(iva_condition) if iva_condition is not None else None)
 
 
-def client_iva_condition_label(client: "Client | None", invoice_type: str) -> str:
-    """
-    Etiqueta legible de la Condición frente al IVA del receptor, coherente con
-    lo que se declara ante AFIP/ARCA al pedir el CAE (misma regla que
-    `iva_condition_receptor_id`, para no mostrar en el PDF algo distinto de lo
-    que ya se le informó al fisco para este comprobante).
-    """
-    doc_type, _ = client_doc_for_afip(client)
-    code = iva_condition_receptor_id(invoice_type, doc_type)
-    return IVA_CONDITION_LABELS.get(code, "Consumidor Final")

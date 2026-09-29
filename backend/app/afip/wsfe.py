@@ -24,7 +24,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.serialization import pkcs7
 
-from .util import CBTE_TYPE_MAP, iva_condition_receptor_id
+from .util import CBTE_TYPE_MAP
 
 
 SOAP_ENV_NS = "http://schemas.xmlsoap.org/soap/envelope/"
@@ -311,6 +311,7 @@ class AfipWsfeClient:
         concept: int = 2,
         doc_type: int = 99,
         doc_number: int = 0,
+        iva_condition_receptor: int = 5,
     ) -> AfipIssuedInvoice:
         cbte_type = CBTE_TYPE_MAP.get((invoice_type or "").upper())
         if not cbte_type:
@@ -340,9 +341,6 @@ class AfipWsfeClient:
         divisor = Decimal("1") + (iva_percent / Decimal("100"))
         imp_neto = self._to_2(total / divisor)
         imp_iva = self._to_2(total - imp_neto)
-
-        # RG 5616: CondicionIVAReceptorId obligatorio.
-        iva_condition_receptor = iva_condition_receptor_id(invoice_type, doc_type)
 
         body_issue = f"""
 <ar:FECAESolicitar>

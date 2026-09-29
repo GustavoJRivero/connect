@@ -23,7 +23,7 @@ from reportlab.platypus import (
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
-from ..afip.util import cbte_type_for, client_doc_for_afip, client_iva_condition_label
+from ..afip.util import cbte_type_for, client_doc_for_afip, IVA_CONDITION_LABELS
 from ..models.invoice import Invoice
 from ..models.client import Client
 from ..timezone import today_local
@@ -578,8 +578,11 @@ def generate_invoice_pdf(invoice: Invoice) -> bytes:
         (name_label, client.full_name if client else f"Cliente #{invoice.client_id}"),
         ("Domicilio", (client.address if client and client.address else "-")),
     ]
+    iva_condition_code = invoice.iva_condition
+    if iva_condition_code is None:
+        iva_condition_code = client.iva_condition if client else None
     client_rows_right = [
-        ("Condición frente al IVA", client_iva_condition_label(client, invoice.invoice_type)),
+        ("Condición frente al IVA", IVA_CONDITION_LABELS.get(iva_condition_code, "Consumidor Final")),
     ]
     if plan:
         client_rows_right.append(("Plan", plan.name))
