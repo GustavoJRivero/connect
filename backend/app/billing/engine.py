@@ -20,7 +20,6 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from ..extensions import db
-from .allocate import apply_client_credit
 from ..logging_utils import slog
 from ..models.billing_run import BillingRun
 from ..models.client import Client
@@ -366,10 +365,6 @@ def run_billing(
                 db.session.add(inv)
                 created += 1
                 pending_count += 1
-
-                if issue and Decimal(str(client.credit_balance or 0)) > 0:
-                    db.session.flush()
-                    apply_client_credit(client.id, invoice=inv)
 
                 # ── LOG: Factura creada ──
                 slog(

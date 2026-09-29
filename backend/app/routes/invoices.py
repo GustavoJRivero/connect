@@ -11,7 +11,6 @@ from flask import Blueprint, jsonify, request, make_response
 from flask_jwt_extended import get_jwt_identity, jwt_required
 
 from ..extensions import db
-from ..billing.allocate import apply_client_credit
 from ..models.invoice import Invoice
 from ..models.client import Client
 from ..models.payment import PaymentAllocation
@@ -312,8 +311,6 @@ def _emit_invoice(x: Invoice) -> tuple[dict | None, int]:
     else:
         x.cbte_number = _next_cbte_number(point_of_sale=x.point_of_sale, invoice_type=x.invoice_type)
         x.status = "ISSUED"
-
-    apply_client_credit(x.client_id, invoice=x)
 
     try:
         from ..portal.notify import notify_invoice_issued

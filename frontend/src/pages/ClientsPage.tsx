@@ -423,7 +423,7 @@ export default function ClientsPage() {
                 <Table.Tr>
                   <SortTh col="full_name">Cliente</SortTh>
                   <Table.Th>Plan</Table.Th>
-                  <SortTh col="debt_total">Deuda</SortTh>
+                  <SortTh col="debt_total">Cuenta</SortTh>
                   <SortTh col="services_status">Estado</SortTh>
                   <Table.Th>Acciones</Table.Th>
                 </Table.Tr>
@@ -578,15 +578,11 @@ function DebtAmount(props: { value: unknown; creditValue?: unknown }) {
   const credit = Number(props.creditValue ?? 0);
   if (!Number.isFinite(n) || n <= 0) {
     if (Number.isFinite(credit) && credit > 0) {
-      return <Text size="sm" c="teal" fw={600}>Saldo a favor: {fmtMoney(credit)}</Text>;
+      return <MutedBadge tone="green">+{fmtMoney(credit)}</MutedBadge>;
     }
-    return <Text size="sm" c="dimmed">Al día</Text>;
+    return <MutedBadge tone="gray">Al día</MutedBadge>;
   }
-  return (
-    <Text size="sm" fw={600}>
-      {fmtMoney(n)}
-    </Text>
-  );
+  return <MutedBadge tone="red">{fmtMoney(n)}</MutedBadge>;
 }
 
 function whatsappHref(phone?: string | null): string | null {
