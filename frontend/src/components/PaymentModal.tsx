@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Modal, Select, Grid, Alert, Group, Text, TextInput, Stack, Paper, SimpleGrid, NumberInput, Textarea } from "@mantine/core";
+import { Modal, Select, Grid, Alert, Group, Text, TextInput, Stack, Paper, SimpleGrid, NumberInput, Textarea, Checkbox } from "@mantine/core";
 import { api } from "../api";
 import { Button } from "../ui";
 import { ClientSelect } from "./ClientSelect";
@@ -45,6 +45,8 @@ export function PaymentModal(props: {
   const [note, setNote] = useState("");
   const [paidAt, setPaidAt] = useState(() => todayISO());
   const [pickedClientId, setPickedClientId] = useState("");
+  const [creditBalance, setCreditBalance] = useState(0);
+  const [useCredit, setUseCredit] = useState(false);
 
   const remaining = useMemo(() => {
     const t = Number(inv?.total ?? 0);
@@ -71,6 +73,8 @@ export function PaymentModal(props: {
     setReference("");
     setNote("");
     setPaidAt(todayISO());
+    setUseCredit(false);
+    setCreditBalance(0);
     setPickedClientId(props.client && !inv ? String(props.client.id) : "");
     if (inv) {
       const suggested = remaining > 0 ? remaining : Number(inv.total ?? 0);
@@ -80,6 +84,23 @@ export function PaymentModal(props: {
     }
   }, [props.open, inv?.id, remaining, props.client?.id]);
 
+  useEffect(() => {
+    if (!props.open || !clientId) return;
+    let cancelled = false;
+    api.getClient(clientId)
+      .then((c: unknown) => {
+        if (cancelled) return;
+        const bal = Number((c as { credit_balance?: unknown })?.credit_balance ?? 0);
+        setCreditBalance(Number.isFinite(bal) ? bal : 0);
+      })
+      .catch(() => {
+        if (!cancelled) setCreditBalance(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [props.open, clientId]);
+
   async function save() {
     if (saving) return;
     setError(null);
@@ -87,8 +108,13 @@ export function PaymentModal(props: {
       setError("Seleccioná un cliente.");
       return;
     }
-    const n = typeof amount === "number" ? amount : Number(String(amount).replace(",", "."));
-    if (!Number.isFinite(n) || n <= 0) {
+    const raw = typeof amount === "number" ? amount : Number(String(amount).replace(",", "."));
+    const n = Number.isFinite(raw) ? raw : 0;
+    if (n <= 0 && !useCredit) {
+      setError("Ingresá un monto válido.");
+      return;
+    }
+    if (n < 0) {
       setError("Ingresá un monto válido.");
       return;
     }
@@ -97,10 +123,11 @@ export function PaymentModal(props: {
       const payment = await api.createPayment({
         client_id: clientId,
         amount: n.toFixed(2),
-        method,
+        ...(n > 0 ? { method } : {}),
         reference: reference.trim() || null,
         note: note.trim() || null,
         paid_at: paidAt || null,
+        use_credit: useCredit,
         ...(inv ? { invoice_ids: [Number(inv.id)] } : {}),
       });
       props.onSaved(payment);
@@ -160,6 +187,14 @@ export function PaymentModal(props: {
           />
         )}
 
+        {creditBalance > 0 ? (
+          <Checkbox
+            checked={useCredit}
+            onChange={(e) => setUseCredit(e.currentTarget.checked)}
+            label={`Usar saldo a favor disponible (${fmtMoney(creditBalance)})`}
+          />
+        ) : null}
+
         <Grid>
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <Select
@@ -173,7 +208,7 @@ export function PaymentModal(props: {
           <Grid.Col span={{ base: 12, sm: 6 }}>
             <NumberInput
               label="Monto"
-              withAsterisk
+              withAsterisk={!useCredit}
               placeholder="0,00"
               value={amount}
               onChange={setAmount}

@@ -24,6 +24,9 @@ class Client(db.Model):
     status = db.Column(db.String(32), nullable=False, default="ACTIVE", index=True)  # ACTIVE / RETIRED
     is_active = db.Column(db.Boolean, default=True, nullable=False)
 
+    # Saldo a favor (pagos que superaron la deuda pendiente). Ver ClientCreditMovement.
+    credit_balance = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+
     connections = db.relationship(
         "Connection",
         backref="client",
