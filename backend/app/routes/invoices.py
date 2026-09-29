@@ -148,7 +148,8 @@ def _invoice_to_dict(x: Invoice) -> dict:
 @jwt_required(optional=True)
 def create_invoice_draft():
     """
-    Crea y emite una factura (ISSUED). Si AFIP falla, queda DRAFT.
+    Crea una factura en borrador (DRAFT). Se emite aparte, con
+    POST /<id>/issue.
 
     Body:
     {
@@ -195,11 +196,7 @@ def create_invoice_draft():
     )
 
     db.session.add(x)
-    db.session.flush()
-    err, err_status = _emit_invoice(x)
     db.session.commit()
-    if err:
-        return jsonify({**err, "invoice_id": x.id}), err_status
     return jsonify(_invoice_to_dict(x)), 201
 
 
