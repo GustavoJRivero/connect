@@ -662,6 +662,28 @@ function QuietTh(props: { children: React.ReactNode; align?: "left" | "right" })
 
 type DetailTab = "connections" | "billing" | "complaints";
 
+const DETAIL_PAGE_SIZE = 10;
+
+function pageCount(count: number) {
+  return Math.max(1, Math.ceil(count / DETAIL_PAGE_SIZE));
+}
+
+function pageSlice<T>(items: T[], page: number) {
+  const start = (Math.min(page, pageCount(items.length)) - 1) * DETAIL_PAGE_SIZE;
+  return items.slice(start, start + DETAIL_PAGE_SIZE);
+}
+
+function DetailPagination(props: { count: number; page: number; onChange: (p: number) => void }) {
+  if (props.count <= DETAIL_PAGE_SIZE) return null;
+  const total = pageCount(props.count);
+  return (
+    <Group justify="space-between" mt="md">
+      <Text size="sm" c="dimmed">{props.count} en total</Text>
+      <Pagination total={total} value={Math.min(props.page, total)} onChange={props.onChange} withEdges />
+    </Group>
+  );
+}
+
 function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () => void; servers: { id: number; name: string; host: string; port: number }[]; planOptions: string[] }) {
   const can = useCan();
   const canEdit = can("clients", "edit");
@@ -671,6 +693,8 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
   const [client, setClient] = useState<ClientDetailData | null>(null);
   const [invoices, setInvoices] = useState<Record<string, unknown>[]>([]);
   const [complaints, setComplaints] = useState<Record<string, unknown>[]>([]);
+  const [invoicePage, setInvoicePage] = useState(1);
+  const [complaintPage, setComplaintPage] = useState(1);
   const [detailLoading, setDetailLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
@@ -756,7 +780,12 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
     setDetailLoading(false);
   }
 
-  useEffect(() => { setDetailLoading(true); reloadDetail(); }, [props.clientId]);
+  useEffect(() => {
+    setDetailLoading(true);
+    setInvoicePage(1);
+    setComplaintPage(1);
+    reloadDetail();
+  }, [props.clientId]);
 
   async function doCutRestore(conn: { id: number; status?: string }) {
     setError(null);
@@ -1206,7 +1235,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {invoices.map((x) => (
+                    {pageSlice(invoices, invoicePage).map((x) => (
                       <Table.Tr key={Number(x.id)}>
                         <Table.Td>{String(x.id)}</Table.Td>
                         <Table.Td><MutedBadge tone="gray" size="md">{String(x.invoice_type ?? "-")}</MutedBadge></Table.Td>
@@ -1273,6 +1302,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 </Table>
               </Table.ScrollContainer>
               {!invoices.length ? <Text c="dimmed">Sin facturas.</Text> : null}
+              <DetailPagination count={invoices.length} page={invoicePage} onChange={setInvoicePage} />
             </Tabs.Panel>
             <Tabs.Panel value="complaints" pt="md">
               <Table.ScrollContainer minWidth={700}>
@@ -1291,7 +1321,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {complaints.map((x) => (
+                    {pageSlice(complaints, complaintPage).map((x) => (
                       <Table.Tr key={Number(x.id)}>
                         <Table.Td>{String(x.id)}</Table.Td>
                         <Table.Td>{fmtDate(String(x.created_at ?? "")) || "-"}</Table.Td>
@@ -1331,6 +1361,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 </Table>
               </Table.ScrollContainer>
               {!complaints.length ? <Text c="dimmed">Sin reclamos.</Text> : null}
+              <DetailPagination count={complaints.length} page={complaintPage} onChange={setComplaintPage} />
             </Tabs.Panel>
           </Tabs>
         </Card>
