@@ -727,15 +727,17 @@ export default function SettingsPage() {
       message: summary ? (
         <Stack gap={6}>
           <Text size="sm">
-            Se reemplazarán clientes, conexiones, planes y servidores actuales con los datos del backup analizado.
+            Se reemplazarán clientes, conexiones, planes, servidores, facturas y pagos actuales con los datos del
+            backup analizado.
           </Text>
           <Text size="sm" fw={600}>
             {summary.clients} clientes · {summary.connections} conexiones · {summary.plans} planes · {summary.servers} servidores
+            {summary.invoices != null ? ` · ${summary.invoices} facturas · ${summary.payments ?? 0} pagos` : ""}
           </Text>
           <Text size="xs" c="dimmed">Esta acción no se puede deshacer y puede tardar alrededor de un minuto.</Text>
         </Stack>
       ) : (
-        "Se reemplazarán clientes, conexiones, planes y servidores actuales. Esta acción no se puede deshacer."
+        "Se reemplazarán clientes, conexiones, planes, servidores, facturas y pagos actuales. Esta acción no se puede deshacer."
       ),
       confirmLabel: "Importar",
       danger: true,
