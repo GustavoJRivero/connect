@@ -15,6 +15,7 @@ import {
   NumberInput,
   Switch,
   Checkbox,
+  Radio,
   TextInput,
   LoadingOverlay,
   Box,
@@ -337,6 +338,7 @@ export default function SettingsPage() {
   const [migrationApplying, setMigrationApplying] = useState(false);
   const [migrationEmailsApplying, setMigrationEmailsApplying] = useState(false);
   const [migrationEmailsOverwrite, setMigrationEmailsOverwrite] = useState(false);
+  const [migrationResult, setMigrationResult] = useState<MigrationSummary | null>(null);
   const migrationInputRef = useRef<HTMLInputElement>(null);
 
   async function reload() {
@@ -671,6 +673,7 @@ export default function SettingsPage() {
     setError(null);
     setSuccess(null);
     setMigrationUploading(true);
+    setMigrationResult(null);
     try {
       const res = (await api.previewMigration()) as { summary?: MigrationSummary };
       setMigrationStatus((prev) => ({
@@ -695,6 +698,7 @@ export default function SettingsPage() {
     setError(null);
     setSuccess(null);
     setMigrationUploading(true);
+    setMigrationResult(null);
     try {
       const res = (await api.uploadMigrationBackup(migrationFile)) as {
         filename?: string;
@@ -728,7 +732,7 @@ export default function SettingsPage() {
           <Text size="sm" fw={600}>
             {summary.clients} clientes · {summary.connections} conexiones · {summary.plans} planes · {summary.servers} servidores
           </Text>
-          <Text size="xs" c="dimmed">Esta acción no se puede deshacer.</Text>
+          <Text size="xs" c="dimmed">Esta acción no se puede deshacer y puede tardar alrededor de un minuto.</Text>
         </Stack>
       ) : (
         "Se reemplazarán clientes, conexiones, planes y servidores actuales. Esta acción no se puede deshacer."
@@ -742,8 +746,9 @@ export default function SettingsPage() {
         try {
           const res = (await api.applyMigration()) as { summary?: MigrationSummary };
           setSuccess("Migración aplicada correctamente.");
-          notifySuccess("Clientes y conexiones importados.");
+          notifySuccess("Migración aplicada correctamente.");
           if (res.summary) {
+            setMigrationResult(res.summary);
             setMigrationStatus((prev) => ({
               ...(prev ?? {}),
               target_clients: res.summary?.clients ?? prev?.target_clients,
@@ -751,7 +756,7 @@ export default function SettingsPage() {
               last_summary: res.summary ?? prev?.last_summary ?? null,
             }));
           }
-          await reload();
+          void reload();
         } catch (e: unknown) {
           setError(formatApiError(e));
         } finally {
@@ -1696,6 +1701,19 @@ export default function SettingsPage() {
 
           {section === "migration" ? (
             <Stack gap="lg">
+              {migrationResult ? (
+                <Alert
+                  color="green"
+                  variant="light"
+                  title="Migración aplicada"
+                  withCloseButton
+                  onClose={() => setMigrationResult(null)}
+                >
+                  Se importaron {migrationResult.clients + (migrationResult.deleted_clients_with_history ?? 0)} clientes,{" "}
+                  {migrationResult.connections} conexiones, {migrationResult.invoices ?? 0} facturas y{" "}
+                  {migrationResult.payments ?? 0} pagos.
+                </Alert>
+              ) : null}
               {migrationStatus?.safety?.mikrotik_writes_disabled ? (
                 <Alert color="teal" variant="light" title="Mikrotik protegido en este entorno">
                   Las escrituras al router están bloqueadas (MIKROTIK_WRITES_DISABLED).
@@ -1834,44 +1852,59 @@ export default function SettingsPage() {
                 </Text>
               ) : null}
 
-              <Group justify="space-between" mt="xs">
-                <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
-                <Group gap="xs">
-                  {migrationStatus?.pending_client_emails != null ? (
-                    <>
-                      <Checkbox
-                        size="xs"
-                        label={`Sobrescribir existentes (${migrationStatus.overwritable_client_emails ?? 0})`}
-                        checked={migrationEmailsOverwrite}
-                        onChange={(e) => setMigrationEmailsOverwrite(e.currentTarget.checked)}
-                      />
+              {migrationStatus?.pending_client_emails != null ? (() => {
+                const pendingEmails = migrationStatus.pending_client_emails ?? 0;
+                const differentEmails = migrationStatus.overwritable_client_emails ?? 0;
+                const emailsToLoad = pendingEmails + (migrationEmailsOverwrite ? differentEmails : 0);
+                return (
+                  <Paper withBorder p="md" radius="md">
+                    <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: "0.06em" }}>
+                      Emails de clientes
+                    </Text>
+                    <Text size="sm" mb="sm">
+                      La importación no carga los emails, para no enviarles correos a todos de golpe.
+                      Cargalos desde acá cuando estés listo.
+                    </Text>
+                    <Radio.Group
+                      value={migrationEmailsOverwrite ? "replace" : "missing"}
+                      onChange={(v) => setMigrationEmailsOverwrite(v === "replace")}
+                    >
+                      <Stack gap={6}>
+                        <Radio value="missing" label={`Solo a los clientes que no tienen email (${pendingEmails})`} />
+                        <Radio
+                          value="replace"
+                          disabled={!differentEmails}
+                          label={`Además, reemplazar los emails que no coinciden con el backup (${differentEmails})`}
+                        />
+                      </Stack>
+                    </Radio.Group>
+                    <Group justify="space-between" mt="sm">
+                      <Text size="xs" c="dimmed">
+                        {emailsToLoad ? "" : "Todos los clientes ya tienen el email del backup."}
+                      </Text>
                       <Button
                         variant="secondary"
                         loading={migrationEmailsApplying}
-                        disabled={
-                          migrationApplying ||
-                          migrationUploading ||
-                          (!migrationStatus.pending_client_emails &&
-                            !(migrationEmailsOverwrite && migrationStatus.overwritable_client_emails))
-                        }
+                        disabled={migrationApplying || migrationUploading || !emailsToLoad}
                         onClick={confirmApplyMigrationEmails}
                       >
-                        Cargar emails (
-                        {(migrationStatus.pending_client_emails ?? 0) +
-                          (migrationEmailsOverwrite ? migrationStatus.overwritable_client_emails ?? 0 : 0)}
-                        )
+                        Cargar {emailsToLoad} emails
                       </Button>
-                    </>
-                  ) : null}
-                  <Button
-                    variant="danger"
-                    loading={migrationApplying}
-                    disabled={!migrationStatus?.last_summary || migrationUploading}
-                    onClick={confirmApplyMigration}
-                  >
-                    Importar a Connect
-                  </Button>
-                </Group>
+                    </Group>
+                  </Paper>
+                );
+              })() : null}
+
+              <Group justify="space-between" mt="xs">
+                <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
+                <Button
+                  variant="danger"
+                  loading={migrationApplying}
+                  disabled={!migrationStatus?.last_summary || migrationUploading}
+                  onClick={confirmApplyMigration}
+                >
+                  Importar a Connect
+                </Button>
               </Group>
             </Stack>
           ) : null}
