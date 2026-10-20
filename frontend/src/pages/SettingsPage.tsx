@@ -54,6 +54,10 @@ type MigrationSummary = {
   client_status?: Record<string, number>;
   connection_status?: Record<string, number>;
   connections_with_pon_sn?: number;
+  invoices?: number;
+  invoices_debt_total?: string;
+  payments?: number;
+  deleted_clients_with_history?: number;
 };
 
 type MigrationStatus = {
@@ -62,6 +66,8 @@ type MigrationStatus = {
   legacy_servicios?: number | null;
   target_clients?: number | null;
   target_connections?: number | null;
+  pending_client_emails?: number | null;
+  overwritable_client_emails?: number | null;
   last_filename?: string;
   last_at?: string;
   last_summary?: MigrationSummary | null;
@@ -329,6 +335,8 @@ export default function SettingsPage() {
   const [migrationFile, setMigrationFile] = useState<File | null>(null);
   const [migrationUploading, setMigrationUploading] = useState(false);
   const [migrationApplying, setMigrationApplying] = useState(false);
+  const [migrationEmailsApplying, setMigrationEmailsApplying] = useState(false);
+  const [migrationEmailsOverwrite, setMigrationEmailsOverwrite] = useState(false);
   const migrationInputRef = useRef<HTMLInputElement>(null);
 
   async function reload() {
@@ -748,6 +756,45 @@ export default function SettingsPage() {
           setError(formatApiError(e));
         } finally {
           setMigrationApplying(false);
+        }
+      },
+    });
+  }
+
+  function confirmApplyMigrationEmails() {
+    const pending = migrationStatus?.pending_client_emails ?? 0;
+    const overwritable = migrationStatus?.overwritable_client_emails ?? 0;
+    const overwrite = migrationEmailsOverwrite;
+    setConfirm({
+      title: "¿Cargar los emails de los clientes?",
+      message: (
+        <Stack gap={6}>
+          <Text size="sm">
+            Se cargará el email del backup en {pending} clientes que hoy no tienen uno
+            {overwrite ? ` y se reemplazará en ${overwritable} que tienen otro distinto` : ""}. A partir de
+            ahí el sistema les puede enviar correos.
+          </Text>
+          <Text size="xs" c="dimmed">
+            {overwrite
+              ? "Se pisan los emails cargados a mano que no coincidan con el backup."
+              : "No se pisan los emails cargados a mano."}
+          </Text>
+        </Stack>
+      ),
+      confirmLabel: "Cargar emails",
+      danger: true,
+      onConfirm: async () => {
+        setError(null);
+        setSuccess(null);
+        setMigrationEmailsApplying(true);
+        try {
+          const res = (await api.applyMigrationEmails(overwrite)) as { updated?: number };
+          notifySuccess(`Emails cargados en ${res.updated ?? 0} clientes.`);
+          await reload();
+        } catch (e: unknown) {
+          setError(formatApiError(e));
+        } finally {
+          setMigrationEmailsApplying(false);
         }
       },
     });
@@ -1734,7 +1781,7 @@ export default function SettingsPage() {
                   <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb="sm" style={{ letterSpacing: "0.06em" }}>
                     Resumen del backup
                   </Text>
-                  <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
+                  <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }} spacing="sm">
                     <Box>
                       <Text size="xs" c="dimmed">Clientes</Text>
                       <Text fw={600}>{migrationStatus.last_summary.clients}</Text>
@@ -1751,6 +1798,14 @@ export default function SettingsPage() {
                       <Text size="xs" c="dimmed">Servidores</Text>
                       <Text fw={600}>{migrationStatus.last_summary.servers}</Text>
                     </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed">Facturas</Text>
+                      <Text fw={600}>{migrationStatus.last_summary.invoices ?? "-"}</Text>
+                    </Box>
+                    <Box>
+                      <Text size="xs" c="dimmed">Pagos</Text>
+                      <Text fw={600}>{migrationStatus.last_summary.payments ?? "-"}</Text>
+                    </Box>
                   </SimpleGrid>
                   <Text size="xs" c="dimmed" mt="sm">
                     Usuarios en origen: {migrationStatus.last_summary.usuarios}
@@ -1759,6 +1814,12 @@ export default function SettingsPage() {
                       : ""}
                     {migrationStatus.last_summary.skipped_connections > 0
                       ? ` · conexiones omitidas: ${migrationStatus.last_summary.skipped_connections}`
+                      : ""}
+                    {migrationStatus.last_summary.deleted_clients_with_history
+                      ? ` · clientes eliminados con historial: ${migrationStatus.last_summary.deleted_clients_with_history}`
+                      : ""}
+                    {migrationStatus.last_summary.invoices_debt_total
+                      ? ` · deuda pendiente: $${migrationStatus.last_summary.invoices_debt_total}`
                       : ""}
                   </Text>
                   {migrationStatus.last_at ? (
@@ -1775,14 +1836,42 @@ export default function SettingsPage() {
 
               <Group justify="space-between" mt="xs">
                 <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
-                <Button
-                  variant="danger"
-                  loading={migrationApplying}
-                  disabled={!migrationStatus?.last_summary || migrationUploading}
-                  onClick={confirmApplyMigration}
-                >
-                  Importar a Connect
-                </Button>
+                <Group gap="xs">
+                  {migrationStatus?.pending_client_emails != null ? (
+                    <>
+                      <Checkbox
+                        size="xs"
+                        label={`Sobrescribir existentes (${migrationStatus.overwritable_client_emails ?? 0})`}
+                        checked={migrationEmailsOverwrite}
+                        onChange={(e) => setMigrationEmailsOverwrite(e.currentTarget.checked)}
+                      />
+                      <Button
+                        variant="secondary"
+                        loading={migrationEmailsApplying}
+                        disabled={
+                          migrationApplying ||
+                          migrationUploading ||
+                          (!migrationStatus.pending_client_emails &&
+                            !(migrationEmailsOverwrite && migrationStatus.overwritable_client_emails))
+                        }
+                        onClick={confirmApplyMigrationEmails}
+                      >
+                        Cargar emails (
+                        {(migrationStatus.pending_client_emails ?? 0) +
+                          (migrationEmailsOverwrite ? migrationStatus.overwritable_client_emails ?? 0 : 0)}
+                        )
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button
+                    variant="danger"
+                    loading={migrationApplying}
+                    disabled={!migrationStatus?.last_summary || migrationUploading}
+                    onClick={confirmApplyMigration}
+                  >
+                    Importar a Connect
+                  </Button>
+                </Group>
               </Group>
             </Stack>
           ) : null}

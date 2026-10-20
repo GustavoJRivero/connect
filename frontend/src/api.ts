@@ -457,6 +457,12 @@ export const api = {
   applyMigration() {
     return request("/api/settings/migration/apply", { method: "POST", body: "{}" });
   },
+  applyMigrationEmails(overwrite = false) {
+    return request("/api/settings/migration/apply-emails", {
+      method: "POST",
+      body: JSON.stringify({ overwrite }),
+    });
+  },
 
   // billing
   generateBilling(payload: any) {

@@ -10,6 +10,7 @@ from ..extensions import db
 from ..models.setting import Setting
 from ..migration.legacy import (
     MigrationError,
+    apply_client_emails,
     apply_migration,
     get_migration_status,
     import_legacy_dump,
@@ -460,5 +461,24 @@ def migration_apply():
         return jsonify({"error": e.code, "message": e.message}), 400
     except Exception as e:
         db.session.rollback()
+        return jsonify({"error": "migration_failed", "message": str(e)}), 500
+
+
+@bp.post("/migration/apply-emails")
+@jwt_required()
+def migration_apply_emails():
+    """Carga en los clientes los emails del backup (paso separado de la migración)."""
+    from flask import current_app
+
+    try:
+        data = request.get_json(silent=True) or {}
+        result = apply_client_emails(
+            current_app.config["SQLALCHEMY_DATABASE_URI"],
+            overwrite=bool(data.get("overwrite")),
+        )
+        return jsonify({"status": "ok", **result})
+    except MigrationError as e:
+        return jsonify({"error": e.code, "message": e.message}), 400
+    except Exception as e:
         return jsonify({"error": "migration_failed", "message": str(e)}), 500
 

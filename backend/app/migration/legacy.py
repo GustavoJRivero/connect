@@ -7,10 +7,13 @@ import re
 import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 import pymysql
+
+from ..afip.util import DEFAULT_IVA_CONDITION_COMPANY, DEFAULT_IVA_CONDITION_PERSON
 
 LEGACY_DB = "legacy"
 SERIAL_FIELD_KEY = "1745272069"
@@ -18,6 +21,9 @@ MIGRATION_DIR = os.environ.get("MIGRATION_DIR", "/app/data/migration")
 MAX_DUMP_BYTES = int(os.environ.get("MIGRATION_MAX_BYTES", str(600 * 1024 * 1024)))
 
 WIPE_TABLES = [
+    "client_credit_movements",
+    "client_notifications",
+    "mp_checkouts",
     "payment_allocations",
     "payments",
     "invoices",
@@ -310,6 +316,269 @@ def build_connections(servicios, usuarios_by_id, perfiles, client_map):
     return rows, skipped
 
 
+LEGACY_INVOICE_TYPE = "X"
+
+INVOICE_STATUS_MAP = {"pagado": "PAID", "anulado": "VOID"}
+
+PAYMENT_METHOD_MAP = (
+    ("efectivo", "CASH"),
+    ("transferencia", "TRANSFER"),
+    ("dep", "TRANSFER"),
+    ("mercadopago", "MERCADOPAGO"),
+    ("tarjeta", "CARD"),
+)
+
+
+IVA_CONDITION_BY_LABEL = (
+    ("responsable inscripto", 1),
+    ("monotributo", 6),
+    ("exento", 4),
+    ("consumidor final", 5),
+)
+
+# Clave dentro del PHP serializado de afip.pdf; las comillas pueden venir escapadas.
+_SERIALIZED_FIELD = r'{key}\\?";(?:s:\d+:\\?"([^"\\]*)|i:(-?\d+)|d:(-?[\d.]+))'
+
+
+def _serialized_field(blob, key):
+    m = re.search(_SERIALIZED_FIELD.format(key=re.escape(key)), blob or "")
+    if not m:
+        return None
+    return next(g for g in m.groups() if g is not None)
+
+
+def iva_condition_from_label(label):
+    low = (label or "").strip().lower()
+    for key, code in IVA_CONDITION_BY_LABEL:
+        if key in low:
+            return code
+    return None
+
+
+def _legacy_date(raw, length=10):
+    s = (raw or "").strip()[:length]
+    if not s or s.startswith("0000"):
+        return None
+    return s
+
+
+def _dec(value) -> Decimal:
+    return Decimal(str(value or 0))
+
+
+def payment_method(forma):
+    low = (forma or "").strip().lower()
+    for key, code in PAYMENT_METHOD_MAP:
+        if key in low:
+            return code
+    return (forma or "").strip()[:32] or None
+
+
+def load_legacy_billing(cur):
+    legacy = LEGACY_DB
+    cur.execute(
+        f"SELECT id, legal, idcliente, CAST(emitido AS CHAR) AS emitido, "
+        f"CAST(vencimiento AS CHAR) AS vencimiento, total, cobrado, sub_total, iva_igv, "
+        f"forma, estado FROM `{legacy}`.facturas ORDER BY id"
+    )
+    facturas = cur.fetchall()
+    cur.execute(f"SELECT idfactura, descripcion FROM `{legacy}`.facturaitems ORDER BY id")
+    items = defaultdict(list)
+    for r in cur.fetchall():
+        desc = (r["descripcion"] or "").strip()
+        if desc:
+            items[int(r["idfactura"])].append(desc)
+    cur.execute(
+        f"SELECT id, nfactura, idcliente, CAST(fecha_pago AS CHAR) AS fecha_pago, transaccion, "
+        f"forma_pago, descripcion, descripcion_pago, cobrado, comision "
+        f"FROM `{legacy}`.operaciones ORDER BY fecha_pago, id"
+    )
+    operaciones = cur.fetchall()
+    return facturas, items, operaciones
+
+
+def load_legacy_fiscal(cur):
+    """Comprobantes con CAE (tabla afip) indexados por id de factura."""
+    legacy = LEGACY_DB
+    cur.execute(f"SELECT id, cuit FROM `{legacy}`.afipaccounts")
+    cuit_by_company = {int(r["id"]): re.sub(r"\D", "", str(r["cuit"] or "")) for r in cur.fetchall()}
+    cur.execute(
+        f"SELECT id, idfactura, invoice_num, cae, CAST(vto AS CHAR) AS vto, total, idempresa, pdf "
+        f"FROM `{legacy}`.afip WHERE idcredito = 0 ORDER BY emitido, id"
+    )
+    fiscal = {}
+    for r in cur.fetchall():
+        invoice_type = (_serialized_field(r["pdf"], "tipo_fc") or "").upper()
+        pv, _, number = (r["invoice_num"] or "").partition("-")
+        if invoice_type not in ("A", "B") or not pv.isdigit() or not number.isdigit():
+            continue
+        fiscal[int(r["idfactura"])] = {
+            "invoice_type": invoice_type,
+            "point_of_sale": int(pv),
+            "cbte_number": int(number),
+            "cae": (r["cae"] or "").strip()[:32] or None,
+            "cae_due_date": _legacy_date(r["vto"]),
+            "total": _dec(r["total"]),
+            "issuer_cuit": cuit_by_company.get(int(r["idempresa"] or 1), ""),
+            "iva_condition": iva_condition_from_label(_serialized_field(r["pdf"], "tipoiva")),
+        }
+    return fiscal
+
+
+def apply_client_iva_conditions(clients, invoices):
+    """Condición de IVA del cliente = la de su último comprobante fiscal (define A/B a futuro)."""
+    latest = {}
+    for inv in sorted(invoices, key=lambda x: (x["issue_date"] or "", x["id"])):
+        if inv["iva_condition"] is not None:
+            latest[inv["client_id"]] = inv["iva_condition"]
+    for c in clients:
+        default = DEFAULT_IVA_CONDITION_COMPANY if c["kind"] == "COMPANY" else DEFAULT_IVA_CONDITION_PERSON
+        c["iva_condition"] = latest.get(c["id"], default)
+
+
+def build_deleted_clients(facturas, operaciones, client_map):
+    """Clientes borrados en MikroWisp que tienen historial: se crean RETIRED y se agregan a client_map."""
+    referenced = {int(r["idcliente"]) for r in facturas} | {int(r["idcliente"]) for r in operaciones}
+    rows = []
+    for old_id in sorted(referenced - set(client_map)):
+        rows.append(
+            {
+                "id": old_id,
+                "kind": "PERSON",
+                "full_name": f"Cliente eliminado #{old_id}",
+                "dni": None,
+                "cuit": None,
+                "phone": None,
+                "email": None,
+                "address": None,
+                "is_active": 0,
+                "status": "RETIRED",
+            }
+        )
+        client_map[old_id] = old_id
+    return rows
+
+
+def build_connection_by_owner(servicios, conns):
+    """usuario viejo -> id de conexión, sólo si tenía un único servicio migrado."""
+    migrated = {c["id"] for c in conns}
+    by_owner = defaultdict(list)
+    for s in servicios:
+        if int(s["id"]) in migrated:
+            by_owner[int(s["idcliente"])].append(int(s["id"]))
+    return {owner: ids[0] for owner, ids in by_owner.items() if len(ids) == 1}
+
+
+def build_invoices(facturas, items, client_map, conn_by_owner, issuer, fiscal):
+    rows = []
+    for f in facturas:
+        inv_id = int(f["id"])
+        owner_id = int(f["idcliente"])
+        total = _dec(f["total"])
+        status = INVOICE_STATUS_MAP.get((f["estado"] or "").strip().lower(), "ISSUED")
+        paid_total = min(_dec(f["cobrado"]), total) if status == "PAID" else Decimal("0")
+        net = _dec(f["sub_total"])
+        iva = _dec(f["iva_igv"])
+        iva_percent = (iva / net * 100).quantize(Decimal("1")) if net > 0 and iva > 0 else Decimal("0")
+        legal = int(f["legal"] or 0)
+        description = "; ".join(items.get(inv_id, []))[:500] or None
+        forma = (f["forma"] or "").strip()
+        notes = f"Migrado de MikroWisp: factura #{inv_id}"
+        if legal:
+            notes += f", N° {legal}"
+        if forma:
+            notes += f", forma de pago: {forma}"
+        fc = fiscal.get(inv_id)
+        if fc and abs(fc["total"] - total) > Decimal("0.01"):
+            notes += f", total del comprobante fiscal: {fc['total']}"
+        issue_date = _legacy_date(f["emitido"])
+        rows.append(
+            {
+                "id": inv_id,
+                "created_at": issue_date,
+                "client_id": client_map[owner_id],
+                "connection_id": conn_by_owner.get(owner_id),
+                "invoice_type": fc["invoice_type"] if fc else LEGACY_INVOICE_TYPE,
+                "issuer_cuit": (fc["issuer_cuit"] if fc else "") or issuer["cuit"],
+                "point_of_sale": fc["point_of_sale"] if fc else issuer["point_of_sale"],
+                "cbte_number": fc["cbte_number"] if fc else (legal or None),
+                "cae": fc["cae"] if fc else None,
+                "cae_due_date": fc["cae_due_date"] if fc else None,
+                "iva_condition": fc["iva_condition"] if fc else None,
+                "issue_date": issue_date,
+                "due_date": _legacy_date(f["vencimiento"]),
+                "total": total,
+                "paid_total": paid_total,
+                "iva_percent": iva_percent,
+                "net_amount": net,
+                "iva_amount": iva,
+                "status": status,
+                "description": description,
+                "notes": notes,
+            }
+        )
+    return rows
+
+
+def build_payments(operaciones, invoices, client_map):
+    """Devuelve (payments, allocations). Cada pago se imputa a su factura hasta cubrir el total."""
+    remaining = {inv["id"]: inv["total"] for inv in invoices if inv["status"] != "VOID"}
+    payments = []
+    allocations = []
+    for o in operaciones:
+        pay_id = int(o["id"])
+        amount = _dec(o["cobrado"])
+        paid_at = _legacy_date(o["fecha_pago"], 19)
+        note_parts = [
+            (o.get("descripcion_pago") or "").strip(),
+            (o.get("descripcion") or "").strip(),
+        ]
+        commission = _dec(o.get("comision"))
+        if commission > 0:
+            note_parts.append(f"Comisión: {commission}")
+        reference = (o.get("transaccion") or "").strip()
+        payments.append(
+            {
+                "id": pay_id,
+                "created_at": paid_at,
+                "paid_at": paid_at[:10] if paid_at else None,
+                "client_id": client_map[int(o["idcliente"])],
+                "amount": amount,
+                "method": payment_method(o.get("forma_pago")),
+                "reference": reference[:128] or None,
+                "note": " · ".join(p for p in note_parts if p)[:255] or None,
+            }
+        )
+        inv_id = int(o["nfactura"])
+        open_amount = remaining.get(inv_id, Decimal("0"))
+        applied = min(amount, open_amount)
+        if applied > 0:
+            remaining[inv_id] = open_amount - applied
+            allocations.append(
+                {"created_at": paid_at, "payment_id": pay_id, "invoice_id": inv_id, "amount": applied}
+            )
+    return payments, allocations
+
+
+def summarize_billing(invoices, payments, allocations, deleted_clients):
+    st = defaultdict(int)
+    types = defaultdict(int)
+    for inv in invoices:
+        st[inv["status"]] += 1
+        types[inv["invoice_type"]] += 1
+    debt = sum((inv["total"] - inv["paid_total"] for inv in invoices if inv["status"] == "ISSUED"), Decimal("0"))
+    return {
+        "invoices": len(invoices),
+        "invoice_status": dict(st),
+        "invoice_types": dict(types),
+        "invoices_debt_total": str(debt),
+        "payments": len(payments),
+        "payments_total": str(sum((p["amount"] for p in payments), Decimal("0"))),
+        "payment_allocations": len(allocations),
+        "deleted_clients_with_history": len(deleted_clients),
+    }
+
+
 def summarize_migration(perfiles, servers, usuarios, servicios, plans, server_rows, clients, conns, skipped):
     merged = len(usuarios) - len(clients)
     st = defaultdict(int)
@@ -368,6 +637,8 @@ def get_migration_status(database_url: str) -> dict[str, Any]:
             "legacy_servicios": legacy_servicios,
             "target_clients": target_clients,
             "target_connections": target_connections,
+            "pending_client_emails": _pending_client_emails(cur, target),
+            "overwritable_client_emails": _overwritable_client_emails(cur, target),
         }
     finally:
         conn.close()
@@ -440,17 +711,7 @@ def preview_migration(database_url: str) -> dict[str, Any]:
     try:
         if not _legacy_db_exists(cur):
             raise MigrationError("legacy_missing", "Primero subí e importá un backup del sistema anterior.")
-        perfiles, servers, usuarios, servicios = load_legacy(cur, db_params)
-        if not usuarios:
-            raise MigrationError("legacy_empty", "El backup no tiene clientes (usuarios).")
-        usuarios_by_id = {int(u["id"]): u for u in usuarios}
-        plans = build_plans(perfiles)
-        server_rows = build_servers(servers)
-        clients, client_map = build_clients(usuarios)
-        conns, skipped = build_connections(servicios, usuarios_by_id, perfiles, client_map)
-        return summarize_migration(
-            perfiles, servers, usuarios, servicios, plans, server_rows, clients, conns, skipped
-        )
+        return _build_all(cur, db_params["target_db"])["summary"]
     finally:
         conn.close()
 
@@ -487,8 +748,8 @@ def _insert_servers(cur, target_db, servers):
 def _insert_clients(cur, target_db, clients):
     sql = (
         f"INSERT INTO `{target_db}`.clients "
-        "(id, created_at, kind, full_name, dni, cuit, phone, email, address, is_active, status) "
-        "VALUES (%(id)s, NOW(), %(kind)s, %(full_name)s, %(dni)s, %(cuit)s, %(phone)s, "
+        "(id, created_at, kind, iva_condition, full_name, dni, cuit, phone, email, address, is_active, status) "
+        "VALUES (%(id)s, NOW(), %(kind)s, %(iva_condition)s, %(full_name)s, %(dni)s, %(cuit)s, %(phone)s, "
         "%(email)s, %(address)s, %(is_active)s, %(status)s)"
     )
     if clients:
@@ -525,6 +786,173 @@ def _write_client_map(cur, target_db, client_map):
         )
 
 
+def _write_client_emails(cur, target_db, client_emails):
+    cur.execute(
+        f"CREATE TABLE IF NOT EXISTS `{target_db}`.legacy_client_emails ("
+        "client_id BIGINT NOT NULL PRIMARY KEY, email VARCHAR(200) NOT NULL)"
+    )
+    cur.execute(f"DELETE FROM `{target_db}`.legacy_client_emails")
+    if client_emails:
+        cur.executemany(
+            f"INSERT INTO `{target_db}`.legacy_client_emails (client_id, email) VALUES (%s, %s)",
+            list(client_emails.items()),
+        )
+
+
+_EMAIL_MISSING = "(c.email IS NULL OR c.email = '')"
+_EMAIL_DIFFERENT = "(c.email IS NOT NULL AND c.email <> '' AND c.email <> e.email)"
+
+
+def _count_client_emails(cur, target_db, condition) -> int | None:
+    try:
+        cur.execute(
+            f"SELECT COUNT(*) AS c FROM `{target_db}`.legacy_client_emails e "
+            f"JOIN `{target_db}`.clients c ON c.id = e.client_id WHERE {condition}"
+        )
+        row = cur.fetchone()
+        return int(row["c"]) if row else 0
+    except Exception:
+        return None
+
+
+def _pending_client_emails(cur, target_db) -> int | None:
+    return _count_client_emails(cur, target_db, _EMAIL_MISSING)
+
+
+def _overwritable_client_emails(cur, target_db) -> int | None:
+    return _count_client_emails(cur, target_db, _EMAIL_DIFFERENT)
+
+
+def apply_client_emails(database_url: str, overwrite: bool = False) -> dict[str, Any]:
+    """Copia los emails guardados en la migración a los clientes sin email
+    (o también pisa los distintos, si overwrite)."""
+    db_params = parse_mysql_url(database_url)
+    target_db = db_params["target_db"]
+    conn = connect(db_params)
+    cur = conn.cursor()
+    try:
+        if _pending_client_emails(cur, target_db) is None:
+            raise MigrationError("emails_missing", "Primero importá los clientes desde el backup.")
+        condition = f"({_EMAIL_MISSING} OR {_EMAIL_DIFFERENT})" if overwrite else _EMAIL_MISSING
+        updated = cur.execute(
+            f"UPDATE `{target_db}`.clients c JOIN `{target_db}`.legacy_client_emails e "
+            f"ON e.client_id = c.id SET c.email = e.email WHERE {condition}"
+        )
+        conn.commit()
+        return {"updated": int(updated)}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def _get_target_setting(cur, target_db, key, default=None):
+    cur.execute(f"SELECT value FROM `{target_db}`.settings WHERE `key`=%s", (key,))
+    row = cur.fetchone()
+    return row["value"] if row and row["value"] not in (None, "") else default
+
+
+def _read_issuer(cur, target_db) -> dict[str, Any]:
+    return {
+        "cuit": str(_get_target_setting(cur, target_db, "issuer.cuit", "")),
+        "point_of_sale": int(_get_target_setting(cur, target_db, "issuer.point_of_sale", "2")),
+    }
+
+
+def _insert_invoices(cur, target_db, invoices):
+    sql = (
+        f"INSERT INTO `{target_db}`.invoices "
+        "(id, created_at, client_id, connection_id, invoice_type, issuer_cuit, point_of_sale, "
+        "cbte_number, issue_date, due_date, period_start, period_end, currency, total, paid_total, "
+        "iva_percent, net_amount, iva_amount, iva_condition, status, description, notes, is_deleted, "
+        "cae, cae_due_date) "
+        "VALUES (%(id)s, COALESCE(%(created_at)s, NOW()), %(client_id)s, %(connection_id)s, "
+        "%(invoice_type)s, %(issuer_cuit)s, %(point_of_sale)s, %(cbte_number)s, %(issue_date)s, "
+        "%(due_date)s, NULL, NULL, 'ARS', %(total)s, %(paid_total)s, %(iva_percent)s, "
+        "%(net_amount)s, %(iva_amount)s, %(iva_condition)s, %(status)s, %(description)s, %(notes)s, 0, "
+        "%(cae)s, %(cae_due_date)s)"
+    )
+    if invoices:
+        cur.executemany(sql, invoices)
+
+
+def _insert_payments(cur, target_db, payments, allocations):
+    sql = (
+        f"INSERT INTO `{target_db}`.payments "
+        "(id, created_at, paid_at, client_id, amount, method, reference, note, created_by_user_id) "
+        "VALUES (%(id)s, COALESCE(%(created_at)s, NOW()), %(paid_at)s, %(client_id)s, %(amount)s, "
+        "%(method)s, %(reference)s, %(note)s, NULL)"
+    )
+    if payments:
+        cur.executemany(sql, payments)
+    sql = (
+        f"INSERT INTO `{target_db}`.payment_allocations (created_at, payment_id, invoice_id, amount) "
+        "VALUES (COALESCE(%(created_at)s, NOW()), %(payment_id)s, %(invoice_id)s, %(amount)s)"
+    )
+    if allocations:
+        cur.executemany(sql, allocations)
+
+
+def _bump_invoice_counters(cur, target_db, invoices):
+    """Deja la numeración interna de cada PV + tipo después del último número migrado."""
+    max_by_key = defaultdict(int)
+    for inv in invoices:
+        if inv["cbte_number"]:
+            key = f"invoice.next.{inv['point_of_sale']}.{inv['invoice_type']}"
+            max_by_key[key] = max(max_by_key[key], int(inv["cbte_number"]))
+    for key, max_number in max_by_key.items():
+        current = int(_get_target_setting(cur, target_db, key, "1"))
+        cur.execute(
+            f"INSERT INTO `{target_db}`.settings (`key`, value, updated_at) VALUES (%s, %s, NOW()) "
+            "ON DUPLICATE KEY UPDATE value=VALUES(value), updated_at=NOW()",
+            (key, str(max(current, max_number + 1))),
+        )
+
+
+def _build_all(cur, target_db):
+    perfiles, servers, usuarios, servicios = load_legacy(cur, None)
+    if not usuarios:
+        raise MigrationError("legacy_empty", "El backup no tiene clientes (usuarios).")
+    facturas, items, operaciones = load_legacy_billing(cur)
+    usuarios_by_id = {int(u["id"]): u for u in usuarios}
+    plans = build_plans(perfiles)
+    server_rows = build_servers(servers)
+    clients, client_map = build_clients(usuarios)
+    conns, skipped = build_connections(servicios, usuarios_by_id, perfiles, client_map)
+    deleted_clients = build_deleted_clients(facturas, operaciones, client_map)
+    # Los emails no se cargan en clients para no mandarles correos a todos al migrar:
+    # quedan en legacy_client_emails hasta correr apply_client_emails.
+    client_emails = {c["id"]: c["email"] for c in clients if c["email"]}
+    for c in clients:
+        c["email"] = None
+    issuer = _read_issuer(cur, target_db)
+    invoices = build_invoices(
+        facturas, items, client_map, build_connection_by_owner(servicios, conns), issuer,
+        load_legacy_fiscal(cur),
+    )
+    apply_client_iva_conditions(clients + deleted_clients, invoices)
+    payments, allocations = build_payments(operaciones, invoices, client_map)
+    summary = summarize_migration(
+        perfiles, servers, usuarios, servicios, plans, server_rows, clients, conns, skipped
+    )
+    summary.update(summarize_billing(invoices, payments, allocations, deleted_clients))
+    summary["client_emails_pending"] = len(client_emails)
+    return {
+        "client_emails": client_emails,
+        "plans": plans,
+        "servers": server_rows,
+        "clients": clients + deleted_clients,
+        "client_map": client_map,
+        "connections": conns,
+        "invoices": invoices,
+        "payments": payments,
+        "allocations": allocations,
+        "issuer": issuer,
+        "summary": summary,
+    }
+
+
 def apply_migration(database_url: str) -> dict[str, Any]:
     db_params = parse_mysql_url(database_url)
     conn = connect(db_params)
@@ -533,23 +961,18 @@ def apply_migration(database_url: str) -> dict[str, Any]:
     try:
         if not _legacy_db_exists(cur):
             raise MigrationError("legacy_missing", "Primero subí e importá un backup del sistema anterior.")
-        perfiles, servers, usuarios, servicios = load_legacy(cur, db_params)
-        if not usuarios:
-            raise MigrationError("legacy_empty", "El backup no tiene clientes (usuarios).")
-        usuarios_by_id = {int(u["id"]): u for u in usuarios}
-        plans = build_plans(perfiles)
-        server_rows = build_servers(servers)
-        clients, client_map = build_clients(usuarios)
-        conns, skipped = build_connections(servicios, usuarios_by_id, perfiles, client_map)
-        summary = summarize_migration(
-            perfiles, servers, usuarios, servicios, plans, server_rows, clients, conns, skipped
-        )
+        data = _build_all(cur, target_db)
+        summary = data["summary"]
         _wipe_target(cur, target_db)
-        _insert_plans(cur, target_db, plans)
-        _insert_servers(cur, target_db, server_rows)
-        _insert_clients(cur, target_db, clients)
-        _insert_connections(cur, target_db, conns)
-        _write_client_map(cur, target_db, client_map)
+        _insert_plans(cur, target_db, data["plans"])
+        _insert_servers(cur, target_db, data["servers"])
+        _insert_clients(cur, target_db, data["clients"])
+        _insert_connections(cur, target_db, data["connections"])
+        _write_client_map(cur, target_db, data["client_map"])
+        _write_client_emails(cur, target_db, data["client_emails"])
+        _insert_invoices(cur, target_db, data["invoices"])
+        _insert_payments(cur, target_db, data["payments"], data["allocations"])
+        _bump_invoice_counters(cur, target_db, data["invoices"])
         conn.commit()
         summary["applied"] = True
         summary["applied_at"] = datetime.now(timezone.utc).isoformat()
