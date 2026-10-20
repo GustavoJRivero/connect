@@ -389,6 +389,8 @@ def migration_upload():
     """Sube un dump SQL del sistema anterior, lo importa en legacy y devuelve un preview."""
     from flask import current_app
 
+    # El límite global (MAX_CONTENT_LENGTH) es menor que un backup de MikroWisp.
+    request.max_content_length = MAX_DUMP_BYTES
     dump = request.files.get("file")
     if not dump or not dump.filename:
         return jsonify({"error": "file_required", "message": "Seleccioná el archivo .sql del backup."}), 400
