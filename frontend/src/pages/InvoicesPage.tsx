@@ -22,6 +22,9 @@ import {
   ActionIcon,
   Tooltip,
   Grid,
+  Pagination,
+  Select,
+  Text,
 } from "@mantine/core";
 import { IconCash, IconFileCheck, IconFileTypePdf, IconMail, IconRefresh, IconTrash } from "@tabler/icons-react";
 
@@ -42,6 +45,22 @@ type InvoiceRow = {
   notes?: string;
 };
 
+const PAGE_SIZE = 25;
+
+const TYPE_OPTIONS = [
+  { value: "A", label: "Factura A" },
+  { value: "B", label: "Factura B" },
+  { value: "X", label: "Comprobante X" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "DRAFT", label: "Borrador" },
+  { value: "UNPAID", label: "Pendiente de pago" },
+  { value: "OVERDUE", label: "Vencida" },
+  { value: "PAID", label: "Pagada" },
+  { value: "VOID", label: "Anulada" },
+];
+
 export default function InvoicesPage() {
   const can = useCan();
   const canEdit = can("invoices", "edit");
@@ -55,13 +74,24 @@ export default function InvoicesPage() {
   const [sendingEmail, setSendingEmail] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [filterClientId, setFilterClientId] = useState("");
+  const [filterType, setFilterType] = useState<string | null>(null);
+  const [filterStatus, setFilterStatus] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   async function reload() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.listInvoices(filterClientId ? Number(filterClientId) : undefined);
-      setItems(Array.isArray(res) ? (res as InvoiceRow[]) : []);
+      const res = (await api.listInvoicesPage({
+        client_id: filterClientId ? Number(filterClientId) : undefined,
+        invoice_type: filterType || undefined,
+        status: filterStatus || undefined,
+        limit: PAGE_SIZE,
+        offset: (page - 1) * PAGE_SIZE,
+      })) as { items: InvoiceRow[]; total: number };
+      setItems(Array.isArray(res?.items) ? res.items : []);
+      setTotal(res?.total ?? 0);
     } catch (e: unknown) {
       setError(formatApiError(e));
     } finally {
@@ -72,7 +102,23 @@ export default function InvoicesPage() {
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterClientId]);
+  }, [filterClientId, filterType, filterStatus, page]);
+
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  useEffect(() => {
+    if (!loading && page > totalPages) setPage(totalPages);
+  }, [loading, page, totalPages]);
+
+  function withPageReset<T>(setter: (v: T) => void) {
+    return (v: T) => {
+      setter(v);
+      setPage(1);
+    };
+  }
+  const rangeStart = total ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const rangeEnd = Math.min(total, (page - 1) * PAGE_SIZE + items.length);
+  const hasFilters = !!(filterClientId || filterType || filterStatus);
 
   async function issue(id: number) {
     setError(null);
@@ -187,7 +233,27 @@ export default function InvoicesPage() {
 
         <Grid mt="md">
           <Grid.Col span={{ base: 12, md: 4 }}>
-            <ClientSelect label="Filtrar por cliente" clearable value={filterClientId} onChange={setFilterClientId} />
+            <ClientSelect label="Filtrar por cliente" clearable value={filterClientId} onChange={withPageReset(setFilterClientId)} />
+          </Grid.Col>
+          <Grid.Col span={{ base: 6, md: 3 }}>
+            <Select
+              label="Tipo"
+              placeholder="Todos"
+              data={TYPE_OPTIONS}
+              value={filterType}
+              onChange={withPageReset(setFilterType)}
+              clearable
+            />
+          </Grid.Col>
+          <Grid.Col span={{ base: 6, md: 3 }}>
+            <Select
+              label="Estado"
+              placeholder="Todos"
+              data={STATUS_OPTIONS}
+              value={filterStatus}
+              onChange={withPageReset(setFilterStatus)}
+              clearable
+            />
           </Grid.Col>
         </Grid>
 
@@ -298,13 +364,22 @@ export default function InvoicesPage() {
               ) : (
                 <Table.Tr>
                   <Table.Td colSpan={10} c="dimmed" py="xl" ta="center">
-                    No hay facturas. Creá una con "Nueva factura".
+                    {hasFilters ? "No hay facturas con esos filtros." : 'No hay facturas. Creá una con "Nueva factura".'}
                   </Table.Td>
                 </Table.Tr>
               )}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
+
+        {total > 0 ? (
+          <Group justify="space-between" mt="md">
+            <Text size="sm" c="dimmed">
+              {rangeStart}–{rangeEnd} de {total}
+            </Text>
+            {totalPages > 1 ? <Pagination total={totalPages} value={page} onChange={setPage} withEdges /> : null}
+          </Group>
+        ) : null}
       </Card>
     </Stack>
   );

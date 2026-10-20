@@ -375,8 +375,32 @@ def list_invoices():
         q = q.filter_by(client_id=int(client_id))
     if not include_deleted:
         q = q.filter(Invoice.is_deleted.is_(False))
-    items = q.order_by(Invoice.id.desc()).limit(500).all()
-    return jsonify([_invoice_to_dict(x) for x in items])
+
+    invoice_type = (request.args.get("invoice_type") or "").strip().upper()
+    if invoice_type:
+        q = q.filter(Invoice.invoice_type == invoice_type)
+
+    status = (request.args.get("status") or "").strip().upper()
+    if status == "UNPAID":
+        q = q.filter(
+            Invoice.status == "ISSUED",
+            db.or_(Invoice.due_date.is_(None), Invoice.due_date >= today_local()),
+        )
+    elif status == "OVERDUE":
+        q = q.filter(Invoice.status == "ISSUED", Invoice.due_date < today_local())
+    elif status in ("DRAFT", "PAID", "VOID"):
+        q = q.filter(Invoice.status == status)
+
+    q = q.order_by(Invoice.id.desc())
+    # Sin `limit` se mantiene la respuesta como lista (la usa la ficha del cliente).
+    if "limit" not in request.args:
+        return jsonify([_invoice_to_dict(x) for x in q.limit(500).all()])
+
+    limit = max(1, min(request.args.get("limit", 25, type=int), 200))
+    offset = max(0, request.args.get("offset", 0, type=int))
+    total = q.order_by(None).count()
+    items = q.offset(offset).limit(limit).all()
+    return jsonify({"items": [_invoice_to_dict(x) for x in items], "total": total})
 
 
 @bp.get("/afip/status")
