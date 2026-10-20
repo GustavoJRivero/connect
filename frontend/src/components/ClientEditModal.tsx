@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Select, Grid, Checkbox, Alert, Group, Stack, Text, Skeleton, PasswordInput, Divider } from "@mantine/core";
+import { Modal, Select, Switch, SegmentedControl, SimpleGrid, Alert, Group, Stack, Text, Skeleton, PasswordInput, Divider } from "@mantine/core";
 import { api } from "../api";
 import { Button, Field } from "../ui";
 import { formatApiError } from "../format";
+
+function SectionTitle(props: { children: React.ReactNode }) {
+  return (
+    <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
+      {props.children}
+    </Text>
+  );
+}
 
 export function ClientEditModal(props: {
   open: boolean;
@@ -123,20 +131,20 @@ export function ClientEditModal(props: {
       ) : null}
 
       {!loading && client ? (
-        <>
-          <Grid>
-            <Grid.Col span={{ base: 12, md: 6 }}>
-              <Select
-                label="Tipo"
-                value={kind}
-                onChange={(v) => { const k = (v ?? "PERSON") as "PERSON" | "COMPANY"; setKind(k); if (k === "PERSON") setCuit(""); else setDni(""); }}
-                data={[{ value: "PERSON", label: "Persona" }, { value: "COMPANY", label: "Empresa" }]}
-              />
-              <Field label="Nombre / Razón social" required value={fullName} onChange={setFullName} maxLength={200} />
+        <Stack gap="lg">
+          <Stack gap="sm">
+            <SectionTitle>Titular</SectionTitle>
+            <SegmentedControl
+              fullWidth
+              value={kind}
+              onChange={(v) => { const k = v as "PERSON" | "COMPANY"; setKind(k); if (k === "PERSON") setCuit(""); else setDni(""); }}
+              data={[{ value: "PERSON", label: "Persona" }, { value: "COMPANY", label: "Empresa" }]}
+            />
+            <Field label={kind === "PERSON" ? "Nombre y apellido" : "Razón social"} required value={fullName} onChange={setFullName} maxLength={200} />
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
               {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} maxLength={32} /> : <Field label="CUIT" value={cuit} onChange={setCuit} maxLength={32} />}
               <Select
                 label="Condición frente al IVA"
-                description="Determina si corresponde Factura A o B ante ARCA."
                 value={ivaCondition}
                 onChange={(v) => setIvaCondition(v || "5")}
                 data={[
@@ -146,37 +154,50 @@ export function ClientEditModal(props: {
                   { value: "5", label: "Consumidor Final (Factura B)" },
                 ]}
               />
-              <Grid>
-                <Grid.Col span={6}><Field label="Tel/Cel" value={phone} onChange={setPhone} maxLength={50} /></Grid.Col>
-                <Grid.Col span={6}><Field label="Email" value={email} onChange={setEmail} maxLength={200} /></Grid.Col>
-              </Grid>
-            </Grid.Col>
-            <Grid.Col span={{ base: 12, md: 6 }}>
-              <Field label="Dirección" value={address} onChange={setAddress} maxLength={255} />
-              <Checkbox label="Activo" checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} mt="sm" />
-              <Divider my="md" label="Portal de cliente" />
-              <Checkbox
-                label="Habilitar acceso al portal"
-                checked={portalEnabled}
-                onChange={(e) => setPortalEnabled(e.currentTarget.checked)}
-              />
+            </SimpleGrid>
+          </Stack>
+
+          <Stack gap="sm">
+            <SectionTitle>Contacto</SectionTitle>
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <Field label="Teléfono" value={phone} onChange={setPhone} maxLength={50} />
+              <Field label="Email" type="email" value={email} onChange={setEmail} maxLength={200} />
+            </SimpleGrid>
+            <Field label="Dirección" value={address} onChange={setAddress} maxLength={255} />
+          </Stack>
+
+          <Stack gap="sm">
+            <SectionTitle>Estado y portal</SectionTitle>
+            <Switch
+              label="Cliente activo"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.currentTarget.checked)}
+            />
+            <Switch
+              label="Acceso al portal de clientes"
+              description="Entra con su DNI, CUIT o email."
+              checked={portalEnabled}
+              onChange={(e) => setPortalEnabled(e.currentTarget.checked)}
+            />
+            {portalEnabled ? (
               <PasswordInput
-                mt="sm"
                 label={portalHasAccount ? "Nueva contraseña (opcional)" : "Contraseña del portal"}
-                description="El cliente entra con DNI/CUIT/email. Mínimo 6 caracteres."
+                description="Mínimo 6 caracteres."
                 value={portalPassword}
                 onChange={(e) => setPortalPassword(e.currentTarget.value)}
               />
-              <Text size="sm" c="dimmed" mt="md">
-                Solo se editan datos del titular. Las conexiones se gestionan en la solapa "Conexiones".
-              </Text>
-            </Grid.Col>
-          </Grid>
-          <Group justify="flex-end" mt="md">
-            <Button variant="default" disabled={saving} onClick={props.onClose}>Cancelar</Button>
-            <Button variant="primary" loading={saving} onClick={save}>Guardar</Button>
+            ) : null}
+          </Stack>
+
+          <Divider />
+          <Group justify="space-between">
+            <Text size="xs" c="dimmed">Las conexiones se editan desde la solapa "Conexiones".</Text>
+            <Group gap="sm">
+              <Button variant="default" disabled={saving} onClick={props.onClose}>Cancelar</Button>
+              <Button variant="primary" loading={saving} onClick={save}>Guardar</Button>
+            </Group>
           </Group>
-        </>
+        </Stack>
       ) : null}
     </Modal>
   );
