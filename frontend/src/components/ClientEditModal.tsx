@@ -1,14 +1,66 @@
 import React, { useEffect, useState } from "react";
-import { Modal, Select, Switch, SegmentedControl, SimpleGrid, Alert, Group, Stack, Text, Skeleton, PasswordInput, Divider } from "@mantine/core";
+import {
+  Alert,
+  Avatar,
+  Collapse,
+  Divider,
+  Group,
+  Modal,
+  Paper,
+  PasswordInput,
+  SegmentedControl,
+  Select,
+  SimpleGrid,
+  Skeleton,
+  Stack,
+  Switch,
+  Text,
+  TextInput,
+  ThemeIcon,
+} from "@mantine/core";
+import { IconAddressBook, IconId, IconMail, IconMapPin, IconPhone, IconSettings, IconUser } from "@tabler/icons-react";
 import { api } from "../api";
-import { Button, Field } from "../ui";
+import { Button } from "../ui";
 import { formatApiError } from "../format";
 
-function SectionTitle(props: { children: React.ReactNode }) {
+const IVA_OPTIONS = [
+  { value: "1", label: "Responsable Inscripto", invoice: "A" },
+  { value: "6", label: "Monotributo", invoice: "A" },
+  { value: "4", label: "Exento", invoice: "B" },
+  { value: "5", label: "Consumidor Final", invoice: "B" },
+];
+
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
+}
+
+function Section(props: { icon: React.ReactNode; title: string; description: string; children: React.ReactNode }) {
   return (
-    <Text size="xs" fw={700} c="dimmed" tt="uppercase" style={{ letterSpacing: 0.5 }}>
-      {props.children}
-    </Text>
+    <Paper withBorder radius="md" p="md">
+      <Group gap="sm" wrap="nowrap" mb="md">
+        <ThemeIcon size={36} radius="md" variant="light" color="violet">
+          {props.icon}
+        </ThemeIcon>
+        <div>
+          <Text fw={600} size="sm">{props.title}</Text>
+          <Text size="xs" c="dimmed">{props.description}</Text>
+        </div>
+      </Group>
+      <Stack gap="sm">{props.children}</Stack>
+    </Paper>
+  );
+}
+
+function SettingRow(props: { title: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <Group justify="space-between" wrap="nowrap" gap="md">
+      <div>
+        <Text size="sm" fw={500}>{props.title}</Text>
+        <Text size="xs" c="dimmed">{props.description}</Text>
+      </div>
+      <Switch size="md" checked={props.checked} onChange={(e) => props.onChange(e.currentTarget.checked)} />
+    </Group>
   );
 }
 
@@ -109,13 +161,22 @@ export function ClientEditModal(props: {
     }
   }
 
+  const iva = IVA_OPTIONS.find((o) => o.value === ivaCondition);
+
+  const header = (
+    <Group gap="sm" wrap="nowrap">
+      <Avatar radius="xl" color="violet" variant="light">{initials(fullName)}</Avatar>
+      <div>
+        <Text fw={600}>{fullName || "Editar cliente"}</Text>
+        <Text size="xs" c="dimmed">
+          Cliente #{props.clientId} · {kind === "PERSON" ? "Persona" : "Empresa"}
+        </Text>
+      </div>
+    </Group>
+  );
+
   return (
-    <Modal
-      opened={props.open}
-      onClose={props.onClose}
-      title={`Editar cliente ${props.clientId ? `#${props.clientId}` : ""}`}
-      size="lg"
-    >
+    <Modal opened={props.open} onClose={props.onClose} title={header} size="lg" radius="lg" padding="lg">
       {error ? (
         <Alert color="red" className="sc-error" title="Error" mb="md">
           {error}
@@ -123,79 +184,103 @@ export function ClientEditModal(props: {
       ) : null}
       {loading ? (
         <Stack gap="md">
-          <Skeleton height={36} />
-          <Skeleton height={36} />
-          <Skeleton height={36} />
-          <Skeleton height={60} />
+          <Skeleton height={140} radius="md" />
+          <Skeleton height={120} radius="md" />
+          <Skeleton height={100} radius="md" />
         </Stack>
       ) : null}
 
       {!loading && client ? (
-        <Stack gap="lg">
-          <Stack gap="sm">
-            <SectionTitle>Titular</SectionTitle>
+        <Stack gap="md">
+          <Section icon={<IconUser size={20} />} title="Titular" description="Datos fiscales con los que se factura.">
             <SegmentedControl
               fullWidth
               value={kind}
               onChange={(v) => { const k = v as "PERSON" | "COMPANY"; setKind(k); if (k === "PERSON") setCuit(""); else setDni(""); }}
               data={[{ value: "PERSON", label: "Persona" }, { value: "COMPANY", label: "Empresa" }]}
             />
-            <Field label={kind === "PERSON" ? "Nombre y apellido" : "Razón social"} required value={fullName} onChange={setFullName} maxLength={200} />
+            <TextInput
+              label={kind === "PERSON" ? "Nombre y apellido" : "Razón social"}
+              withAsterisk
+              value={fullName}
+              onChange={(e) => setFullName(e.currentTarget.value)}
+              maxLength={200}
+            />
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} maxLength={32} /> : <Field label="CUIT" value={cuit} onChange={setCuit} maxLength={32} />}
+              <TextInput
+                label={kind === "PERSON" ? "DNI" : "CUIT"}
+                leftSection={<IconId size={16} />}
+                value={kind === "PERSON" ? dni : cuit}
+                onChange={(e) => (kind === "PERSON" ? setDni : setCuit)(e.currentTarget.value)}
+                maxLength={32}
+              />
               <Select
                 label="Condición frente al IVA"
                 value={ivaCondition}
                 onChange={(v) => setIvaCondition(v || "5")}
-                data={[
-                  { value: "1", label: "Responsable Inscripto (Factura A)" },
-                  { value: "6", label: "Monotributo (Factura A)" },
-                  { value: "4", label: "Exento (Factura B)" },
-                  { value: "5", label: "Consumidor Final (Factura B)" },
-                ]}
+                data={IVA_OPTIONS.map((o) => ({ value: o.value, label: o.label }))}
+                allowDeselect={false}
+                description={iva ? `Se le emite Factura ${iva.invoice}.` : undefined}
+                inputWrapperOrder={["label", "input", "description"]}
               />
             </SimpleGrid>
-          </Stack>
+          </Section>
 
-          <Stack gap="sm">
-            <SectionTitle>Contacto</SectionTitle>
+          <Section icon={<IconAddressBook size={20} />} title="Contacto" description="Para avisos, facturas y visitas técnicas.">
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
-              <Field label="Teléfono" value={phone} onChange={setPhone} maxLength={50} />
-              <Field label="Email" type="email" value={email} onChange={setEmail} maxLength={200} />
+              <TextInput
+                label="Teléfono"
+                leftSection={<IconPhone size={16} />}
+                value={phone}
+                onChange={(e) => setPhone(e.currentTarget.value)}
+                maxLength={50}
+              />
+              <TextInput
+                label="Email"
+                type="email"
+                placeholder="nombre@correo.com"
+                leftSection={<IconMail size={16} />}
+                value={email}
+                onChange={(e) => setEmail(e.currentTarget.value)}
+                maxLength={200}
+              />
             </SimpleGrid>
-            <Field label="Dirección" value={address} onChange={setAddress} maxLength={255} />
-          </Stack>
+            <TextInput
+              label="Dirección"
+              leftSection={<IconMapPin size={16} />}
+              value={address}
+              onChange={(e) => setAddress(e.currentTarget.value)}
+              maxLength={255}
+            />
+          </Section>
 
-          <Stack gap="sm">
-            <SectionTitle>Estado y portal</SectionTitle>
-            <Switch
-              label="Cliente activo"
+          <Section icon={<IconSettings size={20} />} title="Estado y portal" description="Las conexiones se editan desde la solapa Conexiones.">
+            <SettingRow
+              title="Cliente activo"
+              description="Se muestra como Activo o Inactivo en la ficha del cliente."
               checked={isActive}
-              onChange={(e) => setIsActive(e.currentTarget.checked)}
+              onChange={setIsActive}
             />
-            <Switch
-              label="Acceso al portal de clientes"
-              description="Entra con su DNI, CUIT o email."
+            <Divider />
+            <SettingRow
+              title="Acceso al portal de clientes"
+              description="Ve sus facturas y paga online. Entra con su DNI, CUIT o email."
               checked={portalEnabled}
-              onChange={(e) => setPortalEnabled(e.currentTarget.checked)}
+              onChange={setPortalEnabled}
             />
-            {portalEnabled ? (
+            <Collapse in={portalEnabled}>
               <PasswordInput
                 label={portalHasAccount ? "Nueva contraseña (opcional)" : "Contraseña del portal"}
-                description="Mínimo 6 caracteres."
+                description={portalHasAccount ? "Dejala vacía para mantener la actual." : "Mínimo 6 caracteres."}
                 value={portalPassword}
                 onChange={(e) => setPortalPassword(e.currentTarget.value)}
               />
-            ) : null}
-          </Stack>
+            </Collapse>
+          </Section>
 
-          <Divider />
-          <Group justify="space-between">
-            <Text size="xs" c="dimmed">Las conexiones se editan desde la solapa "Conexiones".</Text>
-            <Group gap="sm">
-              <Button variant="default" disabled={saving} onClick={props.onClose}>Cancelar</Button>
-              <Button variant="primary" loading={saving} onClick={save}>Guardar</Button>
-            </Group>
+          <Group justify="flex-end" gap="sm" mt="xs">
+            <Button variant="ghost" disabled={saving} onClick={props.onClose}>Cancelar</Button>
+            <Button variant="primary" loading={saving} onClick={save}>Guardar cambios</Button>
           </Group>
         </Stack>
       ) : null}
