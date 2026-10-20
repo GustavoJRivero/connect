@@ -1742,8 +1742,8 @@ export default function SettingsPage() {
               ) : null}
 
               <Alert color="orange" variant="light" title="Operación destructiva">
-                Importar reemplaza clientes, conexiones, planes y servidores Mikrotik actuales.
-                No migra facturas ni pagos (Fase 1). Hacé un respaldo antes de continuar.
+                Importar reemplaza clientes, conexiones, planes, servidores Mikrotik, facturas y pagos actuales.
+                Los emails de los clientes se cargan después, en un paso aparte. Hacé un respaldo antes de continuar.
               </Alert>
 
               <Paper withBorder p="sm" radius="md">
