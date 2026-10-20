@@ -1089,7 +1089,7 @@ export default function SettingsPage() {
                     const n = billingStatus?.active_connections;
                     setConfirm({
                       title: "Generar facturas del período",
-                      message: `Se van a generar facturas para ${n != null ? `${n} conexiones activas` : "todas las conexiones activas"} del período actual (las ya facturadas se omiten). Fecha: ${issueDate || "hoy"}. Estado: ${issue ? "emitida" : "borrador"}.`,
+                      message: `Se van a generar comprobantes X (recibos, sin ARCA) para ${n != null ? `${n} conexiones activas` : "todas las conexiones activas"} del período actual (las ya facturadas se omiten). Fecha: ${issueDate || "hoy"}. Estado: ${issue ? "emitido" : "borrador"}.`,
                       confirmLabel: "Generar facturas",
                       onConfirm: async () => {
                         setError(null);

@@ -28,11 +28,15 @@ from ..models.invoice import Invoice
 from ..models.plan import Plan
 from ..models.setting import Setting
 from ..timezone import today_local
-from ..afip.util import invoice_type_for_iva_condition
+from .allocate import _next_cbte_number
 
 logger = logging.getLogger(__name__)
 
 BATCH_SIZE = 50
+
+# La facturación masiva no pasa por ARCA: genera comprobantes X (recibos).
+# Las facturas A/B se emiten a mano desde Facturas, donde se pide el CAE.
+AUTO_INVOICE_TYPE = "X"
 
 
 # ---------------------------------------------------------------------------
@@ -97,10 +101,6 @@ def _plan_iva_percent(conn: Connection) -> Decimal:
         if plan:
             return Decimal(str(plan.iva_percent))
     return Decimal(str(_get_setting("afip.iva_percent_default", "21") or "21"))
-
-
-def _default_invoice_type(client: Client) -> str:
-    return invoice_type_for_iva_condition(client.iva_condition) or ("A" if client.kind == "COMPANY" else "B")
 
 
 # ---------------------------------------------------------------------------
@@ -350,7 +350,7 @@ def run_billing(
                 inv = Invoice(
                     client_id=client.id,
                     connection_id=x.id,
-                    invoice_type=_default_invoice_type(client),
+                    invoice_type=AUTO_INVOICE_TYPE,
                     issuer_cuit=str(issuer["cuit"]),
                     point_of_sale=int(issuer["point_of_sale"]),
                     iva_percent=iva_pct,
@@ -364,6 +364,10 @@ def run_billing(
                     period_end=period_end,
                     status="ISSUED" if issue else "DRAFT",
                 )
+                if issue:
+                    inv.cbte_number = _next_cbte_number(
+                        point_of_sale=inv.point_of_sale, invoice_type=AUTO_INVOICE_TYPE
+                    )
                 db.session.add(inv)
                 created += 1
                 pending_count += 1
