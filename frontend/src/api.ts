@@ -379,6 +379,15 @@ export const api = {
     const qs = client_id ? `?client_id=${client_id}` : "";
     return request(`/api/invoices${qs}`);
   },
+  listInvoicesPage(params: { client_id?: number; invoice_type?: string; status?: string; limit: number; offset: number }) {
+    const qs = new URLSearchParams();
+    if (params.client_id) qs.set("client_id", String(params.client_id));
+    if (params.invoice_type) qs.set("invoice_type", params.invoice_type);
+    if (params.status) qs.set("status", params.status);
+    qs.set("limit", String(params.limit));
+    qs.set("offset", String(params.offset));
+    return request(`/api/invoices?${qs.toString()}`);
+  },
   createInvoice(payload: any) {
     return request("/api/invoices", { method: "POST", body: JSON.stringify(payload) });
   },
