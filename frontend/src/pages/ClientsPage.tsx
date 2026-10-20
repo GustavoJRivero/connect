@@ -18,7 +18,7 @@ import { formatApiError, fmtMoney, connectionStatusLabel, complaintStatusLabel }
 import { fmtDate } from "../datetime";
 import { notifySuccess, notifyError } from "../notify";
 import { Grid, Table, Alert, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Tabs, ActionIcon, Tooltip, Menu, Skeleton, Box, Divider, Stepper, Avatar, SimpleGrid, Modal, UnstyledButton, Paper } from "@mantine/core";
-import { IconDots, IconFileTypePdf, IconMail, IconArrowLeft, IconCash, IconTrash, IconFileCheck, IconBrandWhatsapp, IconMapPin, IconPencil, IconPlugConnectedX, IconRestore, IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
+import { IconDots, IconFileTypePdf, IconMail, IconArrowLeft, IconCash, IconTrash, IconFileCheck, IconBrandWhatsapp, IconMapPin, IconPencil, IconPlugConnectedX, IconRestore, IconAlertTriangle, IconRefresh, IconArrowsSort, IconSortAscending, IconSortDescending } from "@tabler/icons-react";
 
 type SortCol = "id" | "full_name" | "dni" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count";
 
@@ -268,7 +268,16 @@ export default function ClientsPage() {
         aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : undefined}
         onClick={() => toggleSort(props.col)}
       >
-        {props.children} {active ? (sortDir === "asc" ? "▲" : "▼") : null}
+        <Group gap={4} wrap="nowrap">
+          {props.children}
+          {!active ? (
+            <IconArrowsSort size={14} color="var(--mantine-color-gray-5)" />
+          ) : sortDir === "asc" ? (
+            <IconSortAscending size={14} color="var(--mantine-color-violet-6)" />
+          ) : (
+            <IconSortDescending size={14} color="var(--mantine-color-violet-6)" />
+          )}
+        </Group>
       </Table.Th>
     );
   }
@@ -436,6 +445,7 @@ export default function ClientsPage() {
               <Table.Thead>
                 <Table.Tr>
                   <SortTh col="full_name">Cliente</SortTh>
+                  <SortTh col="dni">DNI / CUIT</SortTh>
                   <Table.Th>Plan</Table.Th>
                   <SortTh col="debt_total">Cuenta</SortTh>
                   <SortTh col="services_status">Estado</SortTh>
@@ -446,14 +456,14 @@ export default function ClientsPage() {
                 {listLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <Table.Tr key={i}>
-                      {Array.from({ length: 5 }).map((_, j) => (
+                      {Array.from({ length: 6 }).map((_, j) => (
                         <Table.Td key={j}><Skeleton height={20} width="75%" /></Table.Td>
                       ))}
                     </Table.Tr>
                   ))
                 ) : items.length === 0 ? (
                   <Table.Tr>
-                    <Table.Td colSpan={5}>
+                    <Table.Td colSpan={6}>
                       <Text c="dimmed" ta="center" py="lg">
                         {q ? `No se encontraron clientes para "${q}".` : "No hay clientes cargados. Creá el primero con \"Crear nuevo cliente\"."}
                       </Text>
@@ -468,7 +478,6 @@ export default function ClientsPage() {
                   const meta = [
                     `#${c.id}`,
                     c.kind === "COMPANY" ? "Empresa" : "Persona",
-                    doc.value !== "—" ? `${doc.label} ${doc.value}` : null,
                     phone || null,
                     address || null,
                   ].filter(Boolean).join(" · ");
@@ -476,7 +485,17 @@ export default function ClientsPage() {
                   <Table.Tr key={Number(c.id)} style={{ cursor: "pointer" }} onClick={() => navigate(`/clients/${c.id}`)}>
                     <Table.Td>
                       <Text fw={600} size="sm" truncate>{String(c.full_name ?? "")}</Text>
-                      <Text size="xs" c="dimmed" truncate>{meta}</Text>
+                      <Text size="xs" c="dimmed" truncate mt={4}>{meta}</Text>
+                    </Table.Td>
+                    <Table.Td style={{ whiteSpace: "nowrap" }}>
+                      {doc.value !== "—" ? (
+                        <>
+                          <Text fw={700} size="sm">{doc.value}</Text>
+                          <Text size="xs" c="dimmed" mt={4}>{doc.label}</Text>
+                        </>
+                      ) : (
+                        <Text size="sm" c="dimmed">—</Text>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       {plan ? <MutedBadge tone="lilac" size="sm">{plan}</MutedBadge> : <Text size="sm" c="dimmed">—</Text>}
@@ -570,7 +589,7 @@ function initials(name?: string | null): string {
 }
 
 function fmtDoc(kind: string | undefined, dni?: string | null, cuit?: string | null): { label: string; value: string } {
-  if (kind === "COMPANY") {
+  if (kind === "COMPANY" || (!dni?.trim() && cuit?.trim())) {
     const d = String(cuit ?? "").replace(/\D/g, "");
     const value = d.length === 11 ? `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}` : (cuit?.trim() || "—");
     return { label: "CUIT", value };

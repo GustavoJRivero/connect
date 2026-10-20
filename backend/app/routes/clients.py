@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
-from sqlalchemy import case, func, or_
+from sqlalchemy import BigInteger, case, cast, func, or_
 
 from ..extensions import db
 from ..mikrotik.ros_client import MikrotikRosClient
@@ -325,7 +325,7 @@ def list_clients():
         "address": Client.address,
         "phone": Client.phone,
         "email": Client.email,
-        "dni": Client.dni,
+        "dni": cast(func.coalesce(Client.dni, Client.cuit), BigInteger),
         "debt_total": debt_total_sq,
         "connections_count": connections_count_sq,
         "services_status": services_rank_sq,
@@ -335,7 +335,11 @@ def list_clients():
         sort_dir = "desc"
 
     order_expr = sort_expr.asc() if sort_dir == "asc" else sort_expr.desc()
-    query = query.order_by(order_expr, Client.id.desc())
+    if sort_by == "dni":
+        # Clientes sin documento al final en cualquier sentido.
+        query = query.order_by(func.coalesce(Client.dni, Client.cuit).is_(None), order_expr, Client.id.desc())
+    else:
+        query = query.order_by(order_expr, Client.id.desc())
 
     rows = query.offset(offset).limit(limit).all()
 
