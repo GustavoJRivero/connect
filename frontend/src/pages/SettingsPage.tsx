@@ -15,6 +15,7 @@ import {
   NumberInput,
   Switch,
   Checkbox,
+  Radio,
   TextInput,
   LoadingOverlay,
   Box,
@@ -1834,44 +1835,59 @@ export default function SettingsPage() {
                 </Text>
               ) : null}
 
-              <Group justify="space-between" mt="xs">
-                <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
-                <Group gap="xs">
-                  {migrationStatus?.pending_client_emails != null ? (
-                    <>
-                      <Checkbox
-                        size="xs"
-                        label={`Sobrescribir existentes (${migrationStatus.overwritable_client_emails ?? 0})`}
-                        checked={migrationEmailsOverwrite}
-                        onChange={(e) => setMigrationEmailsOverwrite(e.currentTarget.checked)}
-                      />
+              {migrationStatus?.pending_client_emails != null ? (() => {
+                const pendingEmails = migrationStatus.pending_client_emails ?? 0;
+                const differentEmails = migrationStatus.overwritable_client_emails ?? 0;
+                const emailsToLoad = pendingEmails + (migrationEmailsOverwrite ? differentEmails : 0);
+                return (
+                  <Paper withBorder p="md" radius="md">
+                    <Text size="xs" fw={600} c="dimmed" tt="uppercase" mb={4} style={{ letterSpacing: "0.06em" }}>
+                      Emails de clientes
+                    </Text>
+                    <Text size="sm" mb="sm">
+                      La importación no carga los emails, para no enviarles correos a todos de golpe.
+                      Cargalos desde acá cuando estés listo.
+                    </Text>
+                    <Radio.Group
+                      value={migrationEmailsOverwrite ? "replace" : "missing"}
+                      onChange={(v) => setMigrationEmailsOverwrite(v === "replace")}
+                    >
+                      <Stack gap={6}>
+                        <Radio value="missing" label={`Solo a los clientes que no tienen email (${pendingEmails})`} />
+                        <Radio
+                          value="replace"
+                          disabled={!differentEmails}
+                          label={`Además, reemplazar los emails que no coinciden con el backup (${differentEmails})`}
+                        />
+                      </Stack>
+                    </Radio.Group>
+                    <Group justify="space-between" mt="sm">
+                      <Text size="xs" c="dimmed">
+                        {emailsToLoad ? "" : "Todos los clientes ya tienen el email del backup."}
+                      </Text>
                       <Button
                         variant="secondary"
                         loading={migrationEmailsApplying}
-                        disabled={
-                          migrationApplying ||
-                          migrationUploading ||
-                          (!migrationStatus.pending_client_emails &&
-                            !(migrationEmailsOverwrite && migrationStatus.overwritable_client_emails))
-                        }
+                        disabled={migrationApplying || migrationUploading || !emailsToLoad}
                         onClick={confirmApplyMigrationEmails}
                       >
-                        Cargar emails (
-                        {(migrationStatus.pending_client_emails ?? 0) +
-                          (migrationEmailsOverwrite ? migrationStatus.overwritable_client_emails ?? 0 : 0)}
-                        )
+                        Cargar {emailsToLoad} emails
                       </Button>
-                    </>
-                  ) : null}
-                  <Button
-                    variant="danger"
-                    loading={migrationApplying}
-                    disabled={!migrationStatus?.last_summary || migrationUploading}
-                    onClick={confirmApplyMigration}
-                  >
-                    Importar a Connect
-                  </Button>
-                </Group>
+                    </Group>
+                  </Paper>
+                );
+              })() : null}
+
+              <Group justify="space-between" mt="xs">
+                <Button variant="ghost" onClick={() => setSection(null)}>Cerrar</Button>
+                <Button
+                  variant="danger"
+                  loading={migrationApplying}
+                  disabled={!migrationStatus?.last_summary || migrationUploading}
+                  onClick={confirmApplyMigration}
+                >
+                  Importar a Connect
+                </Button>
               </Group>
             </Stack>
           ) : null}
