@@ -13,7 +13,8 @@ from ..models.plan import Plan
 from ..models.setting import Setting
 from ..models.billing_run import BillingRun
 from ..timezone import iso_utc, today_local
-from ..afip.util import invoice_type_for_iva_condition
+from ..billing.allocate import _next_cbte_number
+from ..billing.engine import AUTO_INVOICE_TYPE
 
 bp = Blueprint("billing", __name__, url_prefix="/api/billing")
 
@@ -36,10 +37,6 @@ def _plan_price(profile: str) -> Decimal:
     if not plan:
         raise KeyError(f"Plan no encontrado para profile '{profile}'")
     return Decimal(str(plan.price_with_iva))
-
-
-def _default_invoice_type(client: Client) -> str:
-    return invoice_type_for_iva_condition(client.iva_condition) or ("A" if client.kind == "COMPANY" else "B")
 
 
 @bp.get("/status")
@@ -151,7 +148,7 @@ def generate_monthly_invoices():
         inv = Invoice(
             client_id=client.id,
             connection_id=x.id,
-            invoice_type=_default_invoice_type(client),
+            invoice_type=AUTO_INVOICE_TYPE,
             issuer_cuit=str(issuer["cuit"]),
             point_of_sale=int(issuer["point_of_sale"]),
             iva_condition=client.iva_condition,
@@ -161,6 +158,10 @@ def generate_monthly_invoices():
             status="ISSUED" if issue else "DRAFT",
             description=description,
         )
+        if issue:
+            inv.cbte_number = _next_cbte_number(
+                point_of_sale=inv.point_of_sale, invoice_type=AUTO_INVOICE_TYPE
+            )
         db.session.add(inv)
         created += 1
 
