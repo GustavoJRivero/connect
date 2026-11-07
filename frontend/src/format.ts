@@ -94,6 +94,7 @@ const PAYMENT_METHOD: Record<string, string> = {
   MERCADOPAGO: "MercadoPago",
   CASH: "Efectivo",
   CARD: "Tarjeta",
+  CREDIT: "Saldo a favor",
 };
 
 export function paymentMethodLabel(method?: string | null): string {

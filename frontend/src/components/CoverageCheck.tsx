@@ -74,8 +74,8 @@ export function CoverageCheck(props: {
           </Alert>
         ) : (
           <Alert color="orange">
-            Sin cobertura en esa ubicación. Se puede crear igual: la solicitud quedará en el apartado <b>Sin cobertura</b> de
-            Instalaciones.
+            Sin cobertura en esa ubicación. Podés probar con otro link o guardar igual: la orden queda en
+            Instalaciones → <b>Sin cobertura</b>.
           </Alert>
         )
       ) : null}

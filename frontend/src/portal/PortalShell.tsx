@@ -17,11 +17,11 @@ import "./portal.css";
 export type PortalOutletContext = { onRefresh: () => void };
 
 const NAV = [
-  { to: "/portal", end: true, label: "Inicio", icon: IconHome },
-  { to: "/portal/invoices", label: "Facturas", icon: IconFileInvoice },
-  { to: "/portal/connection", label: "Internet", icon: IconWifi },
-  { to: "/portal/complaints", label: "Ayuda", icon: IconHeadset },
-  { to: "/portal/notices", label: "Avisos", icon: IconBell },
+  { to: "/", end: true, label: "Inicio", icon: IconHome },
+  { to: "/invoices", label: "Facturas", icon: IconFileInvoice },
+  { to: "/connection", label: "Internet", icon: IconWifi },
+  { to: "/complaints", label: "Ayuda", icon: IconHeadset },
+  { to: "/notices", label: "Avisos", icon: IconBell },
 ];
 
 export function PortalShell(props: {
@@ -45,7 +45,7 @@ export function PortalShell(props: {
           <BrandLogo mark={28} wordmarkSize={18} />
           <Group gap={8}>
             <Box pos="relative">
-              <ActionIcon variant="subtle" color="violet" size="lg" onClick={() => navigate("/portal/notices")} aria-label="Avisos">
+              <ActionIcon variant="subtle" color="violet" size="lg" onClick={() => navigate("/notices")} aria-label="Avisos">
                 <IconBell size={20} />
               </ActionIcon>
               {props.unread > 0 ? (
@@ -65,7 +65,7 @@ export function PortalShell(props: {
       </header>
 
       <main className="portal-wrap">
-        {loc.pathname === "/portal" || loc.pathname === "/portal/" ? (
+        {loc.pathname === "/" ? (
           <Text c="dimmed" mb={4} fw={500}>Hola, {first}</Text>
         ) : null}
         <PortalErrorBoundary>
@@ -84,7 +84,7 @@ export function PortalShell(props: {
             >
               <span style={{ position: "relative", display: "inline-flex" }}>
                 <item.icon size={20} stroke={1.8} />
-                {item.to === "/portal/notices" && props.unread > 0 ? (
+                {item.to === "/notices" && props.unread > 0 ? (
                   <Badge size="xs" color="violet" variant="filled" circle style={{ position: "absolute", top: -6, right: -8 }}>
                     {props.unread > 9 ? "9+" : props.unread}
                   </Badge>

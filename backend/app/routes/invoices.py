@@ -13,7 +13,8 @@ from flask_jwt_extended import get_jwt_identity, jwt_required
 from ..extensions import db
 from ..models.invoice import Invoice
 from ..models.client import Client
-from ..models.payment import PaymentAllocation
+from ..models.client_credit import ClientCreditMovement
+from ..models.payment import Payment, PaymentAllocation
 from ..models.setting import Setting
 from ..models.user import User
 from ..afip.wsfe import AfipWsfeClient, AfipIntegrationError
@@ -114,7 +115,40 @@ def _payment_status(x: Invoice) -> str:
     return x.status
 
 
-def _invoice_to_dict(x: Invoice) -> dict:
+def payment_methods_by_invoice(invoice_ids: list[int]) -> dict[int, list[str]]:
+    """Medios de pago (sin repetir, en orden de imputación) de cada factura."""
+    if not invoice_ids:
+        return {}
+    rows = (
+        db.session.query(PaymentAllocation.invoice_id, Payment.method)
+        .join(Payment, Payment.id == PaymentAllocation.payment_id)
+        .filter(PaymentAllocation.invoice_id.in_(invoice_ids))
+        .order_by(PaymentAllocation.id.asc())
+        .all()
+    )
+    out: dict[int, list[str]] = {}
+    for inv_id, method in rows:
+        methods = out.setdefault(int(inv_id), [])
+        m = (method or "").strip().upper()
+        if m and m not in methods:
+            methods.append(m)
+    credit_rows = (
+        db.session.query(ClientCreditMovement.invoice_id)
+        .filter(ClientCreditMovement.invoice_id.in_(invoice_ids))
+        .filter(ClientCreditMovement.reason == "APPLIED_TO_INVOICE")
+        .distinct()
+        .all()
+    )
+    for (inv_id,) in credit_rows:
+        methods = out.setdefault(int(inv_id), [])
+        if "CREDIT" not in methods:
+            methods.append("CREDIT")
+    return out
+
+
+def _invoice_to_dict(x: Invoice, payment_methods: list[str] | None = None) -> dict:
+    if payment_methods is None:
+        payment_methods = payment_methods_by_invoice([int(x.id)]).get(int(x.id), [])
     u = User.query.get(int(x.deleted_by_user_id)) if getattr(x, "deleted_by_user_id", None) else None
     client = Client.query.get(x.client_id) if x.client_id else None
     return {
@@ -133,6 +167,7 @@ def _invoice_to_dict(x: Invoice) -> dict:
         "paid_total": str(x.paid_total),
         "status": x.status,
         "payment_status": _payment_status(x),
+        "payment_methods": payment_methods,
         "description": getattr(x, "description", None),
         "notes": getattr(x, "notes", None),
         "is_deleted": bool(getattr(x, "is_deleted", False)),
@@ -394,13 +429,16 @@ def list_invoices():
     q = q.order_by(Invoice.id.desc())
     # Sin `limit` se mantiene la respuesta como lista (la usa la ficha del cliente).
     if "limit" not in request.args:
-        return jsonify([_invoice_to_dict(x) for x in q.limit(500).all()])
+        items = q.limit(500).all()
+        methods = payment_methods_by_invoice([int(x.id) for x in items])
+        return jsonify([_invoice_to_dict(x, methods.get(int(x.id), [])) for x in items])
 
     limit = max(1, min(request.args.get("limit", 25, type=int), 200))
     offset = max(0, request.args.get("offset", 0, type=int))
     total = q.order_by(None).count()
     items = q.offset(offset).limit(limit).all()
-    return jsonify({"items": [_invoice_to_dict(x) for x in items], "total": total})
+    methods = payment_methods_by_invoice([int(x.id) for x in items])
+    return jsonify({"items": [_invoice_to_dict(x, methods.get(int(x.id), [])) for x in items], "total": total})
 
 
 @bp.get("/afip/status")

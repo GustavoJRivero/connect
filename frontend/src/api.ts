@@ -54,6 +54,28 @@ export type PermissionsCatalog = {
   actions: { id: string; label: string }[];
 };
 
+/** El servidor dado de alta más recientemente (mayor id). */
+export function newestServerId(servers: { id: number }[]): number | null {
+  return servers.reduce<number | null>((max, s) => (max == null || Number(s.id) > max ? Number(s.id) : max), null);
+}
+
+export type ConnectionListItem = {
+  id: number;
+  client_id: number;
+  client_name: string;
+  client_status?: string;
+  client_phone?: string | null;
+  debt_total: string;
+  credit_balance: string;
+  server_id?: number | null;
+  server_name?: string | null;
+  service_address?: string | null;
+  plan_profile: string;
+  status: string;
+  pppoe_name: string;
+  ip?: string | null;
+};
+
 let _pendingRequests = 0;
 
 function emitLoading() {
@@ -315,10 +337,12 @@ export const api = {
     offset?: number;
     sort_by?: string;
     sort_dir?: "asc" | "desc";
+    debt?: "debtors" | "current" | "all";
   }) {
     if (!opts) return request("/api/clients");
     const params = new URLSearchParams();
     if (opts.q) params.set("q", opts.q);
+    if (opts.debt && opts.debt !== "all") params.set("debt", opts.debt);
     if (typeof opts.limit === "number") params.set("limit", String(opts.limit));
     if (typeof opts.offset === "number") params.set("offset", String(opts.offset));
     if (opts.sort_by) params.set("sort_by", opts.sort_by);
@@ -352,6 +376,31 @@ export const api = {
   },
 
   // connections
+  listConnections(opts: {
+    q?: string;
+    status?: "ACTIVE" | "CUT" | "all";
+    debt?: "debtors" | "current" | "all";
+    limit: number;
+    offset: number;
+    sort_by?: string;
+    sort_dir?: "asc" | "desc";
+  }): Promise<{ items: ConnectionListItem[]; total: number }> {
+    const params = new URLSearchParams();
+    if (opts.q) params.set("q", opts.q);
+    if (opts.status && opts.status !== "all") params.set("status", opts.status);
+    if (opts.debt && opts.debt !== "all") params.set("debt", opts.debt);
+    params.set("limit", String(opts.limit));
+    params.set("offset", String(opts.offset));
+    if (opts.sort_by) params.set("sort_by", opts.sort_by);
+    if (opts.sort_dir) params.set("sort_dir", opts.sort_dir);
+    return request(`/api/connections?${params.toString()}`);
+  },
+  bulkCutConnections(connection_ids: number[], cut_profile?: string): Promise<{ updated: number; jobs: unknown[] }> {
+    return request("/api/connections/bulk/cut", { method: "POST", body: JSON.stringify({ connection_ids, cut_profile }) });
+  },
+  bulkRestoreConnections(connection_ids: number[]): Promise<{ updated: number; jobs: unknown[] }> {
+    return request("/api/connections/bulk/restore", { method: "POST", body: JSON.stringify({ connection_ids }) });
+  },
   createConnection(payload: any) {
     return request("/api/connections", { method: "POST", body: JSON.stringify(payload) });
   },

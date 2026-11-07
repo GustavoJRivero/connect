@@ -30,7 +30,6 @@ def _fmt_dt(dt) -> str:
 
 
 STATUS_LABELS = {
-    "PENDIENTE": "Pendiente",
     "RESERVADO": "Reservado",
     "SIN_COBERTURA": "Sin cobertura",
     "INSTALADA": "Instalada",

@@ -64,7 +64,6 @@ type OrderRow = {
 const STATUS_TABS: { value: string; label: string }[] = [
   { value: "RESERVADO", label: "Reservadas" },
   { value: "SIN_COBERTURA", label: "Sin cobertura" },
-  { value: "PENDIENTE", label: "Pendientes" },
   { value: "VENCIDA", label: "Vencidas" },
   { value: "INSTALADA", label: "Instaladas" },
   { value: "CANCELADA", label: "Canceladas" },
@@ -370,7 +369,7 @@ export default function InstallationsPage() {
                           </ActionIcon>
                         </Tooltip>
                       ) : null}
-                      {canEdit && (o.status === "RESERVADO" || o.status === "PENDIENTE" || o.status === "VENCIDA") ? (
+                      {canEdit && (o.status === "RESERVADO" || o.status === "VENCIDA") ? (
                         <Tooltip label="Confirmar">
                           <ActionIcon
                             size="lg"
@@ -383,7 +382,7 @@ export default function InstallationsPage() {
                           </ActionIcon>
                         </Tooltip>
                       ) : null}
-                      {canEdit && (o.status === "PENDIENTE" || o.status === "SIN_COBERTURA" || o.status === "VENCIDA") ? (
+                      {canEdit && (o.status === "SIN_COBERTURA" || o.status === "VENCIDA") ? (
                         <Tooltip label="Re-chequear">
                           <ActionIcon
                             size="lg"

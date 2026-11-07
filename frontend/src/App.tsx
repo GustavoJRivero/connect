@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import AppShell from "./AppShell";
 import Login from "./Login";
 import { api, setToken } from "./api";
@@ -50,18 +50,40 @@ function AdminRoot() {
   );
 }
 
+const ADMIN_BASE = "/4dmin";
+
+function isAdminPath(pathname: string): boolean {
+  return pathname === ADMIN_BASE || pathname.startsWith(`${ADMIN_BASE}/`);
+}
+
+// Links viejos (y checkouts de Mercado Pago ya creados) apuntan a /portal/...
+function LegacyPortalRedirect() {
+  const loc = useLocation();
+  const rest = loc.pathname.replace(/^\/portal/, "") || "/";
+  return <Navigate to={`${rest}${loc.search}${loc.hash}`} replace />;
+}
+
 export default function App() {
+  if (isAdminPath(window.location.pathname)) {
+    return (
+      <BrowserRouter basename={ADMIN_BASE}>
+        <AdminRoot />
+      </BrowserRouter>
+    );
+  }
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/portal" element={<PortalApp />}>
+        <Route path="/portal/*" element={<LegacyPortalRedirect />} />
+        <Route path="/" element={<PortalApp />}>
           <Route index element={<PortalHome />} />
           <Route path="invoices" element={<PortalInvoices />} />
           <Route path="connection" element={<PortalConnection />} />
           <Route path="complaints" element={<PortalComplaints />} />
           <Route path="notices" element={<PortalNotices />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-        <Route path="*" element={<AdminRoot />} />
       </Routes>
     </BrowserRouter>
   );

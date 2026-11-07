@@ -307,7 +307,7 @@ export default function Login(props: { onLoggedIn: () => void }) {
 
             <Text size="sm" c="dimmed" ta="center">
               ¿Sos cliente?{" "}
-              <Anchor href="/portal" size="sm">
+              <Anchor href="/" size="sm">
                 Entrar al portal
               </Anchor>
             </Text>

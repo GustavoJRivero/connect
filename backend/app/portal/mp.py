@@ -114,9 +114,9 @@ def create_preference(*, invoice_id: int, title: str, amount: Decimal, email: st
         ],
         "external_reference": f"inv:{invoice_id}:cli:{client_id}",
         "back_urls": {
-            "success": f"{portal_url}/portal/invoices?paid=1",
-            "failure": f"{portal_url}/portal/invoices?paid=0",
-            "pending": f"{portal_url}/portal/invoices?paid=pending",
+            "success": f"{portal_url}/invoices?paid=1",
+            "failure": f"{portal_url}/invoices?paid=0",
+            "pending": f"{portal_url}/invoices?paid=pending",
         },
         "statement_descriptor": "CONNECT",
     }
