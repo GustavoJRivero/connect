@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError
 from ..acl import ACTION_LABELS, MODULES, MODULE_ACTIONS, current_staff_user
 from ..extensions import db
 from ..models.auth_security import LoginChallenge, StaffTrustedIp
+from ..models.installation_order import InstallationOrder
 from ..models.role import Role
 from ..models.user import User
 from .auth import MIN_PASSWORD_LENGTH, normalize_email, user_to_dict, valid_email
@@ -187,6 +188,10 @@ def delete_user(user_id: int):
         # y el error se confunde con "tiene pagos o facturas".
         LoginChallenge.query.filter_by(user_id=user.id).delete(synchronize_session=False)
         StaffTrustedIp.forget_user(user.id)
+        # Las órdenes conservan el nombre del técnico en `technician`; solo se suelta el vínculo.
+        InstallationOrder.query.filter_by(technician_user_id=user.id).update(
+            {"technician_user_id": None}, synchronize_session=False
+        )
         db.session.delete(user)
         db.session.commit()
     except IntegrityError:
@@ -210,6 +215,7 @@ def _role_to_dict(role: Role) -> dict:
         "name": role.name,
         "description": role.description,
         "is_admin": bool(role.is_admin),
+        "is_technician": bool(role.is_technician),
         "permissions": perms,
         "users_count": User.query.filter_by(role_id=role.id).count(),
     }
@@ -257,7 +263,12 @@ def create_role():
         return _error("name_required", "Completá el nombre del rol.")
     if Role.query.filter(func.lower(Role.name) == name.lower()).first():
         return _error("name_taken", "Ya existe un rol con ese nombre.", 409)
-    role = Role(name=name[:60], description=(data.get("description") or "").strip()[:255] or None, is_admin=False)
+    role = Role(
+        name=name[:60],
+        description=(data.get("description") or "").strip()[:255] or None,
+        is_admin=False,
+        is_technician=bool(data.get("is_technician")),
+    )
     role.set_permissions(_clean_permissions(data.get("permissions")))
     db.session.add(role)
     db.session.commit()
@@ -284,6 +295,8 @@ def update_role(role_id: int):
         role.description = (data.get("description") or "").strip()[:255] or None
     if "permissions" in data:
         role.set_permissions(_clean_permissions(data.get("permissions")))
+    if "is_technician" in data:
+        role.is_technician = bool(data.get("is_technician"))
     db.session.commit()
     return jsonify(_role_to_dict(role))
 

@@ -229,6 +229,13 @@ def list_payments():
                 return jsonify({"error": "invalid_to"}), 400
             q = q.filter(Payment.paid_at <= dto)
 
-    items = q.order_by(Payment.id.desc()).limit(200).all()
-    return jsonify([_payment_to_dict(p) for p in items])
+    q = q.order_by(Payment.paid_at.desc(), Payment.id.desc())
+    if "limit" not in request.args and "offset" not in request.args:
+        return jsonify([_payment_to_dict(p) for p in q.limit(200).all()])
+
+    limit = max(1, min(request.args.get("limit", 50, type=int) or 50, 500))
+    offset = max(0, request.args.get("offset", 0, type=int) or 0)
+    total = q.order_by(None).count()
+    items = q.offset(offset).limit(limit).all()
+    return jsonify({"items": [_payment_to_dict(p) for p in items], "total": int(total), "limit": limit, "offset": offset})
 

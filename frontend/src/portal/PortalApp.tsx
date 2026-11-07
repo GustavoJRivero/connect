@@ -6,6 +6,7 @@ import { PortalShell } from "./PortalShell";
 export function PortalApp() {
   const [authed, setAuthed] = useState(() => Boolean(localStorage.getItem("sc_portal_token")));
   const [name, setName] = useState("Cliente");
+  const [kind, setKind] = useState<string | undefined>(undefined);
   const [unread, setUnread] = useState(0);
 
   function refreshMe() {
@@ -13,6 +14,7 @@ export function PortalApp() {
       .me()
       .then((me: any) => {
         setName(String(me.full_name || "Cliente"));
+        setKind(me.kind ? String(me.kind) : undefined);
         setUnread(Number(me.unread_notifications || 0));
       })
       .catch(() => {
@@ -36,5 +38,5 @@ export function PortalApp() {
     return <PortalLogin onLoggedIn={() => setAuthed(true)} />;
   }
 
-  return <PortalShell name={name} unread={unread} onLogout={() => setAuthed(false)} onRefresh={refreshMe} />;
+  return <PortalShell name={name} kind={kind} unread={unread} onLogout={() => setAuthed(false)} onRefresh={refreshMe} />;
 }

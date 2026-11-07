@@ -281,18 +281,12 @@ export default function ClientsPage() {
       let orderMsg = "";
       if (order) {
         if (order.status === "RESERVADO") orderMsg = ` Orden de instalación #${order.id}: puerto reservado en ${order.nap_name ?? "NAP"}${order.fiber_meters ? ` (${order.fiber_meters} m de fibra)` : ""}.`;
-        else if (order.status === "SIN_COBERTURA") orderMsg = ` Orden #${order.id}: SIN COBERTURA — quedó en el apartado "Sin cobertura" de Instalaciones.`;
+        else if (order.status === "SIN_COBERTURA") orderMsg = ` Orden #${order.id}: sin cobertura, quedó en Instalaciones → Sin cobertura.`;
         else orderMsg = ` Orden de instalación #${order.id} creada (${order.status}).`;
       }
       setSuccess(`Cliente #${newId} creado correctamente.${orderMsg}`);
-      notifySuccess(`Cliente #${newId} creado correctamente.`);
-      const tab = installationsTabFor(order?.status);
-      if (tab && can("installations", "view")) {
-        navigate(`/installations?tab=${tab}`);
-        return;
-      }
-      setClientId(newId);
-      navigate(`/clients/${newId}`);
+      notifySuccess(`Cliente #${newId} creado correctamente.${orderMsg}`);
+      navigate("/clients");
     } catch (e: unknown) {
       setError(formatApiError(e));
     } finally {
@@ -778,11 +772,6 @@ function DetailPagination(props: { count: number; page: number; onChange: (p: nu
   );
 }
 
-// Las altas que no reservaron puerto se siguen desde Instalaciones.
-function installationsTabFor(status?: string | null): "SIN_COBERTURA" | null {
-  return status === "SIN_COBERTURA" ? status : null;
-}
-
 function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () => void; servers: { id: number; name: string; host: string; port: number }[]; planOptions: string[] }) {
   const navigate = useNavigate();
   const can = useCan();
@@ -1090,13 +1079,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
       <ConnectionDetailsModal open={!!connDetails} connection={connDetails} onClose={() => setConnDetails(null)} onSaved={async () => { setConnDetails(null); await reloadDetail(); }} />
       <ConnectionCreateModal open={showNewConnection} clientId={props.clientId} clientName={client?.full_name} servers={props.servers} planOptions={props.planOptions} onClose={() => setShowNewConnection(false)} onSaved={async (order) => {
         setShowNewConnection(false);
-        const tab = installationsTabFor(order?.status);
-        if (tab && can("installations", "view")) {
-          notifySuccess("Conexión creada sin cobertura.");
-          navigate(`/installations?tab=${tab}`);
-          return;
-        }
-        notifySuccess("Conexión creada.");
+        notifySuccess(order?.status === "SIN_COBERTURA" ? "Conexión creada sin cobertura: quedó en Instalaciones → Sin cobertura." : "Conexión creada.");
         await reloadDetail();
       }} />
       <ConnectionEditModal open={!!editingConn} connection={editingConn as { id: number } | null} servers={props.servers} planOptions={props.planOptions} onClose={() => setEditingConn(null)} onSaved={async () => { setEditingConn(null); await reloadDetail(); }} />
@@ -1367,7 +1350,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                       <SortQuietTh col="status" sort={invoiceSort} onSort={sortInvoices}>Estado</SortQuietTh>
                       <SortQuietTh col="total" sort={invoiceSort} onSort={sortInvoices}>Total</SortQuietTh>
                       <SortQuietTh col="paid" sort={invoiceSort} onSort={sortInvoices}>Pagado</SortQuietTh>
-                      <SortQuietTh col="methods" sort={invoiceSort} onSort={sortInvoices}>Pagado con</SortQuietTh>
+                      <SortQuietTh col="methods" sort={invoiceSort} onSort={sortInvoices}>Método de pago</SortQuietTh>
                       <QuietTh>Acciones</QuietTh>
                     </Table.Tr>
                   </Table.Thead>

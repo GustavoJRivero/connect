@@ -35,10 +35,10 @@ type UserForm = {
   role_id: string | null;
   is_active: boolean;
 };
-type RoleForm = { id?: number; name: string; description: string; permissions: Permissions; is_admin: boolean };
+type RoleForm = { id?: number; name: string; description: string; permissions: Permissions; is_admin: boolean; is_technician: boolean };
 
 const EMPTY_USER: UserForm = { username: "", first_name: "", last_name: "", email: "", password: "", role_id: null, is_active: true };
-const EMPTY_ROLE: RoleForm = { name: "", description: "", permissions: {}, is_admin: false };
+const EMPTY_ROLE: RoleForm = { name: "", description: "", permissions: {}, is_admin: false, is_technician: false };
 
 export default function UsersPage() {
   const can = useCan();
@@ -107,9 +107,8 @@ export default function UsersPage() {
 
   function saveRole() {
     if (!roleForm) return;
-    const payload = roleForm.is_admin
-      ? { name: roleForm.name.trim(), description: roleForm.description.trim() }
-      : { name: roleForm.name.trim(), description: roleForm.description.trim(), permissions: roleForm.permissions };
+    const base = { name: roleForm.name.trim(), description: roleForm.description.trim(), is_technician: roleForm.is_technician };
+    const payload = roleForm.is_admin ? base : { ...base, permissions: roleForm.permissions };
     void submit(
       () => (roleForm.id ? api.updateRole(roleForm.id, payload) : api.createRole({ ...payload, permissions: roleForm.permissions })),
       roleForm.id ? "Rol actualizado." : "Rol creado.",
@@ -298,6 +297,7 @@ export default function UsersPage() {
                     <Group gap={8}>
                       <Text fw={600}>{r.name}</Text>
                       {r.is_admin ? <MutedBadge tone="lilac">Acceso total</MutedBadge> : null}
+                      {r.is_technician ? <MutedBadge tone="orange">Técnico</MutedBadge> : null}
                       <MutedBadge tone="gray">{r.users_count} usuario(s)</MutedBadge>
                     </Group>
                     {r.description ? <Text size="sm" c="dimmed">{r.description}</Text> : null}
@@ -326,6 +326,7 @@ export default function UsersPage() {
                               description: r.description ?? "",
                               permissions: { ...r.permissions },
                               is_admin: r.is_admin,
+                              is_technician: r.is_technician,
                             });
                           }}
                         >
@@ -451,6 +452,12 @@ export default function UsersPage() {
               minRows={1}
               value={roleForm.description}
               onChange={(e) => setRoleForm({ ...roleForm, description: e.currentTarget.value })}
+            />
+            <Switch
+              label="Es técnico"
+              description="Los usuarios con este rol se pueden elegir como técnico al confirmar una instalación."
+              checked={roleForm.is_technician}
+              onChange={(e) => setRoleForm({ ...roleForm, is_technician: e.currentTarget.checked })}
             />
             {roleForm.is_admin ? (
               <Alert color="violet" variant="light">

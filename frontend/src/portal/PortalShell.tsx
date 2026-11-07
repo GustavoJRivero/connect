@@ -24,15 +24,25 @@ const NAV = [
   { to: "/notices", label: "Avisos", icon: IconBell },
 ];
 
+// Los nombres vienen como "Apellido Nombre [Segundo nombre]"; las empresas, con la razón social.
+function greetingName(fullName: string, kind?: string): string {
+  const words = fullName.trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return "vos";
+  if (kind === "COMPANY") return fullName.trim();
+  const word = words.length >= 2 ? words[1] : words[0];
+  return word === word.toUpperCase() ? word.charAt(0) + word.slice(1).toLowerCase() : word;
+}
+
 export function PortalShell(props: {
   onLogout: () => void;
   name: string;
+  kind?: string;
   unread: number;
   onRefresh: () => void;
 }) {
   const loc = useLocation();
   const navigate = useNavigate();
-  const first = props.name.split(" ")[0] || "vos";
+  const first = greetingName(props.name, props.kind);
 
   useEffect(() => {
     window.scrollTo(0, 0);
