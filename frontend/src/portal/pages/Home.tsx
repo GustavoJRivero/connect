@@ -67,7 +67,7 @@ export function PortalHome() {
           </div>
           <IconWifi size={36} stroke={1.6} color="#fff" />
         </Group>
-        <UnstyledButton onClick={() => navigate("/portal/connection")} style={{ marginTop: 16, color: "#fff" }}>
+        <UnstyledButton onClick={() => navigate("/connection")} style={{ marginTop: 16, color: "#fff" }}>
           <Group gap={4}>
             <Text size="sm" fw={600} c="#fff">Ver detalle</Text>
             <IconChevronRight size={16} color="#fff" />
@@ -80,7 +80,7 @@ export function PortalHome() {
         <Group justify="space-between" align="flex-end" mt={4}>
           <Text fz={28} fw={700}>{fmtMoney(debt)}</Text>
           {debt > 0 ? (
-            <Button variant="primary" onClick={() => navigate("/portal/invoices")}>Pagar</Button>
+            <Button variant="primary" onClick={() => navigate("/invoices")}>Pagar</Button>
           ) : null}
         </Group>
         {data.unpaid_count > 0 ? (
@@ -92,7 +92,7 @@ export function PortalHome() {
       </div>
 
       <SimpleGrid cols={2} spacing="sm">
-        <UnstyledButton className="portal-tile" onClick={() => navigate("/portal/invoices")}>
+        <UnstyledButton className="portal-tile" onClick={() => navigate("/invoices")}>
           <div className="portal-tile-icon" style={{ background: "rgba(122, 79, 176, 0.14)", color: "#7a4fb0" }}>
             <IconFileInvoice size={22} />
           </div>
@@ -101,7 +101,7 @@ export function PortalHome() {
             <Text size="sm" c="dimmed">PDF y pago online</Text>
           </div>
         </UnstyledButton>
-        <UnstyledButton className="portal-tile" onClick={() => navigate("/portal/connection")}>
+        <UnstyledButton className="portal-tile" onClick={() => navigate("/connection")}>
           <div className="portal-tile-icon" style={{ background: "rgba(79, 138, 104, 0.16)", color: "#4f8a68" }}>
             <IconWifi size={22} />
           </div>
@@ -110,7 +110,7 @@ export function PortalHome() {
             <Text size="sm" c="dimmed">{main ? connectionStatusLabel(main.status) : "Tus datos"}</Text>
           </div>
         </UnstyledButton>
-        <UnstyledButton className="portal-tile" onClick={() => navigate("/portal/complaints")}>
+        <UnstyledButton className="portal-tile" onClick={() => navigate("/complaints")}>
           <div className="portal-tile-icon" style={{ background: "rgba(176, 122, 79, 0.16)", color: "#9a6a3c" }}>
             <IconHeadset size={22} />
           </div>
@@ -119,7 +119,7 @@ export function PortalHome() {
             <Text size="sm" c="dimmed">Abrí un reclamo</Text>
           </div>
         </UnstyledButton>
-        <UnstyledButton className="portal-tile" onClick={() => navigate("/portal/notices")}>
+        <UnstyledButton className="portal-tile" onClick={() => navigate("/notices")}>
           <div className="portal-tile-icon" style={{ background: "rgba(122, 79, 176, 0.14)", color: "#7a4fb0" }}>
             <IconBell size={22} />
           </div>
@@ -135,7 +135,7 @@ export function PortalHome() {
       <div>
         <Group justify="space-between" mb="sm">
           <Text fw={700}>Últimas facturas</Text>
-          <UnstyledButton onClick={() => navigate("/portal/invoices")}>
+          <UnstyledButton onClick={() => navigate("/invoices")}>
             <Text size="sm" c="violet" fw={600}>Ver todas</Text>
           </UnstyledButton>
         </Group>
@@ -144,7 +144,7 @@ export function PortalHome() {
         ) : (
           <Stack gap="sm">
             {recent.map((x: any) => (
-              <UnstyledButton key={x.id} className="portal-invoice" onClick={() => navigate("/portal/invoices")} style={{ width: "100%" }}>
+              <UnstyledButton key={x.id} className="portal-invoice" onClick={() => navigate("/invoices")} style={{ width: "100%" }}>
                 <Group justify="space-between">
                   <div>
                     <Text fw={600}>Factura {x.invoice_type} {x.id}</Text>
