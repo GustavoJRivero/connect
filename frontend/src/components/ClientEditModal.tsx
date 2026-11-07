@@ -6,7 +6,6 @@ import {
   Divider,
   Group,
   Modal,
-  Paper,
   PasswordInput,
   SegmentedControl,
   Select,
@@ -16,12 +15,12 @@ import {
   Switch,
   Text,
   TextInput,
-  ThemeIcon,
 } from "@mantine/core";
 import { IconAddressBook, IconId, IconMail, IconMapPin, IconPhone, IconSettings, IconUser } from "@tabler/icons-react";
 import { api } from "../api";
 import { Button } from "../ui";
 import { formatApiError } from "../format";
+import { FormSection as Section } from "./FormSection";
 
 const IVA_OPTIONS = [
   { value: "1", label: "Responsable Inscripto", invoice: "A" },
@@ -33,23 +32,6 @@ const IVA_OPTIONS = [
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
-}
-
-function Section(props: { icon: React.ReactNode; title: string; description: string; children: React.ReactNode }) {
-  return (
-    <Paper withBorder radius="md" p="md">
-      <Group gap="sm" wrap="nowrap" mb="md">
-        <ThemeIcon size={36} radius="md" variant="light" color="violet">
-          {props.icon}
-        </ThemeIcon>
-        <div>
-          <Text fw={600} size="sm">{props.title}</Text>
-          <Text size="xs" c="dimmed">{props.description}</Text>
-        </div>
-      </Group>
-      <Stack gap="sm">{props.children}</Stack>
-    </Paper>
-  );
 }
 
 function SettingRow(props: { title: string; description: string; checked: boolean; onChange: (v: boolean) => void }) {

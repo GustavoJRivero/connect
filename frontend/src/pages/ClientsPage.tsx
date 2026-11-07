@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, newestServerId } from "../api";
 import { Button, Card, Field, MutedBadge, MUTED_DISCONNECT_STYLE, InvoiceStatusBadge, connectionStatusTone, complaintStatusTone, clientServicesTone } from "../ui";
 import { InvoiceModal } from "../components/InvoiceModal";
 import { ComplaintModal } from "../components/ComplaintModal";
@@ -13,11 +13,13 @@ import { IpPoolPicker } from "../components/IpPoolPicker";
 import { ConfirmDialog, ConfirmState } from "../components/ConfirmDialog";
 import { CoverageCheck, CoveragePreview } from "../components/CoverageCheck";
 import { CoverageMap } from "../components/CoverageMap";
+import { ConnectionsList } from "../components/ConnectionsList";
+import { DebtAmount, DebtFilter, DEBT_FILTER_OPTIONS } from "../components/DebtAmount";
 import { useCan } from "../auth";
-import { formatApiError, fmtMoney, connectionStatusLabel, complaintStatusLabel } from "../format";
+import { formatApiError, fmtMoney, connectionStatusLabel, complaintStatusLabel, paymentMethodLabel } from "../format";
 import { fmtDate } from "../datetime";
 import { notifySuccess, notifyError } from "../notify";
-import { Grid, Table, Alert, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Tabs, ActionIcon, Tooltip, Menu, Skeleton, Box, Divider, Stepper, Avatar, SimpleGrid, Modal, UnstyledButton, Paper } from "@mantine/core";
+import { Grid, Table, Alert, Group, Stack, TextInput, Select, Text, Anchor, Pagination, Tabs, ActionIcon, Tooltip, Menu, Skeleton, Box, Divider, Stepper, Avatar, SimpleGrid, Modal, UnstyledButton, Paper, SegmentedControl } from "@mantine/core";
 import { IconDots, IconFileTypePdf, IconMail, IconArrowLeft, IconCash, IconTrash, IconFileCheck, IconBrandWhatsapp, IconMapPin, IconPencil, IconPlugConnectedX, IconRestore, IconAlertTriangle, IconRefresh } from "@tabler/icons-react";
 
 type SortCol = "id" | "full_name" | "dni" | "address" | "phone" | "email" | "debt_total" | "services_status" | "connections_count";
@@ -86,6 +88,13 @@ export default function ClientsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">(() =>
     searchParams.get("dir") === "asc" ? "asc" : "desc"
   );
+  const [debtFilter, setDebtFilter] = useState<DebtFilter>(() => {
+    const d = searchParams.get("debt");
+    return d === "debtors" || d === "current" ? d : "all";
+  });
+  const [view, setView] = useState<"clients" | "connections">(() =>
+    searchParams.get("view") === "connections" ? "connections" : "clients"
+  );
   const [editingClientId, setEditingClientId] = useState<number | null>(null);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [saving, setSaving] = useState(false);
@@ -139,7 +148,7 @@ export default function ClientsPage() {
     setListLoading(true);
     try {
       const offset = Math.max(0, (page - 1) * pageSize);
-      const res = await api.listClients({ q: q || "", limit: pageSize, offset, sort_by: sortBy, sort_dir: sortDir }) as { items?: unknown[]; total?: number } | unknown[];
+      const res = await api.listClients({ q: q || "", limit: pageSize, offset, sort_by: sortBy, sort_dir: sortDir, debt: debtFilter }) as { items?: unknown[]; total?: number } | unknown[];
       const list = Array.isArray(res) ? res : (res as { items?: unknown[] })?.items ?? [];
       setItems(list as Record<string, unknown>[]);
       setTotal(Number(Array.isArray(res) ? list.length : (res as { total?: number })?.total ?? 0));
@@ -154,14 +163,19 @@ export default function ClientsPage() {
   useEffect(() => {
     if (desiredMode !== "list") return;
     const p = new URLSearchParams();
-    if (q) p.set("q", q);
-    if (page > 1) p.set("page", String(page));
-    if (pageSize !== 10) p.set("ps", String(pageSize));
-    if (sortBy !== "id") p.set("sort", sortBy);
-    if (sortDir !== "desc") p.set("dir", sortDir);
+    if (view === "connections") {
+      p.set("view", "connections");
+    } else {
+      if (q) p.set("q", q);
+      if (page > 1) p.set("page", String(page));
+      if (pageSize !== 10) p.set("ps", String(pageSize));
+      if (sortBy !== "id") p.set("sort", sortBy);
+      if (sortDir !== "desc") p.set("dir", sortDir);
+      if (debtFilter !== "all") p.set("debt", debtFilter);
+    }
     if (p.toString() !== searchParams.toString()) setSearchParams(p, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desiredMode, q, page, pageSize, sortBy, sortDir]);
+  }, [desiredMode, view, q, page, pageSize, sortBy, sortDir, debtFilter]);
 
   useEffect(() => {
     const fallbackProfiles = ["25M", "50M", "100M", "300M"];
@@ -188,21 +202,48 @@ export default function ClientsPage() {
         setPlanOptions(fallbackProfiles);
       }
     })();
-    api.listServers().then((xs: unknown) => setServers((xs as { id: number; name: string; host: string; port: number }[]) || [])).catch(() => {});
+    api.listServers().then((xs: unknown) => {
+      const list = (xs as { id: number; name: string; host: string; port: number }[]) || [];
+      setServers(list);
+      const newest = newestServerId(list);
+      if (newest) setServerId((cur) => cur || String(newest));
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (desiredMode !== "list") return;
+    if (desiredMode !== "list" || view !== "clients") return;
     const t = setTimeout(() => reloadList(), 250);
     return () => clearTimeout(t);
-  }, [desiredMode, q, page, pageSize, sortBy, sortDir]);
+  }, [desiredMode, view, q, page, pageSize, sortBy, sortDir, debtFilter]);
+
+  function clientStepError(): string | null {
+    if (!fullName.trim()) return "Ingresá el nombre o razón social del cliente.";
+    if (kind === "PERSON" && !dni.trim()) return "Ingresá el DNI del cliente.";
+    if (kind === "COMPANY" && !cuit.trim()) return "Ingresá el CUIT de la empresa.";
+    if (!phone.trim()) return "Ingresá el teléfono del cliente.";
+    if (!address.trim()) return "Ingresá la dirección del cliente.";
+    return null;
+  }
+
+  function locationStepError(): string | null {
+    if (!locationUrl.trim() || !coverage) return "Verificá la cobertura de la ubicación antes de continuar.";
+    return null;
+  }
 
   async function create() {
     if (saving) return;
     setError(null);
     setSuccess(null);
-    if (!fullName.trim()) {
-      setError("Ingresá el nombre o razón social del cliente.");
+    const stepError = clientStepError();
+    if (stepError) {
+      setError(stepError);
+      setCreateStep(0);
+      return;
+    }
+    const locError = locationStepError();
+    if (locError) {
+      setError(locError);
+      setCreateStep(1);
       return;
     }
     setSaving(true);
@@ -235,7 +276,7 @@ export default function ClientsPage() {
         return;
       }
       setFullName(""); setDni(""); setCuit(""); setPhone(""); setEmail(""); setAddress("");
-      setServiceAddress(""); setLocation(""); setLocationUrl(""); setCoverage(null); setServerId(""); setIp(""); setIpMode("auto"); setPonSn("");
+      setServiceAddress(""); setLocation(""); setLocationUrl(""); setCoverage(null); setServerId(String(newestServerId(servers) ?? "")); setIp(""); setIpMode("auto"); setPonSn("");
       const order = res?.installation_orders?.[0];
       let orderMsg = "";
       if (order) {
@@ -245,6 +286,11 @@ export default function ClientsPage() {
       }
       setSuccess(`Cliente #${newId} creado correctamente.${orderMsg}`);
       notifySuccess(`Cliente #${newId} creado correctamente.`);
+      const tab = installationsTabFor(order?.status);
+      if (tab && can("installations", "view")) {
+        navigate(`/installations?tab=${tab}`);
+        return;
+      }
       setClientId(newId);
       navigate(`/clients/${newId}`);
     } catch (e: unknown) {
@@ -311,7 +357,7 @@ export default function ClientsPage() {
                 <Button variant={kind === "COMPANY" ? "primary" : "default"} onClick={() => { setKind("COMPANY"); setDni(""); setIvaCondition("1"); }}>Empresa</Button>
               </Group>
               <Field label="Nombre / Razón social" required value={fullName} onChange={setFullName} maxLength={200} />
-              {kind === "PERSON" ? <Field label="DNI" value={dni} onChange={setDni} maxLength={32} /> : <Field label="CUIT" value={cuit} onChange={setCuit} maxLength={32} />}
+              {kind === "PERSON" ? <Field label="DNI" required value={dni} onChange={setDni} maxLength={32} /> : <Field label="CUIT" required value={cuit} onChange={setCuit} maxLength={32} />}
               <Select
                 label="Condición frente al IVA"
                 description="Determina si corresponde Factura A o B ante ARCA."
@@ -324,8 +370,8 @@ export default function ClientsPage() {
                   { value: "5", label: "Consumidor Final (Factura B)" },
                 ]}
               />
-              <Grid><Grid.Col span={{ base: 12, md: 6 }}><Field label="Tel/Cel" value={phone} onChange={setPhone} maxLength={50} /></Grid.Col><Grid.Col span={{ base: 12, md: 6 }}><Field label="Email" value={email} onChange={setEmail} maxLength={200} /></Grid.Col></Grid>
-              <Field label="Dirección (facturación / principal)" value={address} onChange={setAddress} maxLength={255} />
+              <Grid><Grid.Col span={{ base: 12, md: 6 }}><Field label="Tel/Cel" required value={phone} onChange={setPhone} maxLength={50} /></Grid.Col><Grid.Col span={{ base: 12, md: 6 }}><Field label="Email" value={email} onChange={setEmail} maxLength={200} /></Grid.Col></Grid>
+              <Field label="Dirección (facturación / principal)" required value={address} onChange={setAddress} maxLength={255} />
             </Stepper.Step>
 
             <Stepper.Step label="Ubicación" description="Cobertura en el mapa">
@@ -389,8 +435,9 @@ export default function ClientsPage() {
                 <Button
                   variant="primary"
                   onClick={() => {
-                    if (createStep === 0 && !fullName.trim()) {
-                      setError("Ingresá el nombre o razón social del cliente.");
+                    const stepError = createStep === 0 ? clientStepError() : createStep === 1 ? locationStepError() : null;
+                    if (stepError) {
+                      setError(stepError);
                       return;
                     }
                     setError(null);
@@ -408,6 +455,20 @@ export default function ClientsPage() {
       ) : null}
 
       {mode === "list" ? (
+        <SegmentedControl
+          value={view}
+          onChange={(v) => setView(v === "connections" ? "connections" : "clients")}
+          data={[
+            { value: "clients", label: "Ver clientes" },
+            { value: "connections", label: "Ver conexiones" },
+          ]}
+          style={{ alignSelf: "flex-start" }}
+        />
+      ) : null}
+
+      {mode === "list" && view === "connections" ? <ConnectionsList /> : null}
+
+      {mode === "list" && view === "clients" ? (
         <Card
           footer={
             <Group justify="space-between">
@@ -418,6 +479,14 @@ export default function ClientsPage() {
         >
           <Group align="flex-end" mb="md" wrap="wrap">
             <TextInput placeholder="nombre, dni/cuit, tel, email, id..." value={q} onChange={(e) => { setQ(e.currentTarget.value); setPage(1); }} style={{ minWidth: 260 }} />
+            <Select
+              value={debtFilter}
+              onChange={(v) => { setDebtFilter((v ?? "all") as DebtFilter); setPage(1); }}
+              data={DEBT_FILTER_OPTIONS}
+              allowDeselect={false}
+              style={{ width: 170 }}
+              aria-label="Filtrar por saldo"
+            />
             <Select value={String(pageSize)} onChange={(v) => { setPageSize(Number(v ?? 10)); setPage(1); }} data={["10", "50", "100"]} style={{ width: 120 }} />
             <Group gap="xs">
               {canEdit ? (
@@ -437,7 +506,7 @@ export default function ClientsPage() {
                 <Table.Tr>
                   <SortTh col="full_name">Cliente</SortTh>
                   <Table.Th>Plan</Table.Th>
-                  <SortTh col="debt_total">Cuenta</SortTh>
+                  <SortTh col="debt_total">Saldo</SortTh>
                   <SortTh col="services_status">Estado</SortTh>
                   <Table.Th>Acciones</Table.Th>
                 </Table.Tr>
@@ -455,7 +524,7 @@ export default function ClientsPage() {
                   <Table.Tr>
                     <Table.Td colSpan={5}>
                       <Text c="dimmed" ta="center" py="lg">
-                        {q ? `No se encontraron clientes para "${q}".` : "No hay clientes cargados. Creá el primero con \"Crear nuevo cliente\"."}
+                        {q || debtFilter !== "all" ? "No se encontraron clientes con esos filtros." : "No hay clientes cargados. Creá el primero con \"Crear nuevo cliente\"."}
                       </Text>
                     </Table.Td>
                   </Table.Tr>
@@ -587,18 +656,6 @@ function displayOrDash(value?: string | null): string {
   return s || "—";
 }
 
-function DebtAmount(props: { value: unknown; creditValue?: unknown }) {
-  const n = Number(props.value ?? 0);
-  const credit = Number(props.creditValue ?? 0);
-  if (!Number.isFinite(n) || n <= 0) {
-    if (Number.isFinite(credit) && credit > 0) {
-      return <MutedBadge tone="green">+{fmtMoney(credit)}</MutedBadge>;
-    }
-    return <MutedBadge tone="gray">Al día</MutedBadge>;
-  }
-  return <MutedBadge tone="red">{fmtMoney(n)}</MutedBadge>;
-}
-
 function whatsappHref(phone?: string | null): string | null {
   let digits = String(phone ?? "").replace(/\D/g, "");
   if (!digits) return null;
@@ -684,7 +741,13 @@ function DetailPagination(props: { count: number; page: number; onChange: (p: nu
   );
 }
 
+// Las altas que no reservaron puerto se siguen desde Instalaciones.
+function installationsTabFor(status?: string | null): "SIN_COBERTURA" | null {
+  return status === "SIN_COBERTURA" ? status : null;
+}
+
 function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () => void; servers: { id: number; name: string; host: string; port: number }[]; planOptions: string[] }) {
+  const navigate = useNavigate();
   const can = useCan();
   const canEdit = can("clients", "edit");
   const canEditInvoices = can("invoices", "edit");
@@ -962,7 +1025,17 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
         onSaved={async () => { setPaying(null); notifySuccess("Pago registrado correctamente."); await reloadDetail(); }}
       />
       <ConnectionDetailsModal open={!!connDetails} connection={connDetails} onClose={() => setConnDetails(null)} onSaved={async () => { setConnDetails(null); await reloadDetail(); }} />
-      <ConnectionCreateModal open={showNewConnection} clientId={props.clientId} servers={props.servers} planOptions={props.planOptions} onClose={() => setShowNewConnection(false)} onSaved={async () => { setShowNewConnection(false); notifySuccess("Conexión creada."); await reloadDetail(); }} />
+      <ConnectionCreateModal open={showNewConnection} clientId={props.clientId} clientName={client?.full_name} servers={props.servers} planOptions={props.planOptions} onClose={() => setShowNewConnection(false)} onSaved={async (order) => {
+        setShowNewConnection(false);
+        const tab = installationsTabFor(order?.status);
+        if (tab && can("installations", "view")) {
+          notifySuccess("Conexión creada sin cobertura.");
+          navigate(`/installations?tab=${tab}`);
+          return;
+        }
+        notifySuccess("Conexión creada.");
+        await reloadDetail();
+      }} />
       <ConnectionEditModal open={!!editingConn} connection={editingConn as { id: number } | null} servers={props.servers} planOptions={props.planOptions} onClose={() => setEditingConn(null)} onSaved={async () => { setEditingConn(null); await reloadDetail(); }} />
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
 
@@ -1231,6 +1304,7 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                       <QuietTh>Estado</QuietTh>
                       <QuietTh>Total</QuietTh>
                       <QuietTh>Pagado</QuietTh>
+                      <QuietTh>Pagado con</QuietTh>
                       <QuietTh>Acciones</QuietTh>
                     </Table.Tr>
                   </Table.Thead>
@@ -1249,6 +1323,17 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                         </Table.Td>
                         <Table.Td fw={600}>{fmtMoney(x.total)}</Table.Td>
                         <Table.Td>{fmtMoney(x.paid_total ?? 0)}</Table.Td>
+                        <Table.Td>
+                          {Array.isArray(x.payment_methods) && x.payment_methods.length ? (
+                            <Group gap={4} wrap="nowrap">
+                              {(x.payment_methods as string[]).map((m) => (
+                                <MutedBadge key={m} tone="gray" size="sm">{paymentMethodLabel(m)}</MutedBadge>
+                              ))}
+                            </Group>
+                          ) : (
+                            <Text size="sm" c="dimmed">—</Text>
+                          )}
+                        </Table.Td>
                         <Table.Td>
                           <Group gap={4} wrap="nowrap">
                             {canEditInvoices && String(x.status).toUpperCase() === "DRAFT" ? (

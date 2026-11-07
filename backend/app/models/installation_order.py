@@ -3,16 +3,13 @@ from datetime import datetime
 from ..extensions import db
 
 
-# Estados de una orden de instalación:
-#   PENDIENTE     — creada pero sin chequeo/reserva efectiva (ej: API de mapas no
-#                   configurada o caída). Se puede reintentar el chequeo.
+# Estados de una orden de instalación (si el mapa no responde, la orden no se crea):
 #   RESERVADO     — hay cobertura y se reservó un puerto en el NAP más cercano.
 #   SIN_COBERTURA — el mapa indicó que no hay red en la ubicación. Queda en el
 #                   apartado "Sin cobertura" para retomarla cuando haya expansión.
 #   INSTALADA     — la app de mapas (o un operador) confirmó la instalación.
 #   VENCIDA       — venció el plazo de espera; el cron liberó el puerto reservado.
 #   CANCELADA     — cancelada manualmente (si tenía reserva, se libera).
-STATUS_PENDIENTE = "PENDIENTE"
 STATUS_RESERVADO = "RESERVADO"
 STATUS_SIN_COBERTURA = "SIN_COBERTURA"
 STATUS_INSTALADA = "INSTALADA"
@@ -20,7 +17,6 @@ STATUS_VENCIDA = "VENCIDA"
 STATUS_CANCELADA = "CANCELADA"
 
 ALL_STATUSES = (
-    STATUS_PENDIENTE,
     STATUS_RESERVADO,
     STATUS_SIN_COBERTURA,
     STATUS_INSTALADA,
@@ -50,7 +46,7 @@ class InstallationOrder(db.Model):
     latitude = db.Column(db.Numeric(10, 7), nullable=True)
     longitude = db.Column(db.Numeric(10, 7), nullable=True)
 
-    status = db.Column(db.String(20), nullable=False, default=STATUS_PENDIENTE, index=True)
+    status = db.Column(db.String(20), nullable=False, default=STATUS_SIN_COBERTURA, index=True)
 
     # NAP elegido (primera opción disponible que devuelve el mapa = la más cercana).
     nap_ref = db.Column(db.String(120), nullable=True)   # id del feature en el mapa

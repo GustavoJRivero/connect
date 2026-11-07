@@ -3,10 +3,12 @@ from typing import Optional
 
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required
+from sqlalchemy import case, func, or_
 
 from ..extensions import db
 from ..models.client import Client
 from ..models.connection import Connection
+from ..models.invoice import Invoice
 from ..models.mikrotik_server import MikrotikServer
 from ..network.ip_pool import PoolError, resolve_ip_for_connection
 from ..tasks.queue import (
@@ -95,6 +97,175 @@ def _conn_to_dict(x: Connection) -> dict:
     }
 
 
+@bp.get("")
+@jwt_required(optional=True)
+def list_connections():
+    """Listado paginado de conexiones con datos del titular y su deuda."""
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "").strip().upper()
+    debt_filter = (request.args.get("debt") or "").strip().lower()
+    server_id = request.args.get("server_id", type=int)
+    sort_by = (request.args.get("sort_by") or "id").strip()
+    sort_dir = "asc" if (request.args.get("sort_dir") or "desc").strip().lower() == "asc" else "desc"
+    limit = max(1, min(request.args.get("limit", 25, type=int) or 25, 500))
+    offset = max(0, request.args.get("offset", 0, type=int) or 0)
+
+    balance_expr = case(
+        (Invoice.total > Invoice.paid_total, Invoice.total - Invoice.paid_total),
+        else_=0,
+    )
+    debt_sq = (
+        db.session.query(func.coalesce(func.sum(balance_expr), 0))
+        .filter(Invoice.client_id == Connection.client_id)
+        .filter(Invoice.is_deleted.is_(False))
+        .filter(Invoice.status == "ISSUED")
+        .correlate(Connection)
+        .scalar_subquery()
+    )
+
+    filters = []
+    if q:
+        like = f"%{q}%"
+        ors = [
+            Client.full_name.ilike(like),
+            Client.dni.ilike(like),
+            Client.cuit.ilike(like),
+            Client.phone.ilike(like),
+            Connection.service_address.ilike(like),
+            Connection.pppoe_username.ilike(like),
+            Connection.ip.ilike(like),
+            Connection.plan_profile.ilike(like),
+        ]
+        if q.isdigit():
+            ors += [Connection.id == int(q), Connection.client_id == int(q)]
+        filters.append(or_(*ors))
+    if status in ("ACTIVE", "CUT"):
+        filters.append(Connection.status == status)
+    if server_id:
+        filters.append(Connection.server_id == server_id)
+    if debt_filter == "debtors":
+        filters.append(debt_sq > 0)
+    elif debt_filter == "current":
+        filters.append(debt_sq <= 0)
+
+    base = db.session.query(Connection).join(Client, Client.id == Connection.client_id).filter(*filters)
+    total = base.order_by(None).count()
+
+    sort_map = {
+        "id": Connection.id,
+        "client": Client.full_name,
+        "plan": Connection.plan_profile,
+        "status": Connection.status,
+        "server": Connection.server_id,
+        "debt": debt_sq,
+    }
+    sort_expr = sort_map.get(sort_by, Connection.id)
+    order = sort_expr.asc() if sort_dir == "asc" else sort_expr.desc()
+    rows = (
+        db.session.query(Connection, Client, debt_sq.label("debt_total"))
+        .join(Client, Client.id == Connection.client_id)
+        .filter(*filters)
+        .order_by(order, Connection.id.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    server_ids = {int(x.server_id) for x, _, _ in rows if x.server_id}
+    servers = (
+        {int(s.id): s.name for s in MikrotikServer.query.filter(MikrotikServer.id.in_(server_ids)).all()}
+        if server_ids
+        else {}
+    )
+    items = [
+        {
+            "id": x.id,
+            "client_id": x.client_id,
+            "client_name": c.full_name,
+            "client_status": c.status,
+            "client_phone": c.phone,
+            "debt_total": str(debt or 0),
+            "credit_balance": str(c.credit_balance or 0),
+            "server_id": x.server_id,
+            "server_name": servers.get(int(x.server_id)) if x.server_id else None,
+            "service_address": x.service_address,
+            "plan_profile": x.plan_profile,
+            "status": x.status,
+            "pppoe_name": x.pppoe_name(),
+            "ip": x.ip,
+        }
+        for x, c, debt in rows
+    ]
+    return jsonify({"items": items, "total": int(total), "limit": limit, "offset": offset})
+
+
+def _bulk_connection_ids() -> list[int]:
+    data = request.get_json(silent=True) or {}
+    raw = data.get("connection_ids") or []
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for v in raw[:500]:
+        try:
+            out.append(int(v))
+        except (TypeError, ValueError):
+            continue
+    return sorted(set(out))
+
+
+@bp.post("/bulk/cut")
+@jwt_required(optional=True)
+def bulk_cut_connections():
+    ids = _bulk_connection_ids()
+    if not ids:
+        return jsonify({"error": "connection_ids_required", "message": "Seleccioná al menos una conexión."}), 400
+    cut_profile = ((request.get_json(silent=True) or {}).get("cut_profile") or "suspended").strip()
+
+    conns = Connection.query.filter(Connection.id.in_(ids)).all()
+    for x in conns:
+        x.status = "CUT"
+        x.mikrotik_profile = cut_profile
+    db.session.commit()
+
+    jobs = []
+    for x in conns:
+        if not x.server_id:
+            continue
+        j = enqueue_job(
+            job_type=JOB_MT_SET_PPP_PROFILE,
+            payload={"name": x.pppoe_name(), "profile": cut_profile},
+            server_id=int(x.server_id),
+        )
+        jobs.append({"job_id": int(j.id), "connection_id": int(x.id)})
+    return jsonify({"status": "cut", "updated": len(conns), "jobs": jobs})
+
+
+@bp.post("/bulk/restore")
+@jwt_required(optional=True)
+def bulk_restore_connections():
+    ids = _bulk_connection_ids()
+    if not ids:
+        return jsonify({"error": "connection_ids_required", "message": "Seleccioná al menos una conexión."}), 400
+
+    conns = Connection.query.filter(Connection.id.in_(ids)).all()
+    for x in conns:
+        x.status = "ACTIVE"
+        x.mikrotik_profile = x.plan_profile
+    db.session.commit()
+
+    jobs = []
+    for x in conns:
+        if not x.server_id:
+            continue
+        j = enqueue_job(
+            job_type=JOB_MT_SET_PPP_PROFILE,
+            payload={"name": x.pppoe_name(), "profile": x.plan_profile},
+            server_id=int(x.server_id),
+        )
+        jobs.append({"job_id": int(j.id), "connection_id": int(x.id)})
+    return jsonify({"status": "restored", "updated": len(conns), "jobs": jobs})
+
+
 @bp.post("")
 @jwt_required(optional=True)
 def create_connection():
@@ -122,6 +293,8 @@ def create_connection():
         return jsonify({"error": "client_id_required"}), 400
     if not plan_profile:
         return jsonify({"error": "plan_profile_required"}), 400
+    if not (data.get("location_url") or "").strip():
+        return jsonify({"error": "location_url_required", "message": "Ingresá la ubicación y verificá la cobertura."}), 400
 
     try:
         ip, ip_autoassigned = resolve_ip_for_connection(
@@ -170,26 +343,28 @@ def create_connection():
         pon_sn=pon_sn,
     )
     db.session.add(x)
-    db.session.commit()  # asigna x.id (pppoe)
+    db.session.flush()  # asigna x.id (pppoe)
 
     # Default credentials si no vinieron
     if not x.pppoe_username:
         x.pppoe_username = str(x.id)
     if not x.pppoe_password_value:
         x.pppoe_password_value = str(x.id)
-    db.session.commit()
 
-    # Orden de instalación si vino ubicación (link Google Maps o lat,lng).
-    installation_order = None
-    if location_url:
-        from ..maps.service import create_order as create_installation_order
+    # Orden de instalación: misma transacción que la conexión, así si el mapa
+    # no responde no queda una conexión sin orden.
+    from ..maps.service import CoverageCheckFailed, create_order as create_installation_order
 
+    try:
         installation_order = create_installation_order(
             client_id=int(client.id),
             connection_id=int(x.id),
             location_url=location_url,
         )
-        db.session.commit()
+    except CoverageCheckFailed as e:
+        db.session.rollback()
+        return e.to_response()
+    db.session.commit()
 
     jobs = []
     if provision_mikrotik and x.server_id:

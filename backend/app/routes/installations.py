@@ -1,7 +1,7 @@
 """
 Órdenes de instalación (tickets para el técnico) + webhook de confirmación.
 
-Estados: PENDIENTE / RESERVADO / SIN_COBERTURA / INSTALADA / VENCIDA / CANCELADA.
+Estados: RESERVADO / SIN_COBERTURA / INSTALADA / VENCIDA / CANCELADA.
 """
 import hmac
 import json
@@ -14,14 +14,13 @@ from ..extensions import db
 from ..logging_utils import slog
 from ..maps.client import MapsClient, MapsError, MapsNotConfigured, parse_availability, parse_install_calc
 from ..maps.config import maps_webhook_secret
-from ..maps.service import cancel_order, confirm_order, create_order, run_coverage_check
+from ..maps.service import CoverageCheckFailed, cancel_order, confirm_order, create_order, run_coverage_check
 from ..models.client import Client
 from ..models.connection import Connection
 from ..models.installation_order import (
     ALL_STATUSES,
     InstallationOrder,
     STATUS_INSTALADA,
-    STATUS_PENDIENTE,
     STATUS_RESERVADO,
     STATUS_SIN_COBERTURA,
     STATUS_VENCIDA,
@@ -146,14 +145,18 @@ def create_order_endpoint():
     if not location_url and (lat is None or lng is None):
         return jsonify({"error": "location_required"}), 400
 
-    order = create_order(
-        client_id=int(client_id),
-        connection_id=(int(connection_id) if connection_id else None),
-        location_url=location_url,
-        lat=lat,
-        lng=lng,
-        notes=(data.get("notes") or None),
-    )
+    try:
+        order = create_order(
+            client_id=int(client_id),
+            connection_id=(int(connection_id) if connection_id else None),
+            location_url=location_url,
+            lat=lat,
+            lng=lng,
+            notes=(data.get("notes") or None),
+        )
+    except CoverageCheckFailed as e:
+        db.session.rollback()
+        return e.to_response()
     db.session.commit()
     return jsonify(_order_to_dict(order, include_raw=True)), 201
 
@@ -220,11 +223,15 @@ def preview_coverage():
 @bp.post("/<int:order_id>/retry-check")
 @jwt_required(optional=True)
 def retry_check(order_id: int):
-    """Reintenta el chequeo/reserva (PENDIENTE, SIN_COBERTURA o VENCIDA)."""
+    """Reintenta el chequeo/reserva (SIN_COBERTURA o VENCIDA)."""
     o = InstallationOrder.query.get_or_404(order_id)
-    if o.status not in (STATUS_PENDIENTE, STATUS_SIN_COBERTURA, STATUS_VENCIDA):
+    if o.status not in (STATUS_SIN_COBERTURA, STATUS_VENCIDA):
         return jsonify({"error": "invalid_status", "status": o.status}), 409
-    run_coverage_check(o)
+    try:
+        run_coverage_check(o)
+    except CoverageCheckFailed as e:
+        db.session.rollback()
+        return e.to_response()
     db.session.commit()
     return jsonify(_order_to_dict(o, include_raw=True))
 
@@ -234,7 +241,7 @@ def retry_check(order_id: int):
 def confirm_manual(order_id: int):
     """Confirmación manual de instalación (el operador cierra la orden)."""
     o = InstallationOrder.query.get_or_404(order_id)
-    if o.status not in (STATUS_RESERVADO, STATUS_PENDIENTE, STATUS_VENCIDA):
+    if o.status not in (STATUS_RESERVADO, STATUS_VENCIDA):
         return jsonify({"error": "invalid_status", "status": o.status}), 409
     confirm_order(o, source="manual")
     db.session.commit()

@@ -306,6 +306,12 @@ def list_clients():
             ors.append(Client.id == int(q))
         base_filters.append(or_(*ors))
 
+    debt_filter = (request.args.get("debt") or "").strip().lower()
+    if debt_filter == "debtors":
+        base_filters.append(debt_total_sq > 0)
+    elif debt_filter == "current":
+        base_filters.append(debt_total_sq <= 0)
+
     total = db.session.query(func.count(Client.id)).filter(*base_filters).scalar() or 0
 
     query = (
@@ -388,6 +394,7 @@ def list_clients():
             "sort_by": sort_by,
             "sort_dir": sort_dir,
             "q": q,
+            "debt": debt_filter or None,
         }
     )
 
@@ -439,6 +446,14 @@ def create_client():
         phone = validate_phone(data.get("phone"))
         email = validate_email(data.get("email"))
         address = optional_str(data.get("address"), 255, "address")
+        if kind == "PERSON" and not dni:
+            raise ValidationError("dni_required", "Ingresá el DNI del cliente.")
+        if kind == "COMPANY" and not cuit:
+            raise ValidationError("cuit_required", "Ingresá el CUIT de la empresa.")
+        if not address:
+            raise ValidationError("address_required", "Ingresá la dirección del cliente.")
+        if not phone:
+            raise ValidationError("phone_required", "Ingresá el teléfono del cliente.")
     except ValidationError as e:
         return e.to_response()
 
@@ -472,6 +487,8 @@ def create_client():
         plan_profile = (conn.get("plan_profile") or "").strip()
         if not plan_profile:
             return jsonify({"error": "plan_profile_required"}), 400
+        if not (conn.get("location_url") or "").strip():
+            return jsonify({"error": "location_url_required", "message": "Ingresá la ubicación y verificá la cobertura."}), 400
         try:
             service_address = optional_str(conn.get("service_address"), 255, "service_address")
             location = optional_str(conn.get("location"), 255, "location")
@@ -511,7 +528,7 @@ def create_client():
         )
 
     db.session.add(c)
-    db.session.commit()  # para asignar IDs a connections
+    db.session.flush()  # para asignar IDs a connections
 
     # Default credentials si no vinieron (por defecto = id)
     for x in c.connections:
@@ -519,27 +536,27 @@ def create_client():
             x.pppoe_username = str(x.id)
         if not x.pppoe_password_value:
             x.pppoe_password_value = str(x.id)
-    db.session.commit()
 
-    # Órdenes de instalación: si la conexión trae ubicación (link Google Maps o
-    # lat,lng), se chequea cobertura contra la API de mapas y se reserva puerto
-    # en el NAP más cercano. Sin cobertura → orden SIN_COBERTURA. Si la API
-    # falla, la orden queda PENDIENTE (no bloquea el alta del cliente).
+    # Órdenes de instalación: se chequea cobertura contra la API de mapas y se
+    # reserva puerto en el NAP más cercano; sin cobertura → SIN_COBERTURA. Si el
+    # mapa no responde no se guarda nada (ni el cliente) y el operador reintenta.
     installation_orders = []
-    from ..maps.service import create_order as create_installation_order
+    from ..maps.service import CoverageCheckFailed, release_reservation, create_order as create_installation_order
 
-    for conn, x in zip(conns, c.connections):
-        location_url = (conn.get("location_url") or "").strip() or None
-        if not location_url:
-            continue
-        order = create_installation_order(
-            client_id=int(c.id),
-            connection_id=int(x.id),
-            location_url=location_url,
-        )
-        installation_orders.append(order)
-    if installation_orders:
-        db.session.commit()
+    try:
+        for conn, x in zip(conns, c.connections):
+            installation_orders.append(create_installation_order(
+                client_id=int(c.id),
+                connection_id=int(x.id),
+                location_url=conn["location_url"],
+            ))
+    except CoverageCheckFailed as e:
+        for o in installation_orders:
+            if o.status == "RESERVADO":
+                release_reservation(o, reason="alta fallida")
+        db.session.rollback()
+        return e.to_response()
+    db.session.commit()
 
     jobs = []
     if provision_mikrotik:

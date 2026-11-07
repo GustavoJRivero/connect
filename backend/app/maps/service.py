@@ -9,8 +9,8 @@ Flujo al crear una solicitud con ubicación:
   3. POST al NAP → Reservados +1 / Disponibles −1 → orden RESERVADO
      con vencimiento = ahora + maps.reservation.ttl_hours (default 168h = 7 días)
 
-Si la API de mapas no está configurada o falla, la orden queda PENDIENTE con
-`last_maps_error`; se puede reintentar con el endpoint retry-check.
+Si la API de mapas no está configurada o falla, se lanza CoverageCheckFailed y
+el caller hace rollback: no se guarda la solicitud y el operador reintenta.
 """
 from datetime import datetime, timedelta
 from typing import Optional
@@ -21,7 +21,6 @@ from ..models.installation_order import (
     InstallationOrder,
     STATUS_CANCELADA,
     STATUS_INSTALADA,
-    STATUS_PENDIENTE,
     STATUS_RESERVADO,
     STATUS_SIN_COBERTURA,
     STATUS_VENCIDA,
@@ -37,6 +36,22 @@ from .client import (
 
 
 DEFAULT_TTL_HOURS = 168  # 7 días
+
+
+class CoverageCheckFailed(Exception):
+    """No se pudo completar el chequeo de cobertura/reserva contra el mapa."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        self.message = message
+
+    def to_response(self):
+        from flask import jsonify
+
+        return jsonify({
+            "error": "coverage_check_failed",
+            "message": f"No se pudo verificar la cobertura con el mapa: {self.message}. No se guardó nada; reintentá.",
+        }), 502
 
 
 def _ttl_hours() -> int:
@@ -71,6 +86,7 @@ def run_coverage_check(order: InstallationOrder) -> InstallationOrder:
     """Ejecuta chequeo de disponibilidad + cálculo + reserva para una orden.
 
     Actualiza la orden in-place (sin commit; el caller decide cuándo commitear).
+    Si el mapa no responde lanza CoverageCheckFailed: el caller debe hacer rollback.
     """
     now = datetime.utcnow()
     order.last_maps_error = None
@@ -78,9 +94,7 @@ def run_coverage_check(order: InstallationOrder) -> InstallationOrder:
     try:
         mc = MapsClient()
     except MapsNotConfigured:
-        order.status = STATUS_PENDIENTE
-        order.last_maps_error = "API de mapas no configurada (Configuración → Maps o MAPS_API_KEY)"
-        return order
+        raise CoverageCheckFailed("la API de mapas no está configurada (Configuración → Maps)")
 
     loc_kwargs = {}
     if order.location_url:
@@ -89,17 +103,13 @@ def run_coverage_check(order: InstallationOrder) -> InstallationOrder:
         loc_kwargs["lat"] = order.latitude
         loc_kwargs["lng"] = order.longitude
     else:
-        order.status = STATUS_PENDIENTE
-        order.last_maps_error = "La orden no tiene ubicación (link o lat/lng)"
-        return order
+        raise CoverageCheckFailed("la solicitud no tiene ubicación (link o lat/lng)")
 
     # 1) Disponibilidad
     try:
         avail_raw = mc.check_availability(**loc_kwargs)
     except MapsError as e:
-        order.status = STATUS_PENDIENTE
-        order.last_maps_error = f"availability: {e.code} {e.message}"[:500]
-        return order
+        raise CoverageCheckFailed(f"disponibilidad ({e.code} {e.message})")
 
     avail = parse_availability(avail_raw)
     order.availability_json = dumps_compact(avail_raw)
@@ -136,16 +146,12 @@ def run_coverage_check(order: InstallationOrder) -> InstallationOrder:
 
     # 3) Reserva del puerto en el NAP elegido
     if not order.nap_ref:
-        order.status = STATUS_PENDIENTE
-        order.last_maps_error = "No se pudo identificar el NAP a reservar (respuesta sin id/nombre)"
-        return order
+        raise CoverageCheckFailed("el mapa no devolvió qué NAP reservar")
 
     try:
         mc.reserve_port(order.nap_ref)
     except MapsError as e:
-        order.status = STATUS_PENDIENTE
-        order.last_maps_error = f"reserve: {e.code} {e.message}"[:500]
-        return order
+        raise CoverageCheckFailed(f"reserva de puerto ({e.code} {e.message})")
 
     order.status = STATUS_RESERVADO
     order.reserved_at = now
@@ -186,7 +192,7 @@ def create_order(
         location_url=(str(location_url).strip()[:1000] if location_url else None),
         latitude=lat,
         longitude=lng,
-        status=STATUS_PENDIENTE,
+        status=STATUS_SIN_COBERTURA,
         notes=(notes or None),
     )
     db.session.add(order)
