@@ -9,6 +9,7 @@ from ..models.connection import Connection
 from ..models.mikrotik_server import MikrotikServer
 from ..models.complaint import Complaint
 from ..models.invoice import Invoice
+from .invoices import unpaid_invoice_counts
 from ..models.payment import Payment, PaymentAllocation
 from ..models.installation_order import InstallationOrder
 from ..models.client_portal import ClientPortalAccount, ClientNotification, MpCheckout
@@ -369,21 +370,22 @@ def list_clients():
             .all()
         )
         complaints_map = {int(cid): int(n or 0) for cid, n in complaint_rows}
+    unpaid_map = unpaid_invoice_counts(page_ids)
 
     items = []
     for c, connections_count, active_connections, cut_connections, debt_total in rows:
-        items.append(
-            _client_to_list_dict(
-                c,
-                address=c.address,
-                connections_count=int(connections_count or 0),
-                debt_total=str(debt_total or 0),
-                active_connections=int(active_connections or 0),
-                cut_connections=int(cut_connections or 0),
-                plan_profile=plan_map.get(int(c.id)),
-                open_complaints=complaints_map.get(int(c.id), 0),
-            )
+        d = _client_to_list_dict(
+            c,
+            address=c.address,
+            connections_count=int(connections_count or 0),
+            debt_total=str(debt_total or 0),
+            active_connections=int(active_connections or 0),
+            cut_connections=int(cut_connections or 0),
+            plan_profile=plan_map.get(int(c.id)),
+            open_complaints=complaints_map.get(int(c.id), 0),
         )
+        d["unpaid_invoices"] = unpaid_map.get(int(c.id), 0)
+        items.append(d)
 
     return jsonify(
         {

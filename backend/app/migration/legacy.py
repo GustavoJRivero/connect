@@ -6,12 +6,14 @@ import os
 import re
 import subprocess
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 from urllib.parse import unquote, urlparse
 
 import pymysql
+from werkzeug.security import generate_password_hash
 
 from ..afip.util import DEFAULT_IVA_CONDITION_COMPANY, DEFAULT_IVA_CONDITION_PERSON
 
@@ -23,6 +25,7 @@ MAX_DUMP_BYTES = int(os.environ.get("MIGRATION_MAX_BYTES", str(600 * 1024 * 1024
 WIPE_TABLES = [
     "client_credit_movements",
     "client_notifications",
+    "client_portal_accounts",
     "mp_checkouts",
     "payment_allocations",
     "payments",
@@ -143,7 +146,7 @@ def load_legacy(cur, db_params):
     cur.execute(f"SELECT * FROM `{legacy}`.server")
     servers = cur.fetchall()
     cur.execute(
-        f"SELECT id, nombre, estado, correo, telefono, movil, cedula, "
+        f"SELECT id, nombre, estado, correo, telefono, movil, cedula, codigo, "
         f"direccion_principal FROM `{legacy}`.usuarios"
     )
     usuarios = cur.fetchall()
@@ -239,6 +242,11 @@ def build_clients(usuarios):
         phone = first_nonempty(members, "movil") or first_nonempty(members, "telefono")
         email = first_nonempty(members, "correo")
         address = first_nonempty(members, "direccion_principal")
+        portal_codes = []
+        for m in members:
+            code = (m.get("codigo") or "").strip()
+            if code and code not in portal_codes:
+                portal_codes.append(code)
         clients.append(
             {
                 "id": client_id,
@@ -251,6 +259,7 @@ def build_clients(usuarios):
                 "address": (address[:255] if address else None),
                 "is_active": 1 if is_active else 0,
                 "status": client_status,
+                "portal_codes": portal_codes,
             }
         )
         for m in members:
@@ -756,6 +765,33 @@ def _insert_clients(cur, target_db, clients):
         cur.executemany(sql, clients)
 
 
+def _insert_portal_accounts(cur, target_db, clients):
+    """El `codigo` de MikroWisp es la clave del portal (texto plano): se guarda hasheado
+    para que los clientes sigan entrando con la misma contraseña."""
+    with_codes = [c for c in clients if c.get("portal_codes")]
+    codes = [code for c in with_codes for code in c["portal_codes"]]
+    # scrypt tarda ~50 ms por hash y libera el GIL: en paralelo la migración no se estira minutos.
+    with ThreadPoolExecutor(max_workers=min(4, os.cpu_count() or 1)) as pool:
+        hashes = iter(list(pool.map(generate_password_hash, codes)))
+    rows = []
+    for c in with_codes:
+        own = [next(hashes) for _ in c["portal_codes"]]
+        rows.append(
+            {
+                "client_id": c["id"],
+                "password_hash": own[0],
+                "legacy_password_hashes": json.dumps(own[1:]) if len(own) > 1 else None,
+            }
+        )
+    if rows:
+        cur.executemany(
+            f"INSERT INTO `{target_db}`.client_portal_accounts "
+            "(client_id, created_at, password_hash, is_enabled, last_login_at, auth_version, legacy_password_hashes) "
+            "VALUES (%(client_id)s, NOW(), %(password_hash)s, 1, NULL, 1, %(legacy_password_hashes)s)",
+            rows,
+        )
+
+
 def _insert_connections(cur, target_db, conns):
     sql = (
         f"INSERT INTO `{target_db}`.connections "
@@ -938,6 +974,8 @@ def _build_all(cur, target_db):
     )
     summary.update(summarize_billing(invoices, payments, allocations, deleted_clients))
     summary["client_emails_pending"] = len(client_emails)
+    summary["portal_accounts"] = sum(1 for c in clients if c["portal_codes"])
+    summary["portal_accounts_multi_password"] = sum(1 for c in clients if len(c["portal_codes"]) > 1)
     return {
         "client_emails": client_emails,
         "plans": plans,
@@ -967,6 +1005,7 @@ def apply_migration(database_url: str) -> dict[str, Any]:
         _insert_plans(cur, target_db, data["plans"])
         _insert_servers(cur, target_db, data["servers"])
         _insert_clients(cur, target_db, data["clients"])
+        _insert_portal_accounts(cur, target_db, data["clients"])
         _insert_connections(cur, target_db, data["connections"])
         _write_client_map(cur, target_db, data["client_map"])
         _write_client_emails(cur, target_db, data["client_emails"])

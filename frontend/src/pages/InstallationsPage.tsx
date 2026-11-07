@@ -74,6 +74,20 @@ function statusBadge(status: string) {
   return <MutedBadge tone={installationStatusTone(status)}>{t?.label ?? status}</MutedBadge>;
 }
 
+// last_maps_error llega como "<etapa>: <código> <mensaje del mapa>".
+function mapsWarning(raw: string): { label: string; detail: string } {
+  const m = raw.match(/^([a-z_]+)(?: \(([^)]*)\))?: \S+ ([\s\S]*)$/);
+  const stage = m?.[1] ?? "";
+  const message = (m?.[3] ?? raw).trim();
+  if (stage === "install_calc") {
+    return { label: "Sin metros de fibra", detail: `El puerto quedó reservado, pero el mapa no pudo calcular el recorrido de fibra: ${message}` };
+  }
+  if (stage === "release") {
+    return { label: "Puerto sin liberar", detail: `No se pudo liberar el puerto en el mapa: ${message}` };
+  }
+  return { label: "Aviso del mapa", detail: raw };
+}
+
 function fmtExpiry(iso?: string) {
   if (!iso) return "-";
   return fmtDateTime(iso) || iso;
@@ -344,8 +358,8 @@ export default function InstallationsPage() {
                   <Table.Td>
                     {statusBadge(o.status)}
                     {o.last_maps_error ? (
-                      <Tooltip label={o.last_maps_error} multiline w={320}>
-                        <MutedBadge tone="yellow" ml={4}>!</MutedBadge>
+                      <Tooltip label={mapsWarning(o.last_maps_error).detail} multiline w={320}>
+                        <MutedBadge tone="yellow" ml={4}>{mapsWarning(o.last_maps_error).label}</MutedBadge>
                       </Tooltip>
                     ) : null}
                   </Table.Td>

@@ -111,8 +111,6 @@ def _conn_to_portal(x: Connection) -> dict:
         "plan_profile": x.plan_profile,
         "status": x.status,
         "service_address": x.service_address,
-        "ip": getattr(x, "ip", None),
-        "pppoe_name": x.pppoe_name(),
         "billing_day": x.billing_day,
     }
 

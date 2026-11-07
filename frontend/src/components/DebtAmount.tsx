@@ -1,8 +1,9 @@
 import React from "react";
+import { Stack, Text } from "@mantine/core";
 import { MutedBadge } from "../ui";
 import { fmtMoney } from "../format";
 
-export function DebtAmount(props: { value: unknown; creditValue?: unknown }) {
+export function DebtAmount(props: { value: unknown; creditValue?: unknown; unpaidCount?: unknown }) {
   const n = Number(props.value ?? 0);
   const credit = Number(props.creditValue ?? 0);
   if (!Number.isFinite(n) || n <= 0) {
@@ -11,7 +12,17 @@ export function DebtAmount(props: { value: unknown; creditValue?: unknown }) {
     }
     return <MutedBadge tone="gray">Al día</MutedBadge>;
   }
-  return <MutedBadge tone="red">Debe {fmtMoney(n)}</MutedBadge>;
+  const unpaid = Number(props.unpaidCount ?? 0);
+  return (
+    <Stack gap={2} align="flex-start">
+      <MutedBadge tone="red">-{fmtMoney(n)}</MutedBadge>
+      {unpaid > 0 && (
+        <Text size="xs" c="dimmed">
+          {unpaid === 1 ? "1 factura impaga" : `${unpaid} facturas impagas`}
+        </Text>
+      )}
+    </Stack>
+  );
 }
 
 export type DebtFilter = "all" | "debtors" | "current";

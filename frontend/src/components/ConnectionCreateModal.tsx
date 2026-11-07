@@ -187,14 +187,16 @@ export function ConnectionCreateModal(props: {
               <SimpleGrid cols={{ base: 1, sm: 2 }}>
                 <TextInput
                   label="Usuario PPPoE"
-                  placeholder="Automático"
+                  placeholder="Automático (N° de conexión)"
+                  autoComplete="off"
                   leftSection={<IconUser size={16} />}
                   value={pppoeUsername}
                   onChange={(e) => setPppoeUsername(e.currentTarget.value)}
                 />
                 <PasswordInput
                   label="Contraseña PPPoE"
-                  placeholder="Automática"
+                  placeholder="Automática (N° de conexión)"
+                  autoComplete="new-password"
                   value={pppoePassword}
                   onChange={(e) => setPppoePassword(e.currentTarget.value)}
                 />

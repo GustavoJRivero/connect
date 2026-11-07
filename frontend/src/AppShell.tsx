@@ -21,7 +21,6 @@ import {
   IconLayoutDashboard,
   IconUsers,
   IconTool,
-  IconCash,
   IconFileInvoice,
   IconCreditCard,
   IconServer,
@@ -44,7 +43,6 @@ import { ProfileModal } from "./components/ProfileModal";
 
 import ClientsPage from "./pages/ClientsPage";
 import DashboardPage from "./pages/DashboardPage";
-import BillingPage from "./pages/BillingPage";
 import InvoicesPage from "./pages/InvoicesPage";
 import PaymentsPage from "./pages/PaymentsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -62,7 +60,6 @@ function getPageHeading(pathname: string): { kicker?: string; kickerTo?: string;
   if (path.startsWith("/clients")) return { kicker: "Gestión", title: "Clientes" };
   if (path.startsWith("/dashboard")) return { kicker: "Panel", title: "Resumen" };
   if (path.startsWith("/installations")) return { kicker: "Operación", title: "Instalaciones" };
-  if (path.startsWith("/billing")) return { kicker: "Operación", title: "Cobranza" };
   if (path.startsWith("/invoices")) return { kicker: "Facturación", title: "Facturas" };
   if (path.startsWith("/payments")) return { kicker: "Facturación", title: "Pagos" };
   if (path.startsWith("/network")) return { kicker: "Infraestructura", title: "Red" };
@@ -79,7 +76,6 @@ const NAV_ITEMS: { to: string; id: string; label: string; icon: React.ComponentT
   { to: "/dashboard", id: "dashboard", label: "Inicio", icon: IconLayoutDashboard },
   { to: "/clients", id: "clients", label: "Clientes", icon: IconUsers },
   { to: "/installations", id: "installations", label: "Instalaciones", icon: IconTool },
-  { to: "/billing", id: "billing", label: "Cobranza", icon: IconCash },
   { to: "/invoices", id: "invoices", label: "Facturas", icon: IconFileInvoice },
   { to: "/payments", id: "payments", label: "Pagos", icon: IconCreditCard },
   { to: "/network", id: "network", label: "Red", icon: IconServer },
@@ -331,7 +327,7 @@ export default function AppShell(props: { onLogout: () => void }) {
               <Route path="/clients/new" element={guard("clients", <ClientsPage />)} />
               <Route path="/clients/:clientId" element={guard("clients", <ClientsPage />)} />
               <Route path="/installations" element={guard("installations", <InstallationsPage />)} />
-              <Route path="/billing" element={guard("billing", <BillingPage />)} />
+              <Route path="/billing" element={<Navigate to="/payments" replace />} />
               <Route path="/invoices" element={guard("invoices", <InvoicesPage />)} />
               <Route path="/payments" element={guard("payments", <PaymentsPage />)} />
               <Route path="/network" element={guard("network", <NetworkPage />)} />

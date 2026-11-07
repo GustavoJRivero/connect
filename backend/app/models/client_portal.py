@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -14,13 +15,23 @@ class ClientPortalAccount(db.Model):
     is_enabled = db.Column(db.Boolean, default=True, nullable=False)
     last_login_at = db.Column(db.DateTime, nullable=True)
     auth_version = db.Column(db.Integer, default=1, nullable=False)
+    # JSON con hashes de las claves de otros registros de MikroWisp fusionados en este
+    # cliente; valen hasta que el cliente o un admin le cambien la contraseña.
+    legacy_password_hashes = db.Column(db.Text, nullable=True)
 
     def set_password(self, password: str) -> None:
         self.password_hash = generate_password_hash(password)
+        self.legacy_password_hashes = None
         self.auth_version = int(self.auth_version or 0) + 1
 
     def check_password(self, password: str) -> bool:
-        return check_password_hash(self.password_hash, password)
+        if check_password_hash(self.password_hash, password):
+            return True
+        try:
+            alternates = json.loads(self.legacy_password_hashes or "[]")
+        except ValueError:
+            return False
+        return any(check_password_hash(h, password) for h in alternates if isinstance(h, str))
 
 
 class ClientNotification(db.Model):

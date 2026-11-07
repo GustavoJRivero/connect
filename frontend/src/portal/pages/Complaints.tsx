@@ -58,7 +58,7 @@ export function PortalComplaints() {
             label="Conexión"
             value={connectionId}
             onChange={setConnectionId}
-            data={conns.map((c) => ({ value: String(c.id), label: `${c.pppoe_name || c.id} · ${c.plan_profile || ""}` }))}
+            data={conns.map((c) => ({ value: String(c.id), label: `${c.service_address || `Conexión #${c.id}`} · ${c.plan_profile || ""}` }))}
           />
           <Select
             label="Tipo"

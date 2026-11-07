@@ -9,6 +9,7 @@ from email import encoders
 
 from flask import Blueprint, jsonify, request, make_response
 from flask_jwt_extended import get_jwt_identity, jwt_required
+from sqlalchemy import func
 
 from ..extensions import db
 from ..models.invoice import Invoice
@@ -113,6 +114,23 @@ def _payment_status(x: Invoice) -> str:
             return "OVERDUE"
         return "UNPAID"
     return x.status
+
+
+def unpaid_invoice_counts(client_ids) -> dict[int, int]:
+    """Cantidad de facturas emitidas con saldo pendiente por cliente."""
+    ids = {int(x) for x in client_ids if x is not None}
+    if not ids:
+        return {}
+    rows = (
+        db.session.query(Invoice.client_id, func.count(Invoice.id))
+        .filter(Invoice.client_id.in_(ids))
+        .filter(Invoice.is_deleted.is_(False))
+        .filter(Invoice.status == "ISSUED")
+        .filter(Invoice.total > Invoice.paid_total)
+        .group_by(Invoice.client_id)
+        .all()
+    )
+    return {int(cid): int(n or 0) for cid, n in rows}
 
 
 def payment_methods_by_invoice(invoice_ids: list[int]) -> dict[int, list[str]]:
