@@ -14,9 +14,18 @@ from ..extensions import db
 from ..logging_utils import slog
 from ..maps.client import MapsClient, MapsError, MapsNotConfigured, parse_availability, parse_install_calc
 from ..maps.config import maps_webhook_secret
-from ..maps.service import CoverageCheckFailed, cancel_order, confirm_order, create_order, run_coverage_check
+from ..maps.service import (
+    CoverageCheckFailed,
+    cancel_order,
+    confirm_order,
+    create_order,
+    parse_latlng_text,
+    run_coverage_check,
+)
 from ..models.client import Client
 from ..models.connection import Connection
+from ..models.role import Role
+from ..models.user import User
 from ..models.installation_order import (
     ALL_STATUSES,
     InstallationOrder,
@@ -56,6 +65,7 @@ def _order_to_dict(o: InstallationOrder, include_raw: bool = False) -> dict:
         "expired_at": iso_utc(o.expired_at),
         "last_maps_error": o.last_maps_error,
         "technician": o.technician,
+        "technician_user_id": o.technician_user_id,
         "notes": o.notes,
     }
     if include_raw:
@@ -236,13 +246,117 @@ def retry_check(order_id: int):
     return jsonify(_order_to_dict(o, include_raw=True))
 
 
+@bp.post("/<int:order_id>/relocate")
+@jwt_required(optional=True)
+def relocate(order_id: int):
+    """Cambia la ubicación de la orden y vuelve a chequear cobertura/reserva.
+
+    Body: { location_url, service_address? }
+    Si la orden tenía puerto reservado, se libera recién después de que el chequeo
+    nuevo termine bien: si el mapa falla, la orden queda como estaba.
+    """
+    o = InstallationOrder.query.get_or_404(order_id)
+    if o.status not in (STATUS_SIN_COBERTURA, STATUS_VENCIDA, STATUS_RESERVADO):
+        return jsonify({"error": "invalid_status", "status": o.status}), 409
+    data = request.get_json(force=True) or {}
+    location_url = (data.get("location_url") or "").strip()
+    if not location_url:
+        return jsonify({"error": "location_required", "message": "Ingresá la nueva ubicación."}), 400
+
+    previous_nap = o.nap_ref if o.status == STATUS_RESERVADO else None
+    lat, lng = parse_latlng_text(location_url)
+    o.location_url = location_url[:1000]
+    o.latitude = lat
+    o.longitude = lng
+    o.nap_ref = None
+    o.nap_name = None
+    o.fiber_meters = None
+    o.install_calc_json = None
+    o.reserved_at = None
+    o.expires_at = None
+    o.expired_at = None
+    if "service_address" in data and o.connection is not None:
+        o.connection.service_address = (str(data.get("service_address") or "").strip()[:255] or None)
+
+    try:
+        run_coverage_check(o)
+    except CoverageCheckFailed as e:
+        db.session.rollback()
+        return e.to_response()
+
+    if previous_nap:
+        try:
+            MapsClient().release_port(previous_nap)
+        except (MapsError, MapsNotConfigured) as e:
+            detail = f"{e.code} {e.message}" if isinstance(e, MapsError) else str(e)
+            o.last_maps_error = f"release (cambio de ubicación): {detail}"[:500]
+    slog(
+        module="INSTALL",
+        action="RELOCATED",
+        message=f"Orden #{o.id}: ubicación cambiada, quedó {o.status}",
+        details={"order_id": o.id, "location": o.location_url, "released_nap": previous_nap, "nap": o.nap_ref},
+        ref_id=o.id,
+        ref_type="installation_order",
+    )
+    db.session.commit()
+    return jsonify(_order_to_dict(o, include_raw=True))
+
+
+def _technician_users():
+    return (
+        User.query.join(Role, User.role_id == Role.id)
+        .filter(Role.is_technician.is_(True), User.is_active.is_(True))
+        .order_by(User.first_name.asc(), User.last_name.asc(), User.username.asc())
+        .all()
+    )
+
+
+def _technician_label(u: User) -> str:
+    return (u.full_name or u.username)[:120]
+
+
+def _assign_technician(o: InstallationOrder, raw_id):
+    """Asigna el técnico por id de usuario; devuelve una respuesta de error o None."""
+    if raw_id in (None, ""):
+        o.technician_user_id = None
+        o.technician = None
+        return None
+    try:
+        user = User.query.get(int(raw_id))
+    except (TypeError, ValueError):
+        user = None
+    if user is None or not user.is_active or not user.is_technician:
+        return jsonify({
+            "error": "invalid_technician",
+            "message": "Elegí un técnico activo (un usuario con rol de técnico).",
+        }), 400
+    o.technician_user_id = user.id
+    o.technician = _technician_label(user)
+    return None
+
+
+@bp.get("/technicians")
+@jwt_required(optional=True)
+def list_technicians():
+    return jsonify([{"id": u.id, "name": _technician_label(u)} for u in _technician_users()])
+
+
 @bp.post("/<int:order_id>/confirm")
 @jwt_required(optional=True)
 def confirm_manual(order_id: int):
-    """Confirmación manual de instalación (el operador cierra la orden)."""
+    """Confirmación manual de instalación: el operador elige qué técnico la hizo.
+
+    Body: { technician_user_id }
+    """
     o = InstallationOrder.query.get_or_404(order_id)
     if o.status not in (STATUS_RESERVADO, STATUS_VENCIDA):
         return jsonify({"error": "invalid_status", "status": o.status}), 409
+    data = request.get_json(force=True) or {}
+    if not data.get("technician_user_id"):
+        return jsonify({"error": "technician_required", "message": "Elegí el técnico que hizo la instalación."}), 400
+    err = _assign_technician(o, data.get("technician_user_id"))
+    if err:
+        return err
     confirm_order(o, source="manual")
     db.session.commit()
     return jsonify(_order_to_dict(o))
@@ -262,11 +376,13 @@ def cancel(order_id: int):
 @bp.put("/<int:order_id>")
 @jwt_required(optional=True)
 def update_order(order_id: int):
-    """Edita datos operativos del ticket (técnico, notas)."""
+    """Edita datos operativos del ticket (técnico asignado, notas)."""
     o = InstallationOrder.query.get_or_404(order_id)
     data = request.get_json(force=True) or {}
-    if "technician" in data:
-        o.technician = (str(data.get("technician")).strip() or None) if data.get("technician") is not None else None
+    if "technician_user_id" in data:
+        err = _assign_technician(o, data.get("technician_user_id"))
+        if err:
+            return err
     if "notes" in data:
         o.notes = (str(data.get("notes")).strip() or None) if data.get("notes") is not None else None
     db.session.commit()

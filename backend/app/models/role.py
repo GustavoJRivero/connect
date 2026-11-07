@@ -18,6 +18,8 @@ class Role(db.Model):
     name = db.Column(db.String(60), unique=True, nullable=False)
     description = db.Column(db.String(255), nullable=True)
     is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    # Los usuarios con un rol técnico son los que se pueden asignar a una instalación.
+    is_technician = db.Column(db.Boolean, default=False, nullable=False)
     permissions = db.Column(db.Text, nullable=True)
 
     def get_permissions(self) -> dict[str, list[str]]:

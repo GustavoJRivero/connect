@@ -69,7 +69,9 @@ class InstallationOrder(db.Model):
     last_maps_error = db.Column(db.String(500), nullable=True)
 
     # Datos operativos del ticket.
+    # `technician` guarda el nombre para mostrar e imprimir; el usuario asignado va en technician_user_id.
     technician = db.Column(db.String(120), nullable=True)
+    technician_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
     notes = db.Column(db.String(2000), nullable=True)
 
     client = db.relationship("Client", lazy="joined")

@@ -45,6 +45,7 @@ export type RoleItem = {
   name: string;
   description: string | null;
   is_admin: boolean;
+  is_technician: boolean;
   permissions: Permissions;
   users_count: number;
 };
@@ -321,10 +322,10 @@ export const api = {
   listRoles(): Promise<RoleItem[]> {
     return request("/api/roles");
   },
-  createRole(payload: { name: string; description?: string; permissions: Permissions }) {
+  createRole(payload: { name: string; description?: string; permissions: Permissions; is_technician?: boolean }) {
     return request("/api/roles", { method: "POST", body: JSON.stringify(payload) });
   },
-  updateRole(id: number, payload: Partial<{ name: string; description: string; permissions: Permissions }>) {
+  updateRole(id: number, payload: Partial<{ name: string; description: string; permissions: Permissions; is_technician: boolean }>) {
     return request(`/api/roles/${id}`, { method: "PUT", body: JSON.stringify(payload) });
   },
   deleteRole(id: number) {
@@ -451,7 +452,7 @@ export const api = {
   // payments
   listPayments(
     client_id?: number,
-    opts?: { from?: string; to?: string; day?: string; month?: string; year?: string }
+    opts?: { from?: string; to?: string; day?: string; month?: string; year?: string; limit?: number; offset?: number }
   ) {
     const params = new URLSearchParams();
     if (client_id) params.set("client_id", String(client_id));
@@ -460,6 +461,8 @@ export const api = {
     if (opts?.day) params.set("day", opts.day);
     if (opts?.month) params.set("month", opts.month);
     if (opts?.year) params.set("year", opts.year);
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.offset != null) params.set("offset", String(opts.offset));
     const qs = params.toString();
     return request(`/api/payments${qs ? `?${qs}` : ""}`);
   },
@@ -703,13 +706,19 @@ export const api = {
   retryInstallationCheck(id: number) {
     return request(`/api/installations/${id}/retry-check`, { method: "POST", body: JSON.stringify({}) });
   },
-  confirmInstallation(id: number) {
-    return request(`/api/installations/${id}/confirm`, { method: "POST", body: JSON.stringify({}) });
+  relocateInstallation(id: number, payload: { location_url: string; service_address?: string }) {
+    return request(`/api/installations/${id}/relocate`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  confirmInstallation(id: number, technicianUserId: number) {
+    return request(`/api/installations/${id}/confirm`, { method: "POST", body: JSON.stringify({ technician_user_id: technicianUserId }) });
+  },
+  listTechnicians() {
+    return request("/api/installations/technicians") as Promise<{ id: number; name: string }[]>;
   },
   cancelInstallation(id: number) {
     return request(`/api/installations/${id}/cancel`, { method: "POST", body: JSON.stringify({}) });
   },
-  updateInstallation(id: number, payload: { technician?: string; notes?: string }) {
+  updateInstallation(id: number, payload: { technician_user_id?: number | null; notes?: string }) {
     return request(`/api/installations/${id}`, { method: "PUT", body: JSON.stringify(payload) });
   },
   getInstallationPdfUrl(id: number) {

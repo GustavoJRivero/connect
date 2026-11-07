@@ -3,7 +3,8 @@ import { api } from "../api";
 import { Button, MutedBadge } from "../ui";
 import { useCan } from "../auth";
 import { formatApiError, fmtMoney } from "../format";
-import { IconPencil, IconRefresh, IconTrash } from "@tabler/icons-react";
+import { IconArrowDown, IconArrowUp, IconGauge, IconPencil, IconReceipt, IconRefresh, IconTag, IconTrash } from "@tabler/icons-react";
+import { FormSection } from "../components/FormSection";
 import {
   Stack,
   Alert,
@@ -19,6 +20,8 @@ import {
   Card,
   Loader,
   Center,
+  Paper,
+  SimpleGrid,
 } from "@mantine/core";
 
 interface Plan {
@@ -244,85 +247,117 @@ export default function PlansPage() {
         opened={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editing ? `Editar plan: ${editing.name}` : "Nuevo plan"}
-        size="md"
+        size="lg"
+        radius="md"
       >
         <Stack gap="md">
-          <TextInput
-            label="Nombre"
-            placeholder="ej: 50 Megas"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
-            required
-          />
-          <TextInput
-            label="Profile Mikrotik"
-            placeholder="ej: 50M"
-            value={form.profile}
-            onChange={(e) => setForm({ ...form, profile: e.currentTarget.value })}
-            required
-          />
-          <Group grow>
-            <NumberInput
-              label="Bajada (Mbps)"
-              value={form.download_mbps}
-              onChange={(v) => setForm({ ...form, download_mbps: Number(v) || 0 })}
-              min={0}
+          <FormSection icon={<IconTag size={20} />} title="Identificación" description="Cómo se ve el plan en el sistema y qué profile usa en el Mikrotik.">
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <TextInput
+                label="Nombre"
+                placeholder="ej: 50 Megas"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.currentTarget.value })}
+                withAsterisk
+              />
+              <TextInput
+                label="Profile Mikrotik"
+                placeholder="ej: 50M"
+                value={form.profile}
+                onChange={(e) => setForm({ ...form, profile: e.currentTarget.value })}
+                withAsterisk
+              />
+            </SimpleGrid>
+          </FormSection>
+
+          <FormSection icon={<IconGauge size={20} />} title="Velocidad" description="Bajada y subida que se configuran en el profile.">
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <NumberInput
+                label="Bajada"
+                leftSection={<IconArrowDown size={16} />}
+                suffix=" Mbps"
+                value={form.download_mbps}
+                onChange={(v) => setForm({ ...form, download_mbps: Number(v) || 0 })}
+                min={0}
+              />
+              <NumberInput
+                label="Subida"
+                leftSection={<IconArrowUp size={16} />}
+                suffix=" Mbps"
+                value={form.upload_mbps}
+                onChange={(v) => setForm({ ...form, upload_mbps: Number(v) || 0 })}
+                min={0}
+              />
+            </SimpleGrid>
+            <TextInput
+              label="Rate-limit Mikrotik (opcional)"
+              placeholder="Automático (bajada/subida)"
+              value={form.rate_limit}
+              onChange={(e) => setForm({ ...form, rate_limit: e.currentTarget.value })}
             />
-            <NumberInput
-              label="Subida (Mbps)"
-              value={form.upload_mbps}
-              onChange={(v) => setForm({ ...form, upload_mbps: Number(v) || 0 })}
-              min={0}
-            />
-          </Group>
-          <TextInput
-            label="Rate-limit Mikrotik (opcional)"
-            description="Si queda vacío se usa subida/bajada. Solo hace falta si el profile usa burst."
-            placeholder="vacío = automático"
-            value={form.rate_limit}
-            onChange={(e) => setForm({ ...form, rate_limit: e.currentTarget.value })}
-          />
-          <Group grow>
-            <NumberInput
-              label="Precio final (IVA incluido)"
-              description="Lo que paga el cliente; el neto y el IVA se calculan abajo."
-              value={form.price}
-              onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
-              min={0}
-              decimalScale={2}
-              prefix="$"
-              thousandSeparator="."
-              decimalSeparator=","
-            />
-            <NumberInput
-              label="IVA %"
-              value={form.iva_percent}
-              onChange={(v) => setForm({ ...form, iva_percent: Number(v) || 0 })}
-              min={0}
-              max={100}
-              decimalScale={2}
-              suffix="%"
-            />
-          </Group>
-          <Text size="xs" c="dimmed">
+            <Text size="xs" c="dimmed">Solo hace falta si el profile usa burst; vacío se arma con la bajada y la subida.</Text>
+          </FormSection>
+
+          <FormSection icon={<IconReceipt size={20} />} title="Precio" description="Lo que paga el cliente por mes, con IVA incluido.">
+            <SimpleGrid cols={{ base: 1, sm: 2 }}>
+              <NumberInput
+                label="Precio final"
+                value={form.price}
+                onChange={(v) => setForm({ ...form, price: Number(v) || 0 })}
+                min={0}
+                decimalScale={2}
+                prefix="$"
+                thousandSeparator="."
+                decimalSeparator=","
+              />
+              <NumberInput
+                label="IVA"
+                value={form.iva_percent}
+                onChange={(v) => setForm({ ...form, iva_percent: Number(v) || 0 })}
+                min={0}
+                max={100}
+                decimalScale={2}
+                suffix="%"
+              />
+            </SimpleGrid>
             {(() => {
               const { net, iva } = netAndIvaFromGross(form.price, form.iva_percent);
-              const fmt = (n: number) =>
-                `$${n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-              return `Desglose: neto gravado ${fmt(net)} + IVA ${fmt(iva)} = ${fmt(form.price)}`;
+              return (
+                <Paper radius="md" p="sm" style={{ background: "var(--mantine-color-violet-light)" }}>
+                  <SimpleGrid cols={3} spacing="xs">
+                    <div>
+                      <Text size="xs" c="dimmed">Neto gravado</Text>
+                      <Text fw={600}>{fmtMoney(net)}</Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">IVA</Text>
+                      <Text fw={600}>{fmtMoney(iva)}</Text>
+                    </div>
+                    <div>
+                      <Text size="xs" c="dimmed">Total</Text>
+                      <Text fw={700} c="violet">{fmtMoney(form.price)}</Text>
+                    </div>
+                  </SimpleGrid>
+                </Paper>
+              );
             })()}
-          </Text>
-          <Switch
-            label="Plan activo"
-            checked={form.is_active}
-            onChange={(e) => setForm({ ...form, is_active: e.currentTarget.checked })}
-          />
-          <Group justify="flex-end" mt="md">
+          </FormSection>
+
+          <Paper withBorder radius="md" p="md">
+            <Switch
+              label="Plan activo"
+              description="Desactivalo para dejar de usarlo sin borrarlo."
+              checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.currentTarget.checked })}
+            />
+          </Paper>
+
+          <Group justify="flex-end">
             <Button variant="default" onClick={() => setModalOpen(false)}>
               Cancelar
             </Button>
-            <Button variant="primary" onClick={handleSave} disabled={saving || !form.name || !form.profile}>
-              {saving ? "Guardando..." : editing ? "Guardar cambios" : "Crear plan"}
+            <Button variant="primary" onClick={handleSave} loading={saving} disabled={!form.name || !form.profile}>
+              {editing ? "Guardar cambios" : "Crear plan"}
             </Button>
           </Group>
         </Stack>

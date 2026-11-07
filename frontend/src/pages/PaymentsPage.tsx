@@ -23,6 +23,9 @@ import {
   ActionIcon,
   Tooltip,
   SegmentedControl,
+  Pagination,
+  Select,
+  Text,
 } from "@mantine/core";
 import { IconRefresh } from "@tabler/icons-react";
 
@@ -51,6 +54,9 @@ export default function PaymentsPage() {
   const [to, setTo] = useState("");
   const [range, setRange] = useState<RangePreset>("all");
   const [filterClientId, setFilterClientId] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [total, setTotal] = useState(0);
 
   function applyRange(preset: RangePreset) {
     setRange(preset);
@@ -75,11 +81,14 @@ export default function PaymentsPage() {
     setError(null);
     setLoading(true);
     try {
-      const res = await api.listPayments(filterClientId ? Number(filterClientId) : undefined, {
+      const res = (await api.listPayments(filterClientId ? Number(filterClientId) : undefined, {
         from: from || undefined,
         to: to || undefined,
-      });
-      setItems(Array.isArray(res) ? (res as PaymentRow[]) : []);
+        limit: pageSize,
+        offset: (page - 1) * pageSize,
+      })) as { items?: PaymentRow[]; total?: number };
+      setItems(res?.items ?? []);
+      setTotal(Number(res?.total ?? 0));
     } catch (e: unknown) {
       setError(formatApiError(e));
     } finally {
@@ -88,9 +97,15 @@ export default function PaymentsPage() {
   }
 
   useEffect(() => {
+    setPage(1);
+  }, [from, to, filterClientId, pageSize]);
+
+  useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, filterClientId]);
+  }, [from, to, filterClientId, page, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <Stack gap="md">
@@ -219,6 +234,23 @@ export default function PaymentsPage() {
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
+
+        <Group justify="space-between" mt="md" gap="sm">
+          <Group gap="sm">
+            <Text size="sm" c="dimmed">
+              {total ? `${(page - 1) * pageSize + 1}–${Math.min(page * pageSize, total)} de ${total} pagos` : "0 pagos"}
+            </Text>
+            <Select
+              size="xs"
+              w={110}
+              value={String(pageSize)}
+              onChange={(v) => v && setPageSize(Number(v))}
+              data={["25", "50", "100", "200"].map((n) => ({ value: n, label: `${n} por pág.` }))}
+              allowDeselect={false}
+            />
+          </Group>
+          {totalPages > 1 ? <Pagination value={page} onChange={setPage} total={totalPages} color="violet" size="sm" /> : null}
+        </Group>
       </Card>
     </Stack>
   );

@@ -43,5 +43,9 @@ class User(db.Model):
         return bool(self.role_ref and self.role_ref.is_admin)
 
     @property
+    def is_technician(self) -> bool:
+        return bool(self.role_ref and self.role_ref.is_technician)
+
+    @property
     def full_name(self) -> str:
         return " ".join(part for part in (self.first_name, self.last_name) if part).strip()

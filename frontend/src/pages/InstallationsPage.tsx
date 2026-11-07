@@ -8,6 +8,7 @@ import { formatApiError } from "../format";
 import { fmtDateTime } from "../datetime";
 import { notifyError, notifySuccess } from "../notify";
 import { CoverageMap } from "../components/CoverageMap";
+import { RelocateOrderModal } from "../components/RelocateOrderModal";
 import {
   Alert,
   Anchor,
@@ -21,8 +22,8 @@ import {
   Table,
   Tabs,
   Text,
+  Select,
   Textarea,
-  TextInput,
   Tooltip,
   ActionIcon,
   UnstyledButton,
@@ -58,6 +59,7 @@ type OrderRow = {
   confirmed_at?: string;
   last_maps_error?: string;
   technician?: string;
+  technician_user_id?: number | null;
   notes?: string;
 };
 
@@ -139,11 +141,16 @@ export default function InstallationsPage() {
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<OrderRow | null>(null);
-  const [editTech, setEditTech] = useState("");
+  const [editTech, setEditTech] = useState<string | null>(null);
+  const [technicians, setTechnicians] = useState<{ id: number; name: string }[]>([]);
+  const [confirming, setConfirming] = useState<OrderRow | null>(null);
+  const [confirmTech, setConfirmTech] = useState<string | null>(null);
+  const [confirmingBusy, setConfirmingBusy] = useState(false);
   const [editNotes, setEditNotes] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState>(null);
   const [viewingLocation, setViewingLocation] = useState<OrderRow | null>(null);
+  const [relocating, setRelocating] = useState<OrderRow | null>(null);
 
   const pageSize = 25;
 
@@ -169,6 +176,28 @@ export default function InstallationsPage() {
     reload();
   }, [reload]);
 
+  useEffect(() => {
+    api.listTechnicians().then(setTechnicians).catch(() => setTechnicians([]));
+  }, []);
+
+  const technicianOptions = technicians.map((t) => ({ value: String(t.id), label: t.name }));
+
+  function openConfirm(o: OrderRow) {
+    setConfirming(o);
+    setConfirmTech(o.technician_user_id ? String(o.technician_user_id) : null);
+  }
+
+  async function saveConfirm() {
+    if (!confirming || !confirmTech || confirmingBusy) return;
+    setConfirmingBusy(true);
+    try {
+      await doAction(() => api.confirmInstallation(confirming.id, Number(confirmTech)), `Orden #${confirming.id} confirmada.`);
+      setConfirming(null);
+    } finally {
+      setConfirmingBusy(false);
+    }
+  }
+
   async function doAction(fn: () => Promise<unknown>, okMsg: string) {
     setError(null);
     try {
@@ -182,7 +211,7 @@ export default function InstallationsPage() {
 
   function openEdit(o: OrderRow) {
     setEditing(o);
-    setEditTech(o.technician ?? "");
+    setEditTech(o.technician_user_id ? String(o.technician_user_id) : null);
     setEditNotes(o.notes ?? "");
   }
 
@@ -204,7 +233,7 @@ export default function InstallationsPage() {
     setSavingEdit(true);
     try {
       await doAction(
-        () => api.updateInstallation(editing.id, { technician: editTech, notes: editNotes }),
+        () => api.updateInstallation(editing.id, { technician_user_id: editTech ? Number(editTech) : null, notes: editNotes }),
         `Orden #${editing.id} actualizada.`,
       );
       setEditing(null);
@@ -283,7 +312,15 @@ export default function InstallationsPage() {
       </Modal>
       <Modal opened={editing != null} onClose={() => setEditing(null)} title={`Orden #${editing?.id} — técnico y notas`}>
         <Stack>
-          <TextInput label="Técnico asignado" value={editTech} onChange={(e) => setEditTech(e.currentTarget.value)} />
+          <Select
+            label="Técnico asignado"
+            placeholder={technicianOptions.length ? "Sin asignar" : "No hay usuarios con rol de técnico"}
+            data={technicianOptions}
+            value={editTech}
+            onChange={setEditTech}
+            clearable
+            searchable
+          />
           <Textarea label="Notas" value={editNotes} onChange={(e) => setEditNotes(e.currentTarget.value)} minRows={3} />
           <Group justify="flex-end">
             <Button variant="default" disabled={savingEdit} onClick={() => setEditing(null)}>Cancelar</Button>
@@ -291,7 +328,47 @@ export default function InstallationsPage() {
           </Group>
         </Stack>
       </Modal>
+      <Modal opened={confirming != null} onClose={() => setConfirming(null)} title={`Confirmar instalación — orden #${confirming?.id ?? ""}`}>
+        <Stack>
+          <Text size="sm" c="dimmed">
+            {confirming?.client_name ?? ""}{confirming?.nap_name ? ` · NAP ${confirming.nap_name}` : ""}
+          </Text>
+          {technicianOptions.length ? (
+            <Select
+              label="Técnico que hizo la instalación"
+              placeholder="Elegí un técnico"
+              data={technicianOptions}
+              value={confirmTech}
+              onChange={setConfirmTech}
+              searchable
+              withAsterisk
+            />
+          ) : (
+            <Alert color="orange">
+              No hay usuarios con rol de técnico. Creá uno en Usuarios (con un rol marcado como técnico) para poder confirmar.
+            </Alert>
+          )}
+          <Group justify="flex-end">
+            <Button variant="default" disabled={confirmingBusy} onClick={() => setConfirming(null)}>Cancelar</Button>
+            <Button variant="primary" loading={confirmingBusy} disabled={!confirmTech} onClick={saveConfirm}>Confirmar instalación</Button>
+          </Group>
+        </Stack>
+      </Modal>
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+      <RelocateOrderModal
+        order={relocating}
+        onClose={() => setRelocating(null)}
+        onSaved={async (res) => {
+          const id = relocating?.id;
+          setRelocating(null);
+          notifySuccess(
+            res.status === "RESERVADO"
+              ? `Orden #${id}: ubicación actualizada y puerto reservado.`
+              : `Orden #${id}: ubicación actualizada, sigue sin cobertura.`,
+          );
+          await reload();
+        }}
+      />
 
       <Card title="Órdenes de instalación">
         {error ? <Alert color="red" title="Error" withCloseButton onClose={() => setError(null)} mb="sm">{error}</Alert> : null}
@@ -389,10 +466,17 @@ export default function InstallationsPage() {
                             size="lg"
                             variant="filled"
                             color="teal"
-                            onClick={() => doAction(() => api.confirmInstallation(o.id), `Orden #${o.id} confirmada.`)}
+                            onClick={() => openConfirm(o)}
                             aria-label="Confirmar"
                           >
                             <IconCheck size={20} />
+                          </ActionIcon>
+                        </Tooltip>
+                      ) : null}
+                      {canEdit && (o.status === "SIN_COBERTURA" || o.status === "VENCIDA" || o.status === "RESERVADO") ? (
+                        <Tooltip label="Cambiar ubicación">
+                          <ActionIcon size="lg" variant="light" color="violet" onClick={() => setRelocating(o)} aria-label="Cambiar ubicación">
+                            <IconMapPin size={20} />
                           </ActionIcon>
                         </Tooltip>
                       ) : null}
