@@ -41,7 +41,7 @@ interface BillingStatus {
   } | null;
 }
 
-export default function BillingPage() {
+export function BillingStatusCard() {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);

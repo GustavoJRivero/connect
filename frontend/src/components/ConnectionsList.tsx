@@ -286,7 +286,7 @@ export function ConnectionsList() {
                 </Table.Td>
                 <Table.Td><MutedBadge tone="lilac" size="sm">{x.plan_profile}</MutedBadge></Table.Td>
                 <Table.Td><Text size="sm" c={x.server_name ? undefined : "dimmed"}>{x.server_name || "—"}</Text></Table.Td>
-                <Table.Td><DebtAmount value={x.debt_total} creditValue={x.credit_balance} /></Table.Td>
+                <Table.Td><DebtAmount value={x.debt_total} creditValue={x.credit_balance} unpaidCount={x.unpaid_invoices} /></Table.Td>
                 <Table.Td>
                   <MutedBadge tone={connectionStatusTone(x.status)}>{connectionStatusLabel(x.status)}</MutedBadge>
                 </Table.Td>

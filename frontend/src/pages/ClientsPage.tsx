@@ -552,7 +552,7 @@ export default function ClientsPage() {
                       {connCount > 1 ? <Text size="xs" c="dimmed">{connCount} conex.</Text> : null}
                     </Table.Td>
                     <Table.Td>
-                      <DebtAmount value={c.debt_total} creditValue={c.credit_balance} />
+                      <DebtAmount value={c.debt_total} creditValue={c.credit_balance} unpaidCount={c.unpaid_invoices} />
                     </Table.Td>
                     <Table.Td>
                       <Group gap={6} wrap="nowrap">
@@ -717,6 +717,43 @@ function QuietTh(props: { children: React.ReactNode; align?: "left" | "right" })
   );
 }
 
+type DetailSort = { col: string; dir: "asc" | "desc" } | null;
+
+function nextDetailSort(current: DetailSort, col: string): DetailSort {
+  if (current?.col !== col) return { col, dir: "asc" };
+  return current.dir === "asc" ? { col, dir: "desc" } : null;
+}
+
+function sortDetailRows<T>(rows: T[], sort: DetailSort, getters: Record<string, (row: T) => unknown>): T[] {
+  const get = sort ? getters[sort.col] : undefined;
+  if (!sort || !get) return rows;
+  const sign = sort.dir === "asc" ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = get(a);
+    const vb = get(b);
+    const emptyA = va == null || va === "";
+    const emptyB = vb == null || vb === "";
+    if (emptyA || emptyB) return emptyA === emptyB ? 0 : emptyA ? 1 : -1;
+    if (typeof va === "number" && typeof vb === "number") return (va - vb) * sign;
+    return String(va).localeCompare(String(vb), "es", { numeric: true, sensitivity: "base" }) * sign;
+  });
+}
+
+function SortQuietTh(props: { col: string; sort: DetailSort; onSort: (s: DetailSort) => void; children: React.ReactNode }) {
+  const active = props.sort?.col === props.col;
+  return (
+    <Table.Th
+      style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap" }}
+      aria-sort={active ? (props.sort?.dir === "asc" ? "ascending" : "descending") : undefined}
+      onClick={() => props.onSort(nextDetailSort(props.sort, props.col))}
+    >
+      <Text size="sm" c={active ? undefined : "dimmed"} fw={500} tt="none">
+        {props.children} {active ? (props.sort?.dir === "asc" ? "▲" : "▼") : null}
+      </Text>
+    </Table.Th>
+  );
+}
+
 type DetailTab = "connections" | "billing" | "complaints";
 
 const DETAIL_PAGE_SIZE = 10;
@@ -758,6 +795,8 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
   const [complaints, setComplaints] = useState<Record<string, unknown>[]>([]);
   const [invoicePage, setInvoicePage] = useState(1);
   const [complaintPage, setComplaintPage] = useState(1);
+  const [connSort, setConnSort] = useState<DetailSort>(null);
+  const [invoiceSort, setInvoiceSort] = useState<DetailSort>(null);
   const [detailLoading, setDetailLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
@@ -922,6 +961,30 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
 
   const connections = (client?.connections ?? []) as { id: number; pppoe_name?: string; server_name?: string; ip?: string; plan_profile?: string; service_address?: string; status?: string }[];
   const doc = fmtDoc(client?.kind, client?.dni, client?.cuit);
+  const sortedConnections = sortDetailRows(connections, connSort, {
+    id: (c) => c.id,
+    pppoe: (c) => c.pppoe_name,
+    server: (c) => c.server_name,
+    ip: (c) => c.ip,
+    plan: (c) => c.plan_profile,
+    address: (c) => c.service_address,
+    status: (c) => connectionStatusLabel(c.status),
+  });
+  const sortedInvoices = sortDetailRows(invoices, invoiceSort, {
+    id: (x) => Number(x.id),
+    type: (x) => x.invoice_type,
+    description: (x) => x.description || "Servicio",
+    issue_date: (x) => x.issue_date,
+    due_date: (x) => x.due_date,
+    status: (x) => x.payment_status ?? x.status,
+    total: (x) => Number(x.total ?? 0),
+    paid: (x) => Number(x.paid_total ?? 0),
+    methods: (x) => (Array.isArray(x.payment_methods) ? (x.payment_methods as string[]).map(paymentMethodLabel).join(", ") : ""),
+  });
+  function sortInvoices(s: DetailSort) {
+    setInvoiceSort(s);
+    setInvoicePage(1);
+  }
 
   // Deuda: solo facturas emitidas impagas. Un borrador no es saldo.
   const debt = invoices.reduce((acc, x) => {
@@ -1204,18 +1267,18 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 <Table highlightOnHover verticalSpacing="sm" fz="md">
                   <Table.Thead>
                     <Table.Tr>
-                      <QuietTh>ID</QuietTh>
-                      <QuietTh>PPPoE</QuietTh>
-                      <QuietTh>Servidor</QuietTh>
-                      <QuietTh>IP</QuietTh>
-                      <QuietTh>Plan</QuietTh>
-                      <QuietTh>Domicilio</QuietTh>
-                      <QuietTh>Estado</QuietTh>
+                      <SortQuietTh col="id" sort={connSort} onSort={setConnSort}>ID</SortQuietTh>
+                      <SortQuietTh col="pppoe" sort={connSort} onSort={setConnSort}>PPPoE</SortQuietTh>
+                      <SortQuietTh col="server" sort={connSort} onSort={setConnSort}>Servidor</SortQuietTh>
+                      <SortQuietTh col="ip" sort={connSort} onSort={setConnSort}>IP</SortQuietTh>
+                      <SortQuietTh col="plan" sort={connSort} onSort={setConnSort}>Plan</SortQuietTh>
+                      <SortQuietTh col="address" sort={connSort} onSort={setConnSort}>Domicilio</SortQuietTh>
+                      <SortQuietTh col="status" sort={connSort} onSort={setConnSort}>Estado</SortQuietTh>
                       <QuietTh>Acciones</QuietTh>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {connections.map((conn) => (
+                    {sortedConnections.map((conn) => (
                       <Table.Tr
                         key={conn.id}
                         style={{ cursor: "pointer" }}
@@ -1296,20 +1359,20 @@ function ClientDetail(props: { clientId: number; onBack: () => void; onEdit: () 
                 <Table striped highlightOnHover verticalSpacing="sm" fz="md">
                   <Table.Thead>
                     <Table.Tr>
-                      <QuietTh>ID</QuietTh>
-                      <QuietTh>Tipo</QuietTh>
-                      <QuietTh>Concepto</QuietTh>
-                      <QuietTh>Fecha</QuietTh>
-                      <QuietTh>Vence</QuietTh>
-                      <QuietTh>Estado</QuietTh>
-                      <QuietTh>Total</QuietTh>
-                      <QuietTh>Pagado</QuietTh>
-                      <QuietTh>Pagado con</QuietTh>
+                      <SortQuietTh col="id" sort={invoiceSort} onSort={sortInvoices}>ID</SortQuietTh>
+                      <SortQuietTh col="type" sort={invoiceSort} onSort={sortInvoices}>Tipo</SortQuietTh>
+                      <SortQuietTh col="description" sort={invoiceSort} onSort={sortInvoices}>Concepto</SortQuietTh>
+                      <SortQuietTh col="issue_date" sort={invoiceSort} onSort={sortInvoices}>Fecha</SortQuietTh>
+                      <SortQuietTh col="due_date" sort={invoiceSort} onSort={sortInvoices}>Vence</SortQuietTh>
+                      <SortQuietTh col="status" sort={invoiceSort} onSort={sortInvoices}>Estado</SortQuietTh>
+                      <SortQuietTh col="total" sort={invoiceSort} onSort={sortInvoices}>Total</SortQuietTh>
+                      <SortQuietTh col="paid" sort={invoiceSort} onSort={sortInvoices}>Pagado</SortQuietTh>
+                      <SortQuietTh col="methods" sort={invoiceSort} onSort={sortInvoices}>Pagado con</SortQuietTh>
                       <QuietTh>Acciones</QuietTh>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {pageSlice(invoices, invoicePage).map((x) => (
+                    {pageSlice(sortedInvoices, invoicePage).map((x) => (
                       <Table.Tr key={Number(x.id)}>
                         <Table.Td>{String(x.id)}</Table.Td>
                         <Table.Td><MutedBadge tone="gray" size="md">{String(x.invoice_type ?? "-")}</MutedBadge></Table.Td>

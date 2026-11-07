@@ -107,8 +107,8 @@ export function ConnectionEditModal(props: {
         excludeIp={String(conn?.ip ?? "") || undefined}
       />
       <Grid>
-        <Grid.Col span={6}><Field label="Usuario PPPoE" value={pppoeUsername} onChange={setPppoeUsername} /></Grid.Col>
-        <Grid.Col span={6}><Field label="Contraseña PPPoE" value={pppoePassword} onChange={setPppoePassword} type="password" /></Grid.Col>
+        <Grid.Col span={6}><Field label="Usuario PPPoE" value={pppoeUsername} onChange={setPppoeUsername} autoComplete="off" /></Grid.Col>
+        <Grid.Col span={6}><Field label="Contraseña PPPoE" value={pppoePassword} onChange={setPppoePassword} type="password" autoComplete="new-password" /></Grid.Col>
       </Grid>
       <Field label="PON SN (opcional)" value={ponSn} onChange={setPonSn} placeholder="ej: HWTC1234ABCD" maxLength={64} />
       <Text size="sm" fw={500} mt="md" mb={4}>Facturación</Text>

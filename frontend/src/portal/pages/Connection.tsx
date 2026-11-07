@@ -51,7 +51,7 @@ export function PortalConnection() {
       ) : null}
       {!items.length ? <Text c="dimmed">No hay conexiones cargadas.</Text> : null}
       {items.map((c) => (
-        <Card key={c.id} title={`Conexión ${c.pppoe_name || c.id}`}>
+        <Card key={c.id} title={c.service_address ? `Conexión · ${c.service_address}` : "Conexión"}>
           <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
             <div>
               <Text size="sm" c="dimmed">Plan</Text>
@@ -64,14 +64,6 @@ export function PortalConnection() {
             <div>
               <Text size="sm" c="dimmed">Domicilio del servicio</Text>
               <Text>{c.service_address || "—"}</Text>
-            </div>
-            <div>
-              <Text size="sm" c="dimmed">IP</Text>
-              <Text>{c.ip || "—"}</Text>
-            </div>
-            <div>
-              <Text size="sm" c="dimmed">Usuario PPPoE</Text>
-              <Text>{c.pppoe_name || "—"}</Text>
             </div>
             <div>
               <Text size="sm" c="dimmed">Día de facturación</Text>

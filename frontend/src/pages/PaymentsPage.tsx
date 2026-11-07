@@ -4,6 +4,7 @@ import { api } from "../api";
 import { Button, MutedBadge } from "../ui";
 import { ClientSelect } from "../components/ClientSelect";
 import { PaymentModal } from "../components/PaymentModal";
+import { BillingStatusCard } from "./BillingPage";
 import { useCan } from "../auth";
 import { formatApiError, fmtMoney, paymentMethodLabel, todayISO, firstOfMonthISO, lastOfMonthISO } from "../format";
 import { fmtDate } from "../datetime";
@@ -39,7 +40,9 @@ type PaymentRow = {
 type RangePreset = "today" | "month" | "year" | "all";
 
 export default function PaymentsPage() {
-  const canRegister = useCan()("payments", "edit");
+  const can = useCan();
+  const canRegister = can("payments", "edit");
+  const canViewBilling = can("billing", "view");
   const [items, setItems] = useState<PaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +103,8 @@ export default function PaymentsPage() {
           await reload();
         }}
       />
+
+      {canViewBilling ? <BillingStatusCard /> : null}
 
       {error ? (
         <Alert color="red" title="Error" withCloseButton onClose={() => setError(null)}>

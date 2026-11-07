@@ -55,6 +55,7 @@ export function Field(props: {
   required?: boolean;
   maxLength?: number;
   description?: string;
+  autoComplete?: string;
 }) {
   return (
     <TextInput
@@ -66,6 +67,7 @@ export function Field(props: {
       placeholder={props.placeholder}
       withAsterisk={props.required}
       maxLength={props.maxLength}
+      autoComplete={props.autoComplete}
     />
   );
 }

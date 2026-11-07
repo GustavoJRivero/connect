@@ -9,6 +9,7 @@ from ..extensions import db
 from ..models.client import Client
 from ..models.connection import Connection
 from ..models.invoice import Invoice
+from .invoices import unpaid_invoice_counts
 from ..models.mikrotik_server import MikrotikServer
 from ..network.ip_pool import PoolError, resolve_ip_for_connection
 from ..tasks.queue import (
@@ -177,6 +178,7 @@ def list_connections():
         if server_ids
         else {}
     )
+    unpaid_map = unpaid_invoice_counts(x.client_id for x, _, _ in rows)
     items = [
         {
             "id": x.id,
@@ -185,6 +187,7 @@ def list_connections():
             "client_status": c.status,
             "client_phone": c.phone,
             "debt_total": str(debt or 0),
+            "unpaid_invoices": unpaid_map.get(int(x.client_id), 0),
             "credit_balance": str(c.credit_balance or 0),
             "server_id": x.server_id,
             "server_name": servers.get(int(x.server_id)) if x.server_id else None,

@@ -66,6 +66,7 @@ export type ConnectionListItem = {
   client_status?: string;
   client_phone?: string | null;
   debt_total: string;
+  unpaid_invoices: number;
   credit_balance: string;
   server_id?: number | null;
   server_name?: string | null;
