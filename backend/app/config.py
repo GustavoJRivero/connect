@@ -111,5 +111,10 @@ def get_config() -> dict:
         "MIKROTIK_WRITES_DISABLED": os.getenv("MIKROTIK_WRITES_DISABLED", "").strip(),
         # IPs/hostnames de Mikrotik de producción (coma-separados) para avisos en migración.
         "MIKROTIK_PROD_HOSTS": os.getenv("MIKROTIK_PROD_HOSTS", "").strip(),
+        # SmartOLT (administración de la ONU desde el portal de cliente)
+        "SMARTOLT_BASE_URL": os.getenv("SMARTOLT_BASE_URL", "https://connect-ar.smartolt.com").strip(),
+        "SMARTOLT_API_KEY": os.getenv("SMARTOLT_API_KEY", "").strip(),
+        # Staging: bloquear reinicios y cambios de WiFi en ONUs reales.
+        "SMARTOLT_WRITES_DISABLED": os.getenv("SMARTOLT_WRITES_DISABLED", "").strip(),
     }
 

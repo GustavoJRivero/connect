@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
-import { Alert, SimpleGrid, Stack, Text, Title } from "@mantine/core";
+import { Alert, Divider, SimpleGrid, Stack, Text, Title } from "@mantine/core";
 import { Card, MutedBadge, connectionStatusTone } from "../../ui";
 import { connectionStatusLabel, formatApiError } from "../../format";
 import { portalApi } from "../api";
+import { RouterPanel } from "../RouterPanel";
 
 export function PortalConnection() {
   const [items, setItems] = useState<any[]>([]);
@@ -70,6 +71,8 @@ export function PortalConnection() {
               <Text>{c.billing_day || "—"}</Text>
             </div>
           </SimpleGrid>
+          <Divider my="lg" />
+          <RouterPanel connectionId={c.id} />
         </Card>
       ))}
     </Stack>

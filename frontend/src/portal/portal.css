@@ -137,3 +137,10 @@
   50% { opacity: 1; }
 }
 
+
+.router-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
