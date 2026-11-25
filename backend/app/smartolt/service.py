@@ -14,6 +14,9 @@ STATUS_TTL = 90
 SIGNAL_TTL = 120
 DETAILS_TTL = 300
 HOSTS_TTL = 60
+REBOOT_STATUS_TTL = 20
+REBOOT_MIN_SECONDS = 90
+REBOOT_MAX_SECONDS = 600
 
 WIFI_PORT_A = "wifi_0/1"
 WIFI_PORT_B = "wifi_0/5"
@@ -22,6 +25,7 @@ _cache: dict[tuple, tuple[float, Any]] = {}
 _cache_lock = threading.Lock()
 _hosts_lock = threading.Lock()
 _cooldown_until = 0.0
+_reboots: dict[str, dict] = {}
 
 
 class OnuUnavailable(Exception):
@@ -192,9 +196,9 @@ def classify_status(raw: Optional[str]) -> dict:
     return {"state": "UNKNOWN", "level": "unknown", "label": raw or "Desconocido", "message": "No pudimos leer el estado"}
 
 
-def onu_status(onu: dict) -> dict:
+def onu_status(onu: dict, ttl: int = STATUS_TTL) -> dict:
     ext = onu["external_id"]
-    body = _cached(("status", ext), STATUS_TTL, lambda: SmartOltClient().onu_status(ext))
+    body = _cached(("status", ext), ttl, lambda: SmartOltClient().onu_status(ext))
     out = classify_status(body.get("onu_status"))
     out["last_change"] = body.get("last_status_change")
     return out
@@ -242,7 +246,35 @@ def set_wifi(onu: dict, band: str, ssid: str, password: str) -> None:
 
 def reboot(onu: dict) -> None:
     _call(lambda: SmartOltClient().reboot(onu["external_id"]))
+    mark_rebooting(onu["external_id"], time.time())
     invalidate(("status", onu["external_id"]), ("signal", onu["external_id"]), ("hosts", onu["external_id"]))
+
+
+def mark_rebooting(external_id: str, started_at: float) -> None:
+    if time.time() - started_at < REBOOT_MAX_SECONDS:
+        _reboots.setdefault(external_id, {"at": started_at, "seen_down": False})
+
+
+def is_rebooting(external_id: str) -> bool:
+    r = _reboots.get(external_id)
+    if r and time.time() - r["at"] >= REBOOT_MAX_SECONDS:
+        _reboots.pop(external_id, None)
+        return False
+    return r is not None
+
+
+def reboot_progress(external_id: str, status_state: str) -> bool:
+    """Sigue en reinicio hasta verla caer y volver, o estar Online pasado el mínimo."""
+    if not is_rebooting(external_id):
+        return False
+    r = _reboots[external_id]
+    if status_state != "ONLINE":
+        r["seen_down"] = True
+        return True
+    if r["seen_down"] or time.time() - r["at"] >= REBOOT_MIN_SECONDS:
+        _reboots.pop(external_id, None)
+        return False
+    return True
 
 
 # ----------------------------------------------------------------------

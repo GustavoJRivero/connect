@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActionIcon,
   Alert,
@@ -43,6 +43,7 @@ type Overview = {
   vendor: string | null;
   model: string | null;
   can_manage: boolean;
+  rebooting: boolean;
   status: { state: string; level: Level; label: string; message: string; last_change?: string | null } | null;
   signal: { level: Level; message: string; rx_dbm: number | null } | null;
 };
@@ -59,6 +60,7 @@ type Host = {
 };
 
 const UNAVAILABLE_CODES = new Set(["onu_not_assigned", "onu_not_found", "smartolt_not_configured"]);
+const REBOOT_POLL_MS = 20000;
 
 function levelColor(level?: Level | null): string {
   if (level === "green") return "teal";
@@ -241,16 +243,23 @@ export function RouterPanel(props: { connectionId: number }) {
   const [hostsError, setHostsError] = useState<string | null>(null);
 
   const [rebootOpen, setRebootOpen] = useState(false);
-  const [rebooting, setRebooting] = useState(false);
+  const [sendingReboot, setSendingReboot] = useState(false);
   const [rebootError, setRebootError] = useState<string | null>(null);
-  const [rebootSent, setRebootSent] = useState(false);
+  const wasRebooting = useRef(false);
 
   function loadOverview() {
     setLoading(true);
     setError(null);
     portalApi
       .onu(connectionId)
-      .then((o) => setOverview(o))
+      .then((o: Overview) => {
+        if (wasRebooting.current && !o.rebooting) {
+          if (o.status?.state === "ONLINE") notifySuccess("Tu equipo volvió a estar en línea.");
+          setHosts(null);
+        }
+        wasRebooting.current = !!o.rebooting;
+        setOverview(o);
+      })
       .catch((e) => {
         const code = apiCode(e);
         if (UNAVAILABLE_CODES.has(code)) setUnavailable(String((e as any)?.body?.message || ""));
@@ -263,6 +272,14 @@ export function RouterPanel(props: { connectionId: number }) {
     loadOverview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId]);
+
+  const rebootingNow = !!overview?.rebooting;
+  useEffect(() => {
+    if (!rebootingNow) return;
+    const t = window.setInterval(loadOverview, REBOOT_POLL_MS);
+    return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rebootingNow, connectionId]);
 
   function loadWifi() {
     setWifiLoading(true);
@@ -285,18 +302,20 @@ export function RouterPanel(props: { connectionId: number }) {
   }
 
   async function doReboot() {
-    setRebooting(true);
+    setSendingReboot(true);
     setRebootError(null);
     try {
       await portalApi.rebootOnu(connectionId);
       setRebootOpen(false);
-      setRebootSent(true);
       setHosts(null);
+      wasRebooting.current = true;
+      setOverview((o) => (o ? { ...o, rebooting: true, signal: null } : o));
       notifySuccess("Tu equipo se está reiniciando. Puede tardar unos minutos en volver.");
+      loadOverview();
     } catch (e) {
       setRebootError(formatApiError(e));
     } finally {
-      setRebooting(false);
+      setSendingReboot(false);
     }
   }
 
@@ -330,15 +349,22 @@ export function RouterPanel(props: { connectionId: number }) {
 
   if (!overview) return null;
 
-  const status = overview.status;
-  const online = status?.state === "ONLINE";
-  const signal = overview.signal;
-  const signalLabel = signal
-    ? signal.level === "green" ? "Buena" : signal.level === "yellow" ? "Baja" : signal.level === "red" ? "Muy baja" : "Sin lectura"
-    : "Sin lectura";
-  const signalMessage = signal
-    ? `${signal.message}${signal.rx_dbm != null ? ` (${signal.rx_dbm.toFixed(1)} dBm)` : ""}`
-    : online ? "No pudimos leer la señal" : "El equipo no está conectado";
+  const rebooting = overview.rebooting;
+  const status = rebooting
+    ? { state: "REBOOTING", level: "yellow" as Level, label: "Reiniciando…", message: "Puede tardar unos minutos. Te avisamos cuando vuelva." }
+    : overview.status;
+  const online = !rebooting && status?.state === "ONLINE";
+  const signal = rebooting ? null : overview.signal;
+  const signalLabel = rebooting
+    ? "Esperando al equipo"
+    : signal
+      ? signal.level === "green" ? "Buena" : signal.level === "yellow" ? "Baja" : signal.level === "red" ? "Muy baja" : "Sin lectura"
+      : "Sin lectura";
+  const signalMessage = rebooting
+    ? "Se mide cuando el equipo vuelva a estar en línea"
+    : signal
+      ? `${signal.message}${signal.rx_dbm != null ? ` (${signal.rx_dbm.toFixed(1)} dBm)` : ""}`
+      : online ? "No pudimos leer la señal" : "El equipo no está conectado";
 
   return (
     <Stack gap="md">
@@ -355,15 +381,9 @@ export function RouterPanel(props: { connectionId: number }) {
         </Tooltip>
       </Group>
 
-      {rebootSent ? (
-        <Alert color="violet" variant="light" withCloseButton onClose={() => setRebootSent(false)}>
-          Le enviamos la orden de reinicio a tu equipo. En unos minutos debería volver a funcionar.
-        </Alert>
-      ) : null}
-
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="sm">
         <StatusTile
-          icon={<IconRouter size={22} />}
+          icon={rebooting ? <Loader size={20} color="yellow" /> : <IconRouter size={22} />}
           title="Estado del equipo"
           level={status?.level}
           label={status?.label || "Desconocido"}
@@ -441,7 +461,7 @@ export function RouterPanel(props: { connectionId: number }) {
             {hosts ? "Actualizar" : "Ver"}
           </Button>
         </Group>
-        {!online && !hosts ? <Text size="xs" c="dimmed" mt="xs">Disponible cuando el equipo esté en línea.</Text> : null}
+        {!online ? <Text size="xs" c="dimmed" mt="xs">Disponible cuando el equipo esté en línea.</Text> : null}
         {hostsLoading && !hosts ? (
           <Group justify="center" py="md"><Loader size="sm" color="violet" /></Group>
         ) : null}
@@ -471,8 +491,14 @@ export function RouterPanel(props: { connectionId: number }) {
                 <Text size="xs" c="dimmed">Útil si internet anda lento o con cortes.</Text>
               </div>
             </Group>
-            <Button size="xs" variant="light" color="red" onClick={() => { setRebootError(null); setRebootOpen(true); }}>
-              Reiniciar
+            <Button
+              size="xs"
+              variant="light"
+              color="red"
+              disabled={rebooting}
+              onClick={() => { setRebootError(null); setRebootOpen(true); }}
+            >
+              {rebooting ? "Reiniciando…" : "Reiniciar"}
             </Button>
           </Group>
         </Paper>
@@ -496,7 +522,7 @@ export function RouterPanel(props: { connectionId: number }) {
           </Text>
           <Group justify="flex-end" gap="xs">
             <Button variant="default" onClick={() => setRebootOpen(false)}>Cancelar</Button>
-            <Button color="red" loading={rebooting} onClick={doReboot}>Reiniciar ahora</Button>
+            <Button color="red" loading={sendingReboot} onClick={doReboot}>Reiniciar ahora</Button>
           </Group>
         </Stack>
       </Modal>
