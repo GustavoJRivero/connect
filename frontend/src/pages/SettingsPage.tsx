@@ -36,6 +36,7 @@ import {
   IconCertificate,
   IconMail,
   IconMapPin,
+  IconRouter,
   IconPlugConnected,
   IconRepeat,
   IconCreditCard,
@@ -84,7 +85,7 @@ type SafetyStatus = {
   staging_safe?: boolean;
 };
 
-type SaveKind = "billing" | "services" | "automation" | "issuerExtra" | "smtp" | "fiscal" | "maps" | "mp" | "security";
+type SaveKind = "billing" | "services" | "automation" | "issuerExtra" | "smtp" | "fiscal" | "maps" | "smartolt" | "mp" | "security";
 type SectionId =
   | "billing"
   | "services"
@@ -93,6 +94,7 @@ type SectionId =
   | "fiscal"
   | "smtp"
   | "maps"
+  | "smartolt"
   | "mp"
   | "security"
   | "migration";
@@ -134,6 +136,10 @@ const SAVE_CONFIRM: Record<SaveKind, { title: string; message: string }> = {
     message:
       "Se guardarán la URL, la API key, el webhook secret y los ajustes de reservas (cron y plazo). ¿Seguís?",
   },
+  smartolt: {
+    title: "¿Guardar SmartOLT?",
+    message: "Se guardarán la URL y la API key de SmartOLT que usa el portal del cliente para administrar el router. ¿Seguís?",
+  },
   security: {
     title: "¿Guardar seguridad?",
     message:
@@ -150,6 +156,7 @@ const SECTIONS: { id: SectionId; label: string; hint: string }[] = [
   { id: "mp", label: "Mercado Pago", hint: "Cobro desde el portal del cliente" },
   { id: "smtp", label: "Correo", hint: "Envío de facturas por email" },
   { id: "maps", label: "Maps", hint: "API de cobertura y reservas NAP" },
+  { id: "smartolt", label: "SmartOLT", hint: "Router del cliente en el portal" },
   { id: "security", label: "Seguridad", hint: "reCAPTCHA en los ingresos" },
   { id: "migration", label: "Migración", hint: "Backup del sistema anterior" },
 ];
@@ -163,6 +170,7 @@ const SECTION_ICONS: Record<SectionId, React.ComponentType<{ size?: number | str
   mp: IconCreditCard,
   smtp: IconMail,
   maps: IconMapPin,
+  smartolt: IconRouter,
   security: IconShieldLock,
   migration: IconDatabaseImport,
 };
@@ -310,6 +318,9 @@ export default function SettingsPage() {
   const [mapsApiKeyReady, setMapsApiKeyReady] = useState(false);
   const [mapsApiKeySource, setMapsApiKeySource] = useState("");
   const [mapsWebhookReady, setMapsWebhookReady] = useState(false);
+  const [smartolt, setSmartolt] = useState({ base_url: "https://connect-ar.smartolt.com", api_key: "" });
+  const [smartoltKeyReady, setSmartoltKeyReady] = useState(false);
+  const [smartoltKeySource, setSmartoltKeySource] = useState("");
   const [arcaCertFile, setArcaCertFile] = useState<File | null>(null);
   const [arcaKeyFile, setArcaKeyFile] = useState<File | null>(null);
   const [arcaCertReady, setArcaCertReady] = useState(false);
@@ -433,6 +444,11 @@ export default function SettingsPage() {
       setMapsApiKeyReady(String(mapsRes["maps.api_key_ready"] ?? "").toLowerCase() === "true");
       setMapsApiKeySource(mapsRes["maps.api_key_source"] ?? "");
       setMapsWebhookReady(String(mapsRes["maps.webhook_secret_ready"] ?? "").toLowerCase() === "true");
+
+      const soRes = (await api.getSettings("smartolt.")) as Record<string, string>;
+      setSmartolt({ base_url: soRes["smartolt.base_url"] ?? "https://connect-ar.smartolt.com", api_key: "" });
+      setSmartoltKeyReady(String(soRes["smartolt.api_key_ready"] ?? "").toLowerCase() === "true");
+      setSmartoltKeySource(soRes["smartolt.api_key_source"] ?? "");
 
       const afipFlag = String(afipRes["afip.enabled"] ?? "false").toLowerCase();
       setAfipEnabled(["1", "true", "yes", "on"].includes(afipFlag));
@@ -653,6 +669,24 @@ export default function SettingsPage() {
     }
   }
 
+  async function saveSmartolt() {
+    setError(null);
+    setSuccess(null);
+    try {
+      const values: Record<string, string> = {
+        "smartolt.base_url": smartolt.base_url.trim() || "https://connect-ar.smartolt.com",
+      };
+      if (smartolt.api_key.trim()) values["smartolt.api_key"] = smartolt.api_key.trim();
+      await api.putSettings(values);
+      setSuccess("SmartOLT guardado.");
+      notifySuccess("SmartOLT guardado.");
+      setSection(null);
+      await reload();
+    } catch (e: unknown) {
+      setError(formatApiError(e));
+    }
+  }
+
   async function verifyArca() {
     setError(null);
     setVerifyingArca(true);
@@ -824,6 +858,7 @@ export default function SettingsPage() {
         else if (kind === "issuerExtra") await saveIssuerExtra();
         else if (kind === "smtp") await saveSmtp();
         else if (kind === "maps") await saveMaps();
+        else if (kind === "smartolt") await saveSmartolt();
         else if (kind === "mp") await saveMp();
         else if (kind === "security") await saveSecurity();
         else await saveFacturacionFiscal();
@@ -886,6 +921,13 @@ export default function SettingsPage() {
         : "URL y API key de Connect Maps",
       tone: mapsApiKeyReady ? "green" : "gray",
       badge: mapsApiKeyReady ? (mapsEnabled ? `${mapsTtl}h` : "Manual") : "No configurado",
+    },
+    smartolt: {
+      line: smartoltKeyReady
+        ? (smartoltKeySource === "env" ? "API key desde el entorno" : "API key cargada")
+        : "URL y API key de SmartOLT",
+      tone: smartoltKeyReady ? "green" : "gray",
+      badge: smartoltKeyReady ? "Listo" : "No configurado",
     },
     security: {
       line: recaptchaEnabled
@@ -1695,6 +1737,58 @@ export default function SettingsPage() {
               <Group justify="flex-end">
                 <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
                 {saveButton("maps", "Guardar Maps")}
+              </Group>
+            </Stack>
+          ) : null}
+
+          {section === "smartolt" ? (
+            <Stack gap="lg">
+              <Paper withBorder p="md" radius="md">
+                <Group gap="sm" wrap="nowrap" align="flex-start" mb="md">
+                  <ThemeIcon variant="light" color="blue" size={42} radius="md">
+                    <IconRouter size={22} stroke={1.5} />
+                  </ThemeIcon>
+                  <Box style={{ flex: 1 }}>
+                    <Group gap={8} mb={2}>
+                      <Text size="sm" fw={600}>
+                        Conexión API
+                      </Text>
+                      <MutedBadge tone={smartoltKeyReady ? "green" : "gray"} size="sm">
+                        {smartoltKeySource === "env" ? "Desde .env" : smartoltKeyReady ? "Admin" : "Sin API key"}
+                      </MutedBadge>
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      Estado, señal, WiFi, reinicio y equipos conectados del router en el portal del cliente. La API key
+                      no se vuelve a mostrar.
+                    </Text>
+                  </Box>
+                </Group>
+                <Stack gap="sm">
+                  <Field
+                    label="URL de SmartOLT"
+                    value={smartolt.base_url}
+                    onChange={(v) => setSmartolt((s) => ({ ...s, base_url: v }))}
+                    placeholder="https://connect-ar.smartolt.com"
+                  />
+                  <PasswordInput
+                    label="API key"
+                    description={
+                      smartoltKeyReady
+                        ? "Ya hay una key cargada. Dejá vacío para conservarla, o pegá una nueva para reemplazarla."
+                        : "Generala en SmartOLT → General → API key. Tiene que ser de lectura y escritura."
+                    }
+                    value={smartolt.api_key}
+                    onChange={(e) => {
+                      const value = e.currentTarget.value;
+                      setSmartolt((s) => ({ ...s, api_key: value }));
+                    }}
+                    placeholder={smartoltKeyReady ? "••••••••  (cargada)" : "API key"}
+                  />
+                </Stack>
+              </Paper>
+              <Group justify="flex-end">
+                <Button variant="default" onClick={() => setSection(null)}>Cerrar</Button>
+                {saveButton("smartolt", "Guardar SmartOLT")}
               </Group>
             </Stack>
           ) : null}

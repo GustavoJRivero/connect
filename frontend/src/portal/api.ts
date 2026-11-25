@@ -88,6 +88,21 @@ export const portalApi = {
   connections() {
     return request("/api/portal/connections");
   },
+  onu(connectionId: number) {
+    return request(`/api/portal/connections/${connectionId}/onu`);
+  },
+  onuWifi(connectionId: number) {
+    return request(`/api/portal/connections/${connectionId}/onu/wifi`);
+  },
+  setOnuWifi(connectionId: number, payload: { band: string; ssid: string; password: string }) {
+    return request(`/api/portal/connections/${connectionId}/onu/wifi`, { method: "POST", body: JSON.stringify(payload) });
+  },
+  rebootOnu(connectionId: number) {
+    return request(`/api/portal/connections/${connectionId}/onu/reboot`, { method: "POST" });
+  },
+  onuHosts(connectionId: number) {
+    return request(`/api/portal/connections/${connectionId}/onu/hosts`);
+  },
   complaints() {
     return request("/api/portal/complaints");
   },

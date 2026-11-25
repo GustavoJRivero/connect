@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from sqlalchemy import event
+
 from ..extensions import db
 
 
@@ -48,9 +50,19 @@ class Connection(db.Model):
     # Serial number de la ONU/módulo PON asignado a este servicio (opcional, sólo informativo).
     pon_sn = db.Column(db.String(64), nullable=True)
 
+    # ONU en SmartOLT resuelta a partir de pon_sn (se limpia si cambia el SN).
+    onu_external_id = db.Column(db.String(64), nullable=True)
+    onu_type_name = db.Column(db.String(120), nullable=True)
+
     def pppoe_name(self) -> str:
         return str(self.pppoe_username or self.id)
 
     def pppoe_password(self) -> str:
         return str(self.pppoe_password_value or self.id)
 
+
+@event.listens_for(Connection.pon_sn, "set")
+def _reset_onu_on_sn_change(target, value, oldvalue, initiator):
+    if (value or "") != (oldvalue or ""):
+        target.onu_external_id = None
+        target.onu_type_name = None

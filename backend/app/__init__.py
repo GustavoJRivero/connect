@@ -25,6 +25,7 @@ from .routes.payments import bp as payments_bp
 from .routes.plans import bp as plans_bp
 from .routes.settings import bp as settings_bp
 from .routes.portal import bp as portal_bp
+from .routes import portal_onu  # noqa: F401  (registra las rutas de ONU en el blueprint del portal)
 from .routes.mp_webhook import bp as mp_webhook_bp
 from .routes.users import bp as users_bp, roles_bp
 

@@ -59,6 +59,10 @@ services:
       MP_WEBHOOK_SECRET: ${MP_WEBHOOK_SECRET:-}
       API_PUBLIC_URL: ${API_PUBLIC_URL:-http://localhost:5001}
       PORTAL_PUBLIC_URL: ${PORTAL_PUBLIC_URL:-http://localhost}
+      # SmartOLT (router del cliente en el portal). En local no se reinician ONUs ni se cambia WiFi.
+      SMARTOLT_BASE_URL: ${SMARTOLT_BASE_URL:-https://connect-ar.smartolt.com}
+      SMARTOLT_API_KEY: ${SMARTOLT_API_KEY:-}
+      SMARTOLT_WRITES_DISABLED: ${SMARTOLT_WRITES_DISABLED:-true}
       # Staging: descomentar para bloquear escrituras a Mikrotik de producción.
       # MIKROTIK_WRITES_DISABLED: "true"
       # MIKROTIK_PROD_HOSTS: "10.0.0.1"

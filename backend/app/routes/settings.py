@@ -27,6 +27,7 @@ _HIDDEN_KV = (
     "mp.webhook_secret",
     "maps.api_key",
     "maps.webhook_secret",
+    "smartolt.api_key",
     "security.recaptcha_secret_key",
 )
 _MAX_CERT_BYTES = 80_000
@@ -106,6 +107,13 @@ def get_kv():
         out["maps.webhook_secret_ready"] = "true" if webhook_secret else "false"
         out["maps.webhook_secret_source"] = wh_src
         out.setdefault("maps.api_base_url", base_url or "https://maps.connectsrl.ar")
+    if (not prefix) or prefix.startswith("smartolt"):
+        so_key, so_key_src = _effective("smartolt.api_key", "SMARTOLT_API_KEY")
+        so_url, _so_url_src = _effective("smartolt.base_url", "SMARTOLT_BASE_URL")
+        out.pop("smartolt.api_key", None)
+        out["smartolt.api_key_ready"] = "true" if so_key else "false"
+        out["smartolt.api_key_source"] = so_key_src
+        out.setdefault("smartolt.base_url", so_url or "https://connect-ar.smartolt.com")
     if (not prefix) or prefix.startswith("security"):
         site_key, site_src = _effective("security.recaptcha_site_key", "RECAPTCHA_SITE_KEY")
         secret_key, secret_src = _effective("security.recaptcha_secret_key", "RECAPTCHA_SECRET_KEY")
