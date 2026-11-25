@@ -1,4 +1,5 @@
 """Administración de la ONU/router del cliente desde el portal (SmartOLT)."""
+import time
 from datetime import datetime, timedelta
 
 from flask import jsonify, request
@@ -15,7 +16,7 @@ from .portal import _require_client, bp
 # (acción, máximo, ventana)
 LIMIT_REBOOT = ("PORTAL_ONU_REBOOT", 3, timedelta(hours=1))
 LIMIT_WIFI = ("PORTAL_ONU_WIFI", 5, timedelta(hours=1))
-LIMIT_HOSTS = ("PORTAL_ONU_HOSTS", 15, timedelta(hours=1))
+LIMIT_HOSTS = ("PORTAL_ONU_HOSTS", 20, timedelta(hours=1))
 
 BUSY_MESSAGE = "El sistema está ocupado. Probá de nuevo en unos segundos."
 
@@ -84,6 +85,27 @@ def _resolve(client, connection_id: int):
         return conn, None, _smartolt_error(e)
 
 
+def _restore_reboot(client, conn: Connection, onu: dict) -> None:
+    """Recupera un reinicio en curso desde el log (p. ej. después de reiniciar el backend)."""
+    if service.is_rebooting(onu["external_id"]):
+        return
+    since = datetime.utcnow() - timedelta(seconds=service.REBOOT_MAX_SECONDS)
+    last = (
+        UserActivity.query.filter(
+            UserActivity.action == LIMIT_REBOOT[0],
+            UserActivity.ref_id == client.id,
+            UserActivity.status_code == 200,
+            UserActivity.path == f"/api/portal/connections/{conn.id}/onu/reboot",
+            UserActivity.created_at >= since,
+        )
+        .order_by(UserActivity.created_at.desc())
+        .first()
+    )
+    if last:
+        elapsed = (datetime.utcnow() - last.created_at).total_seconds()
+        service.mark_rebooting(onu["external_id"], time.time() - elapsed)
+
+
 @bp.get("/connections/<int:connection_id>/onu")
 @jwt_required()
 def onu_overview(connection_id: int):
@@ -97,15 +119,21 @@ def onu_overview(connection_id: int):
         "vendor": onu["vendor"],
         "model": onu["type_name"],
         "can_manage": not smartolt_writes_disabled(),
+        "rebooting": False,
         "status": None,
         "signal": None,
     }
+    _restore_reboot(client, conn, onu)
+    ttl = service.REBOOT_STATUS_TTL if service.is_rebooting(onu["external_id"]) else service.STATUS_TTL
     try:
-        out["status"] = service.onu_status(onu)
+        out["status"] = service.onu_status(onu, ttl=ttl)
     except SmartOltError as e:
         if e.status == 429:
             return _smartolt_error(e)
         out["status"] = {"state": "UNKNOWN", "level": "unknown", "label": "Desconocido", "message": "No pudimos leer el estado"}
+    if service.reboot_progress(onu["external_id"], out["status"]["state"]):
+        out["rebooting"] = True
+        return jsonify(out)
     online = out["status"]["state"] == "ONLINE"
     if online:
         try:
@@ -186,6 +214,9 @@ def onu_reboot(connection_id: int):
     conn, onu, err = _resolve(client, connection_id)
     if err:
         return err
+    _restore_reboot(client, conn, onu)
+    if service.is_rebooting(onu["external_id"]):
+        return _error("already_rebooting", "Tu equipo ya se está reiniciando. Esperá unos minutos.", 409)
     try:
         service.reboot(onu)
     except SmartOltError as e:
@@ -203,11 +234,16 @@ def onu_hosts(connection_id: int):
     client, err = _require_client()
     if err:
         return err
-    if _limited(client, LIMIT_HOSTS):
-        return _error("too_many_requests", "Consultaste los equipos varias veces. Probá de nuevo más tarde.", 429)
     conn, onu, err = _resolve(client, connection_id)
     if err:
         return err
+    cached = service.cached_router_hosts(onu)
+    if cached is not None:
+        return jsonify({"hosts": cached})
+    if service.is_rebooting(onu["external_id"]):
+        return _error("rebooting", "Tu equipo se está reiniciando. Esperá a que vuelva a estar en línea.", 409)
+    if _limited(client, LIMIT_HOSTS):
+        return _error("too_many_requests", "Consultaste los equipos varias veces. Probá de nuevo más tarde.", 429)
     try:
         hosts = service.router_hosts(onu)
     except SmartOltError as e:
