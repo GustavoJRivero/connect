@@ -16,7 +16,7 @@ from .portal import _require_client, bp
 # (acción, máximo, ventana)
 LIMIT_REBOOT = ("PORTAL_ONU_REBOOT", 3, timedelta(hours=1))
 LIMIT_WIFI = ("PORTAL_ONU_WIFI", 5, timedelta(hours=1))
-LIMIT_HOSTS = ("PORTAL_ONU_HOSTS", 15, timedelta(hours=1))
+LIMIT_HOSTS = ("PORTAL_ONU_HOSTS", 20, timedelta(hours=1))
 
 BUSY_MESSAGE = "El sistema está ocupado. Probá de nuevo en unos segundos."
 
@@ -234,11 +234,16 @@ def onu_hosts(connection_id: int):
     client, err = _require_client()
     if err:
         return err
-    if _limited(client, LIMIT_HOSTS):
-        return _error("too_many_requests", "Consultaste los equipos varias veces. Probá de nuevo más tarde.", 429)
     conn, onu, err = _resolve(client, connection_id)
     if err:
         return err
+    cached = service.cached_router_hosts(onu)
+    if cached is not None:
+        return jsonify({"hosts": cached})
+    if service.is_rebooting(onu["external_id"]):
+        return _error("rebooting", "Tu equipo se está reiniciando. Esperá a que vuelva a estar en línea.", 409)
+    if _limited(client, LIMIT_HOSTS):
+        return _error("too_many_requests", "Consultaste los equipos varias veces. Probá de nuevo más tarde.", 429)
     try:
         hosts = service.router_hosts(onu)
     except SmartOltError as e:

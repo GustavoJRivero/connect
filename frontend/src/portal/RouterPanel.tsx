@@ -256,6 +256,7 @@ export function RouterPanel(props: { connectionId: number }) {
         if (wasRebooting.current && !o.rebooting) {
           if (o.status?.state === "ONLINE") notifySuccess("Tu equipo volvió a estar en línea.");
           setHosts(null);
+          setHostsError(null);
         }
         wasRebooting.current = !!o.rebooting;
         setOverview(o);
@@ -272,6 +273,12 @@ export function RouterPanel(props: { connectionId: number }) {
     loadOverview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId]);
+
+  const onlineNow = !!overview && !overview.rebooting && overview.status?.state === "ONLINE";
+  useEffect(() => {
+    if (onlineNow && !hosts && !hostsLoading && !hostsError) loadHosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onlineNow, hosts]);
 
   const rebootingNow = !!overview?.rebooting;
   useEffect(() => {
@@ -399,6 +406,50 @@ export function RouterPanel(props: { connectionId: number }) {
       </SimpleGrid>
 
       <Paper withBorder radius="md" p="md">
+        <Group justify="space-between" gap="xs">
+          <Group gap="sm" wrap="nowrap">
+            <ThemeIcon variant="light" color="cyan" radius="md" size={36}>
+              <IconDevices size={20} />
+            </ThemeIcon>
+            <div>
+              <Text fw={600}>Equipos conectados</Text>
+              <Text size="xs" c="dimmed">
+                {hosts ? `${hosts.length} conectado${hosts.length === 1 ? "" : "s"}` : "Celulares, computadoras y demás"}
+              </Text>
+            </div>
+          </Group>
+          <Tooltip label="Actualizar">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              onClick={loadHosts}
+              loading={hostsLoading}
+              disabled={!online}
+              aria-label="Actualizar equipos conectados"
+            >
+              <IconRefresh size={18} />
+            </ActionIcon>
+          </Tooltip>
+        </Group>
+        {!online ? <Text size="xs" c="dimmed" mt="xs">Disponible cuando el equipo esté en línea.</Text> : null}
+        {hostsLoading && !hosts ? (
+          <Group justify="center" py="md"><Loader size="sm" color="cyan" /></Group>
+        ) : null}
+        {hostsError ? <Alert color="red" variant="light" mt="sm">{hostsError}</Alert> : null}
+        {hosts ? (
+          <Stack gap={0} mt="sm">
+            {!hosts.length ? <Text size="sm" c="dimmed">No hay equipos conectados en este momento.</Text> : null}
+            {hosts.map((h, i) => (
+              <React.Fragment key={`${h.mac || h.ip || "h"}-${i}`}>
+                {i > 0 ? <Divider /> : null}
+                <HostRow host={h} />
+              </React.Fragment>
+            ))}
+          </Stack>
+        ) : null}
+      </Paper>
+
+      <Paper withBorder radius="md" p="md">
         <Group justify="space-between" gap="xs" mb={wifi ? "sm" : 0}>
           <Group gap="sm" wrap="nowrap">
             <ThemeIcon variant="light" color="violet" radius="md" size={36}>
@@ -435,48 +486,6 @@ export function RouterPanel(props: { connectionId: number }) {
             </Group>
           </React.Fragment>
         ))}
-      </Paper>
-
-      <Paper withBorder radius="md" p="md">
-        <Group justify="space-between" gap="xs">
-          <Group gap="sm" wrap="nowrap">
-            <ThemeIcon variant="light" color="violet" radius="md" size={36}>
-              <IconDevices size={20} />
-            </ThemeIcon>
-            <div>
-              <Text fw={600}>Equipos conectados</Text>
-              <Text size="xs" c="dimmed">
-                {hosts ? `${hosts.length} conectado${hosts.length === 1 ? "" : "s"}` : "Celulares, computadoras y demás"}
-              </Text>
-            </div>
-          </Group>
-          <Button
-            size="xs"
-            variant="light"
-            color="violet"
-            onClick={loadHosts}
-            loading={hostsLoading}
-            disabled={!online}
-          >
-            {hosts ? "Actualizar" : "Ver"}
-          </Button>
-        </Group>
-        {!online ? <Text size="xs" c="dimmed" mt="xs">Disponible cuando el equipo esté en línea.</Text> : null}
-        {hostsLoading && !hosts ? (
-          <Group justify="center" py="md"><Loader size="sm" color="violet" /></Group>
-        ) : null}
-        {hostsError ? <Alert color="red" variant="light" mt="sm">{hostsError}</Alert> : null}
-        {hosts ? (
-          <Stack gap={0} mt="sm">
-            {!hosts.length ? <Text size="sm" c="dimmed">No hay equipos conectados en este momento.</Text> : null}
-            {hosts.map((h, i) => (
-              <React.Fragment key={`${h.mac || h.ip || "h"}-${i}`}>
-                {i > 0 ? <Divider /> : null}
-                <HostRow host={h} />
-              </React.Fragment>
-            ))}
-          </Stack>
-        ) : null}
       </Paper>
 
       {overview.can_manage ? (

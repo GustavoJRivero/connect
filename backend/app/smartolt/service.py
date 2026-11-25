@@ -308,6 +308,10 @@ def _host_to_dict(h: dict, vendor: Optional[str]) -> dict:
     }
 
 
+def cached_router_hosts(onu: dict) -> Optional[list[dict]]:
+    return _cache_get(("hosts", onu["external_id"]))
+
+
 def router_hosts(onu: dict) -> list[dict]:
     ext = onu["external_id"]
     hit = _cache_get(("hosts", ext))
